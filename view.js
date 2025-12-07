@@ -381,9 +381,11 @@ stops.forEach(s => {
     if (ll) {
       const routeNum = v.routeNumber || "";
       
-      // חישוב heading בהתאם לכיוון התנועה
+      // חישוב heading: קודם מה-GPS (bearing), ואם אין – לפי המסלול
       let heading = 0;
-      if (idx < shapeLatLngs.length - 1) {
+      if (typeof v.bearing === "number" && isFinite(v.bearing)) {
+        heading = v.bearing;
+      } else if (idx < shapeLatLngs.length - 1) {
         const nextLl = shapeLatLngs[idx + 1];
         const dLat = nextLl[0] - ll[0];
         const dLon = nextLl[1] - ll[1];
@@ -554,9 +556,11 @@ vehicles.forEach(v => {
       // עדכון מיקום marker
       marker.setLatLng(newLl);
       
-      // חישוב heading חדש וחץ
+      // חישוב heading חדש וחץ: קודם מ-bearing, ואם אין – לפי המסלול
       let heading = 0;
-      if (idx < shapeLatLngs.length - 1) {
+      if (typeof v.bearing === "number" && isFinite(v.bearing)) {
+        heading = v.bearing;
+      } else if (idx < shapeLatLngs.length - 1) {
         const nextLl = shapeLatLngs[idx + 1];
         const dLat = nextLl[0] - newLl[0];
         const dLon = nextLl[1] - newLl[1];
