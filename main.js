@@ -95,7 +95,25 @@ module.exports.run = async function(argsObj) {
   await wv.loadHTML(html);
 
   // -----------------------------
-  // 4. טעינת נתוני בסיס (סטטי)
+  // 4. הזרקת stops.json לתוך ה־WebView
+  // -----------------------------
+  try {
+    const fm = FileManager.iCloud();
+    const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
+    try { await fm.downloadFileFromiCloud(stopsFile); } catch (e) {}
+    if (fm.fileExists(stopsFile)) {
+      const stopsRaw = fm.readString(stopsFile);
+      const js = `window.stopsDataJson = ${JSON.stringify(stopsRaw)};`;
+      await wv.evaluateJavaScript(js, false);
+    } else {
+      console.error("stops.json not found in iCloud documentsDirectory");
+    }
+  } catch (e) {
+    console.error("Failed injecting stops.json into WebView:", e);
+  }
+
+  // -----------------------------
+  // 5. טעינת נתוני בסיס (סטטי)
   // -----------------------------
   let routesStatic = [];
   try {
@@ -116,7 +134,7 @@ module.exports.run = async function(argsObj) {
   }
 
   // -----------------------------
-  // 5. פונקציית רענון זמן אמת
+  // 6. פונקציית רענון זמן אמת
   // -----------------------------
   let keepRefreshing = true;
 
