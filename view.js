@@ -162,8 +162,8 @@ function ensureMapInstance(allPayloads) {
 if (!document.getElementById("map")) return;
 if (!mapInstance) {
 mapInstance = L.map("map");
-L.tileLayer("https://stamen-tiles.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png", {
-  maxZoom: 20,
+L.tileLayer("https://tiles.osm.de/tiles/osmde/{z}/{x}/{y}.png", {
+  maxZoom: 19,
   attribution: ""
 }).addTo(mapInstance);
 }
