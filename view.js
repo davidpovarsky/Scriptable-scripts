@@ -1,5 +1,6 @@
 // view.js
-// מכיל רק את ה-HTML string
+// מכיל את ה-HTML string
+
 module.exports.getHtml = function() {
 return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
@@ -11,28 +12,50 @@ return `<!DOCTYPE html>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <style>
-/* עדכון סגנון האייקון הכללי - שיהיה מלא ועבה */
+/* עדכון סגנון האייקון הכללי */
 .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 24; font-size: 26px; line-height: 1; }
-/* סגנונות חדשים עבור האייקון המשולב במפה */
-.bus-marker-container { position: relative; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; }
-/* סגנון לחץ הכיוון */
+
+/* קונטיינר האייקון במפה */
+.bus-marker-container { 
+    position: relative; 
+    width: 34px; height: 34px; 
+    display: flex; justify-content: center; align-items: center; 
+}
+
+/* --- תיקון החץ: כעת הוא מסתובב סביב המרכז של הקונטיינר --- */
 .bus-direction-arrow {
     position: absolute;
-    top: -12px; /* ממקם את החץ מעל העיגול */
-    left: 50%;
-    transform-origin: center bottom; /* הסיבוב יתבצע ביחס לתחתית החץ */
-    width: 20px;
-    height: 20px;
-    margin-left: -10px; /* מרכוז */
-    z-index: 5;
+    top: 0; left: 0;
+    width: 100%; height: 100%; /* תופס את כל הגודל כדי להסתובב סביב המרכז */
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* מצמיד את ה-SVG לחלק העליון */
+    z-index: 1; /* מתחת לעיגול הראשי */
     pointer-events: none;
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); /* צל לחץ שיראה ברור */
 }
+
+.bus-direction-arrow svg {
+    margin-top: -14px; /* דוחף את החץ החוצה מעל העיגול */
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+}
+
 /* העיגול הראשי הצבעוני */
-.main-bus-icon { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.4); border: 2px solid #fff; box-sizing: border-box; z-index: 10; }
+.main-bus-icon { 
+    width: 34px; height: 34px; 
+    border-radius: 50%; 
+    display: flex; align-items: center; justify-content: center; 
+    color: #fff; 
+    box-shadow: 0 2px 5px rgba(0,0,0,0.4); 
+    border: 2px solid #fff; 
+    box-sizing: border-box; 
+    z-index: 10; /* מעל החץ */
+    position: relative;
+}
 .main-bus-icon .material-symbols-outlined { font-size: 20px; }
+
 /* התגית הקטנה עם מספר הקו */
-.route-badge { position: absolute; top: -6px; right: -6px; background: #fff; border-radius: 99px; height: 18px; min-width: 18px; padding: 0 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid currentColor; box-sizing: border-box; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 10; }
+.route-badge { position: absolute; top: -6px; right: -6px; background: #fff; border-radius: 99px; height: 18px; min-width: 18px; padding: 0 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid currentColor; box-sizing: border-box; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 20; }
+
 :root { color-scheme: light dark; }
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f4f4; color: #111; direction: rtl; }
 #topContainer { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; position: relative; }
@@ -88,7 +111,6 @@ let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; l
 let routesVisible = true;
 let allStopsLayer = null;
 
-// טיפול בכפתור הסתרה/הצגה
 document.addEventListener('DOMContentLoaded', function() {
 const toggleBtn = document.getElementById('toggleButton');
 const routesContainer = document.getElementById('routesContainer');
@@ -111,10 +133,7 @@ toggleText.textContent = 'הצג מסלולים';
 toggleIcon.textContent = 'unfold_more';
 toggleBtn.style.top = 'calc(100vh - 70px)';
 }
-// רענון גודל המפה
-if (mapInstance) {
-setTimeout(() => mapInstance.invalidateSize(), 350);
-}
+if (mapInstance) { setTimeout(() => mapInstance.invalidateSize(), 350); }
 });
 });
 
@@ -172,32 +191,37 @@ const card = document.createElement("div"); card.className = "route-card";
 initialized = true;
 }
 
-// 💡 פונקציה לייצור גוון ייחודי מאותו צבע בסיס
+// 💡 פונקציה משופרת לייצור גוון ייחודי וחזק יותר
 function getVariedColor(baseColor, idStr) {
-    // 1. המרת Hex ל-RGB
     let c = baseColor.replace('#', '');
     if (c.length === 3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
     let r = parseInt(c.substring(0,2), 16);
     let g = parseInt(c.substring(2,4), 16);
     let b = parseInt(c.substring(4,6), 16);
 
-    // 2. יצירת "ערך ייחודי" מה-ID של הקו (Hash פשוט)
     let hash = 0;
     for (let i = 0; i < idStr.length; i++) {
         hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
     }
     
-    // 3. שינוי הבהירות (Lightness) בין -20 ל +20
-    const variance = (hash % 41) - 20; 
+    // יצירת שינוי חזק יותר (בין -60 ל +60)
+    const variance = (hash % 120) - 60; 
+    
+    // שינוי ה-Tint (לא רק בהירות) ע"י השפעה שונה על הערוצים
+    // אם ה-Hash זוגי, נחזק אדום ונחליש ירוק, וכו'
+    if (hash % 2 === 0) {
+        r += variance;
+        g -= variance / 2;
+        b += variance / 3;
+    } else {
+        r -= variance / 2;
+        g += variance;
+        b -= variance / 3;
+    }
 
-    // פונקציה פנימית להגבלת הערך בין 0-255
-    const clamp = (num) => Math.min(255, Math.max(0, num));
+    const clamp = (num) => Math.min(255, Math.max(0, Math.round(num)));
+    r = clamp(r); g = clamp(g); b = clamp(b);
 
-    r = clamp(r + variance);
-    g = clamp(g + variance);
-    b = clamp(b + variance);
-
-    // 4. המרה חזרה ל-Hex
     const toHex = (n) => n.toString(16).padStart(2, '0');
     return "#" + toHex(r) + toHex(g) + toHex(b);
 }
@@ -206,43 +230,23 @@ function ensureMapInstance(allPayloads) {
 if (!document.getElementById("map")) return;
 if (!mapInstance) {
 mapInstance = L.map("map");
-
-// מפה נקייה עם שמות רחובות - Carto Light
 L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: ""
+  maxZoom: 19, attribution: ""
 }).addTo(mapInstance);
 
-// שכבת כל התחנות מכל stops.json (אם הוזרק מהסקריפט)
 if (!allStopsLayer && window.stopsDataJson) {
   try {
     const stops = JSON.parse(window.stopsDataJson || "[]");
     allStopsLayer = L.layerGroup().addTo(mapInstance);
-
     stops.forEach(st => {
-      const lat = Number(st.lat);
-      const lon = Number(st.lon);
+      const lat = Number(st.lat); const lon = Number(st.lon);
       if (!isFinite(lat) || !isFinite(lon)) return;
-
-      L.circleMarker([lat, lon], {
-        radius: 3,
-        weight: 1,
-        color: "#555",
-        fillColor: "#fff",
-        fillOpacity: 1
-      })
-      .bindTooltip(
-        (st.stopName || "") + (st.stopCode ? " (" + st.stopCode + ")" : ""),
-        {direction:"top", offset:[0,-4]}
-      )
+      L.circleMarker([lat, lon], { radius: 3, weight: 1, color: "#555", fillColor: "#fff", fillOpacity: 1 })
+      .bindTooltip((st.stopName || "") + (st.stopCode ? " (" + st.stopCode + ")" : ""), {direction:"top", offset:[0,-4]})
       .addTo(allStopsLayer);
     });
-
-  } catch (e) {
-    console.error("Error parsing/adding all stops:", e);
-  }
+  } catch (e) { console.error("Error stops:", e); }
 }
-
 }
 mapRouteLayers.forEach(l => { try { mapInstance.removeLayer(l); } catch (e) {} }); mapRouteLayers = [];
 const allLatLngs = [];
@@ -252,24 +256,21 @@ allPayloads.forEach(p => {
     const baseColor = meta.operatorColor || "#1976d2";
     const routeIdStr = String(meta.routeId);
     
-    // 💡 קביעת צבע ייחודי למסלול
+    // שימוש בפונקציית הצבע החדשה
     const specificColor = getVariedColor(baseColor, routeIdStr); 
 
     const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
     const stops = Array.isArray(p.stops) ? p.stops : [];
     const group = L.layerGroup();
     
-    // ציור קו המסלול - שימוש בצבע הייחודי
     if (shapeCoords.length) {
         const latlngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
         if (latlngs.length) {
-            // 💡 שימוש ב-specificColor
-            L.polyline(latlngs, { weight: 4, opacity: 0.9, color: specificColor }).addTo(group);
+            L.polyline(latlngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(group);
             latlngs.forEach(ll => allLatLngs.push(ll));
         }
     }
     
-    // ציור עיגולי תחנות - נשאר עם צבע אפור
     stops.forEach(s => {
         if (typeof s.lat === "number" && typeof s.lon === "number") {
             const ll = [s.lat, s.lon];
@@ -278,7 +279,6 @@ allPayloads.forEach(p => {
         }
     });
 
-    // Vehicles - יצירת האייקון החדש עם החץ
     const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
     const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
     
@@ -289,14 +289,13 @@ allPayloads.forEach(p => {
         
         if (ll) {
             const routeNum = v.routeNumber || "";
-            // קבלת זווית הכיוון (ברירת מחדל 0)
             const bearing = v.bearing || 0; 
             
-            // 💡 יצירת ה-HTML של האייקון עם החץ והצבע הייחודי
+            // המבנה החדש של האייקון - החץ מסתובב יחד עם הקונטיינר
             const iconHtml = \`
                 <div class="bus-marker-container">
                     <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
-                       <svg viewBox="0 0 24 24" width="20" height="20" fill="\${specificColor}" stroke="white" stroke-width="2">
+                       <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
                           <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
                        </svg>
                     </div>
@@ -314,7 +313,7 @@ allPayloads.forEach(p => {
                     html: iconHtml,
                     className: "",
                     iconSize: [34, 34],
-                    iconAnchor: [17, 17]
+                    iconAnchor: [17, 17] // מרכז מדויק
                 }),
                 zIndexOffset: 1000
             }).addTo(group);
@@ -336,10 +335,9 @@ const busesByStop = buildBusIndex(vehicles);
 const view = routeViews.get(String(meta.routeId)); if (!view) return;
 const { header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer } = view;
 
-// 💡 קביעת צבע ייחודי גם עבור הכרטיס
+// צבע ייחודי גם לכרטיס
 const baseColor = meta.operatorColor || "#1976d2";
-const routeIdStr = String(meta.routeId);
-const specificColor = getVariedColor(baseColor, routeIdStr);
+const specificColor = getVariedColor(baseColor, String(meta.routeId));
 
   header.style.background = specificColor;
   routeNumSpan.textContent = meta.routeNumber || meta.routeCode || "";
@@ -353,11 +351,9 @@ const specificColor = getVariedColor(baseColor, routeIdStr);
   stops.forEach((stop, idx) => {
     const row = document.createElement("div"); row.className = "stop-row";
     const timeline = document.createElement("div"); timeline.className = "timeline" + (idx===0?" first":"") + (idx===stops.length-1?" last":"");
-    // 💡 שימוש ב-specificColor לקו הזמן בתחנות
     timeline.innerHTML = '<div class="timeline-line line-top"></div><div class="timeline-circle" style="border-color:'+specificColor+'"></div><div class="timeline-line line-bottom"></div>';
     
     const main = document.createElement("div"); main.className = "stop-main";
-    // 💡 שימוש ב-specificColor למספר הסידורי
     main.innerHTML = '<div class="stop-name"><span class="seq-num" style="color:'+specificColor+'">'+(idx+1)+'.</span><span>'+stop.stopName+'</span></div><div class="stop-code">'+(stop.stopCode||"#"+stop.stopSequence)+'</div>';
     
     const buses = (stop.stopCode ? busesByStop.get(String(stop.stopCode)) : []) || [];
@@ -378,7 +374,6 @@ const specificColor = getVariedColor(baseColor, routeIdStr);
       const pos = v.positionOnLine; if (pos==null||isNaN(pos)) return;
       let y = pos * h; if (y<10) y=10; if(y>h-15) y=h-15;
       const icon = document.createElement("div"); icon.className = "bus-icon material-symbols-outlined"; icon.textContent = "directions_bus";
-      // 💡 שימוש ב-specificColor לאייקון בתוך הרשימה
       icon.style.top = y + "px"; icon.style.color = specificColor; stopsList.appendChild(icon);
     });
   }, 50);
