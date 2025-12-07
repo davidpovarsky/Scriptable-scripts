@@ -163,7 +163,7 @@ async function fetchShapeIdAndCoordsForRoute(routeInfo) {
     if (coords.length) routeInfo.shapeCoords = coords;
 
   } catch (e) {
-    console.error(`Error fetching shapes: ${e}`);
+    console.    error(`Error fetching shapes: ${e}`);
   }
 }
 
@@ -279,15 +279,15 @@ module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
         const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
         const gtfs = trip.gtfsInfo || {};
         const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
-        const bearing = typeof v.geo?.bearing === "number" ? v.geo.bearing : null; // ← חדש: כיוון מהרכב
 
         return {
           vehicleId: v.vehicleId,
           lastReported: v.lastReported,
           routeNumber: gtfs.routeNumber,
           headsign: gtfs.headsign,
+          // 💡 הוספת שדה bearing (כיוון הנסיעה)
+          bearing: v.bearing || v.geo?.bearing || 0,
           positionOnLine: typeof pos === "number" ? pos : null,
-          bearing, // ← מועבר ל־WebView
           onwardCalls: calls.map(c => ({
             stopCode: c.stopCode,
             eta: c.eta
