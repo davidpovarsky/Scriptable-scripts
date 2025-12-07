@@ -8,46 +8,138 @@ const viewService = importModule('view');
 
 // נשתמש בפונקציה אסינכרונית כדי שנוכל לקרוא לה מבחוץ
 module.exports.run = async function(argsObj) {
-  
-  // 1. קביעת מסלולים לפי התראה או ברירת מחדל
-  let ROUTES = config.DEFAULT_ROUTES;
-  const FROM_NOTIFICATION = (argsObj && argsObj.notification ? true : false);
 
+  // האם הופעל מתוך התראה
+  const FROM_NOTIFICATION = !!(argsObj && argsObj.notification);
+  const routeDate = utils.isoDateTodayLocal();
+
+  // -----------------------------
+  // 1. קביעת מסלולים ראשונית
+  // -----------------------------
+  let ROUTES = Array.isArray(config.DEFAULT_ROUTES)
+    ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
+    : [];
+
+  // קודם כל – אם הגיעה התראה עם userInfo שמכילה מסלולים, נכבד אותה
   if (argsObj && argsObj.notification && argsObj.notification.userInfo) {
-    const info = argsObj.notification.userInfo;
-    if (Array.isArray(info.routeIds)) {
-      ROUTES = info.routeIds.map((id) => ({ routeId: Number(id) }));
+    try {
+      const ui = argsObj.notification.userInfo;
+
+      // אפשרות 1: מערך אובייקטים של מסלולים
+      if (Array.isArray(ui.routes) && ui.routes.length) {
+        ROUTES = ui.routes
+          .map((r) => {
+            if (typeof r === "number") return { routeId: r };
+            if (typeof r === "string") return { routeId: Number(r) };
+            if (r && r.routeId != null) return { routeId: Number(r.routeId) };
+            return null;
+          })
+          .filter((x) => x && Number.isFinite(x.routeId));
+      }
+      // אפשרות 2: מערך של routeIds בלבד
+      else if (Array.isArray(ui.routeIds) && ui.routeIds.length) {
+        ROUTES = ui.routeIds
+          .map((id) => Number(id))
+          .filter((n) => Number.isFinite(n))
+          .map((n) => ({ routeId: n }));
+      }
+    } catch (e) {
+      console.error("Failed reading routes from notification.userInfo:", e);
     }
   }
 
-  // 2. תאריך
-  const routeDate = utils.isoDateTodayLocal();
+  // -------------------------------------------------
+  // 2. אם לא הגיעה התראה – ננסה "קווים סביבי" אוטומטית
+  // -------------------------------------------------
+  if (!FROM_NOTIFICATION) {
+    try {
+      Location.setAccuracyToBest();
+      const loc = await Location.current();
+      const userLat = loc.latitude;
+      const userLon = loc.longitude;
 
-  // 3. טעינת נתונים סטטיים (מסלולים, תחנות, shape)
-  const routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
+      // שליפת 3 התחנות הקרובות שיש להן stopCode
+      const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
+      const stopCodes = nearestStops
+        .map((s) => (s && s.stopCode != null ? String(s.stopCode) : ""))
+        .filter((c) => c);
 
-  // 4. הכנת ה-WebView
-  const html = viewService.getHtml();
+      console.log("Nearest stops:", JSON.stringify(nearestStops));
+
+      if (stopCodes.length) {
+        // קווים שיש להם זמן אמת בתחנות האלו (מבוסס על /realtime?stopCode=XXX)
+        const activeRoutes = await dataService.fetchActiveRoutesForStops(stopCodes);
+        console.log("Active routes near user:", JSON.stringify(activeRoutes));
+
+        if (Array.isArray(activeRoutes) && activeRoutes.length) {
+          ROUTES = activeRoutes;
+        }
+      }
+    } catch (e) {
+      console.error("Error while building nearby routes:", e);
+    }
+  }
+
+  // אם עדיין אין שום מסלול – נחזור לברירת מחדל
+  if (!Array.isArray(ROUTES) || !ROUTES.length) {
+    ROUTES = Array.isArray(config.DEFAULT_ROUTES)
+      ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
+      : [];
+  }
+
+  // -----------------------------
+  // 3. הכנת WebView ו-HTML
+  // -----------------------------
   const wv = new WebView();
+  const html = viewService.getHtml();
   await wv.loadHTML(html);
 
-  // 5. לולאת רענון
+  // -----------------------------
+  // 4. טעינת נתוני בסיס (סטטי)
+  // -----------------------------
+  let routesStatic = [];
+  try {
+    routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
+  } catch (e) {
+    console.error("Error fetching static routes:", e);
+  }
+
+  if (!Array.isArray(routesStatic) || !routesStatic.length) {
+    console.error("No static routes loaded at all, aborting.");
+    // בכל זאת נציג את המסך הריק כדי שלא יהיה קריסה
+    if (FROM_NOTIFICATION) {
+      await wv.present();
+    } else {
+      await wv.present(true);
+    }
+    return;
+  }
+
+  // -----------------------------
+  // 5. פונקציית רענון זמן אמת
+  // -----------------------------
   let keepRefreshing = true;
 
-  async function pushRealtimeOnce() {
-    const payloads = await dataService.fetchRealtimeForRoutes(routesStatic);
-    const js = `window.updateData(${JSON.stringify(payloads)});`;
-    await wv.evaluateJavaScript(js, false);
+  async function pushPayloadOnce() {
+    try {
+      const payloads = await dataService.fetchRealtimeForRoutes(routesStatic);
+      const js = `window.updateData(${JSON.stringify(payloads)})`;
+      await wv.evaluateJavaScript(js, false);
+    } catch (e) {
+      console.error("Error on realtime refresh:", e);
+    }
   }
 
   async function refreshLoop() {
-    await pushRealtimeOnce(); // פעם ראשונה מייד
     while (keepRefreshing) {
-      await utils.sleep(config.REFRESH_INTERVAL_MS);
+      await pushPayloadOnce();
       if (!keepRefreshing) break;
-      await pushRealtimeOnce();
+      await utils.sleep(config.REFRESH_INTERVAL_MS);
     }
   }
+
+  // נריץ רענון ראשון לפני הצגה
+  await pushPayloadOnce();
 
   // התחלת הלולאה ברקע
   const loopPromise = refreshLoop();
