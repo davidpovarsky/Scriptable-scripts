@@ -36,6 +36,84 @@ async function loadLocalStops() {
   return { byId: stopsById, byCode: stopsByCode };
 }
 
+
+// ===== פונקציות חדשות: תחנות קרובות + קווים פעילים בזמן אמת =====
+
+// חישוב "מרחק" גס בין שתי נקודות (לא במטרים, אבל מספיק להשוואה)
+function _distance2(lat1, lon1, lat2, lon2) {
+  if (typeof lat1 !== "number" || typeof lon1 !== "number" ||
+      typeof lat2 !== "number" || typeof lon2 !== "number") {
+    return Infinity;
+  }
+  const dLat = lat1 - lat2;
+  const dLon = lon1 - lon2;
+  return dLat * dLat + dLon * dLon;
+}
+
+// החזרת N תחנות הקרובות למיקום (רק תחנות שיש להן stopCode)
+module.exports.findNearestStops = async function(userLat, userLon, maxCount = 3) {
+  const { byId, byCode } = await loadLocalStops();
+  if (!byId || typeof byId.values !== "function") return [];
+
+  const candidates = [];
+  for (const s of byId.values()) {
+    if (!s) continue;
+
+    const code = s.stopCode != null ? String(s.stopCode) : "";
+    const lat = typeof s.lat === "number" ? s.lat : Number(s.lat);
+    const lon = typeof s.lon === "number" ? s.lon : Number(s.lon);
+    if (!code || !isFinite(lat) || !isFinite(lon)) continue;
+
+    const d2 = _distance2(userLat, userLon, lat, lon);
+    candidates.push({
+      stopId: s.stopId != null ? String(s.stopId) : "",
+      stopCode: code,
+      stopName: s.stopName || s.name || "",
+      lat,
+      lon,
+      _d2: d2,
+    });
+  }
+
+  candidates.sort((a, b) => a._d2 - b._d2);
+  return candidates.slice(0, maxCount).map(({ _d2, ...rest }) => rest);
+};
+
+// מחזיר רשימת מסלולים (routeId בלבד) שיש להם זמן אמת בתחנות הנתונות
+module.exports.fetchActiveRoutesForStops = async function(stopCodes) {
+  const resultMap = new Map();
+  const codesArr = Array.isArray(stopCodes) ? stopCodes : [];
+
+  for (const rawCode of codesArr) {
+    const code = rawCode != null ? String(rawCode) : "";
+    if (!code) continue;
+
+    try {
+      const url = `${config.API_BASE}/realtime?stopCode=${encodeURIComponent(code)}`;
+      const realtimeData = await utils.fetchJson(url);
+      const vehicles = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
+
+      for (const v of vehicles) {
+        if (!v || !v.trip) continue;
+        const routeIdRaw = v.trip.routeId;
+        if (routeIdRaw == null) continue;
+
+        const routeIdStr = String(routeIdRaw);
+        if (resultMap.has(routeIdStr)) continue;
+
+        const routeIdNum = Number(routeIdRaw);
+        if (!Number.isFinite(routeIdNum)) continue;
+
+        resultMap.set(routeIdStr, { routeId: routeIdNum });
+      }
+    } catch (e) {
+      console.error(`Error fetching realtime for stop ${code}: ${e}`);
+    }
+  }
+
+  return Array.from(resultMap.values());
+};
+
 // הבאת נתוני Shape
 async function fetchShapeIdAndCoordsForRoute(routeInfo) {
   try {
@@ -109,15 +187,14 @@ module.exports.fetchStaticRoutes = async function(routesConfig, routeDate) {
       };
     }).sort((a, b) => (a.stopSequence || 0) - (b.stopSequence || 0));
 
-    const operatorId = routeMeta?.operatorId ?? null;
-    const apiColor = routeMeta?.color ?? null;
-    const operatorColor = config.getOperatorColor(operatorId, apiColor);
+    const operatorId = routeMeta?.agencyId ?? routeMeta?.operatorId ?? null;
+    const operatorColor = config.getOperatorColor(operatorId, routeMeta?.color);
 
     const routeObj = {
       routeId,
-      routeCode: routeCodeStatic,
       routeDate,
       routeMeta,
+      routeCode: routeCodeStatic,
       headsign,
       routeStops,
       routeDescExact,
@@ -149,30 +226,21 @@ module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
         const realtimeData = await utils.fetchJson(realtimeUrl);
 
         const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
-        
-        const vehiclesFiltered = vehiclesRaw.filter((v) => {
-            const gtfs = v.trip?.gtfsInfo || {};
-            const rd = gtfs.routeDesc || "";
-            if (!rd) return false;
-            if (r.routeDescExact && rd === r.routeDescExact) return true;
-            if (r.routeDescPrefix && rd.startsWith(r.routeDescPrefix)) return true;
-            return false;
-        });
 
-        const slimVehicles = vehiclesFiltered.map((v) => {
+        const slimVehicles = vehiclesRaw.map((v) => {
             const trip = v.trip || {};
-            const onward = trip.onwardCalls || {};
-            const calls = Array.isArray(onward.calls) ? onward.calls : [];
+            const onwardCalls = trip.onwardCalls || {};
+            const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
             const gtfs = trip.gtfsInfo || {};
             const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
 
             return {
-            vehicleId: v.vehicleId,
-            lastReported: v.lastReported,
-            routeNumber: gtfs.routeNumber,
-            headsign: gtfs.headsign,
-            positionOnLine: typeof pos === "number" ? pos : null,
-            onwardCalls: calls.map((c) => ({ stopCode: c.stopCode, eta: c.eta })),
+              vehicleId: v.vehicleId,
+              lastReported: v.lastReported,
+              routeNumber: gtfs.routeNumber,
+              headsign: gtfs.headsign,
+              positionOnLine: typeof pos === "number" ? pos : null,
+              onwardCalls: calls.map((c) => ({ stopCode: c.stopCode, eta: c.eta })),
             };
         });
 
