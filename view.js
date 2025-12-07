@@ -11,6 +11,9 @@ module.exports.getHtml = function() {
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
+  .bus-icon-wrapper svg {
+  display: block;
+}
   .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-size: 26px; line-height: 1; }
   :root { color-scheme: light dark; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f4f4; color: #111; direction: rtl; }
@@ -137,15 +140,48 @@ module.exports.getHtml = function() {
       const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
       const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
       vehicles.forEach(v => {
-        if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
-        const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-        const ll = shapeLatLngs[idx];
-        if (ll) {
-          L.marker(ll, { icon: L.divIcon({ html: '<span class="material-symbols-outlined" style="color:' + operatorColor + '; font-size:26px;">directions_bus</span>', className: "bus-map-icon", iconSize: [26, 26] }) }).addTo(group);
-        }
-      });
-      group.addTo(mapInstance); mapRouteLayers.push(group);
-    });
+  if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
+  const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+  const ll = shapeLatLngs[idx];
+  if (!ll) return;
+
+  const routeNumber = meta.routeNumber || meta.routeCode || "";
+
+  const bubbleSvg = `
+    <svg width="32" height="20" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="16" cy="10" rx="16" ry="10"
+               fill="#ffffff"
+               stroke="${operatorColor}"
+               stroke-width="2" />
+      <text x="16" y="14"
+            font-size="12"
+            font-family="-apple-system, BlinkMacSystemFont"
+            fill="black"
+            text-anchor="middle">
+        ${routeNumber}
+      </text>
+    </svg>
+  `;
+
+  const html = `
+    <div style="position:relative; display:flex; align-items:center;">
+      <span class="material-symbols-outlined"
+            style="color:${operatorColor}; font-size:26px; margin-right:4px;
+                   font-variation-settings:'FILL' 1, 'wght' 700, 'opsz' 48;">
+        directions_bus
+      </span>
+      ${bubbleSvg}
+    </div>
+  `;
+
+  L.marker(ll, {
+    icon: L.divIcon({
+      html,
+      className: "bus-map-icon",
+      iconSize: [50, 26]
+    })
+  }).addTo(group);
+});
     if (allLatLngs.length && !mapDidInitialFit) { mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); mapDidInitialFit = true; }
   }
 
@@ -194,9 +230,46 @@ module.exports.getHtml = function() {
         vehicles.forEach(v => {
           const pos = v.positionOnLine; if (pos==null||isNaN(pos)) return;
           let y = pos * h; if (y<10) y=10; if(y>h-15) y=h-15;
-          const icon = document.createElement("div"); icon.className = "bus-icon material-symbols-outlined"; icon.textContent = "directions_bus";
-          icon.style.top = y + "px"; icon.style.color = opColor; stopsList.appendChild(icon);
-        });
+          const routeNumber = meta.routeNumber || meta.routeCode || "";
+
+const wrapper = document.createElement("div");
+wrapper.className = "bus-icon-wrapper";
+wrapper.style.position = "absolute";
+wrapper.style.right = "25px";
+wrapper.style.transform = "translate3d(50%, -50%, 0)";
+wrapper.style.top = y + "px";
+wrapper.style.display = "flex";
+wrapper.style.alignItems = "center";
+wrapper.style.gap = "4px";
+wrapper.style.pointerEvents = "none";
+
+const busIcon = document.createElement("span");
+busIcon.className = "material-symbols-outlined";
+busIcon.textContent = "directions_bus";
+busIcon.style.color = opColor;
+busIcon.style.fontSize = "24px";
+busIcon.style.fontVariationSettings = "'FILL' 1, 'wght' 700, 'opsz' 40";
+
+const bubble = document.createElement("div");
+bubble.innerHTML = `
+  <svg width="32" height="20" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="16" cy="10" rx="16" ry="10"
+             fill="#ffffff"
+             stroke="${opColor}"
+             stroke-width="2" />
+    <text x="16" y="14"
+          font-size="12"
+          font-family="-apple-system"
+          fill="black"
+          text-anchor="middle">
+      ${routeNumber}
+    </text>
+  </svg>
+`;
+
+wrapper.appendChild(busIcon);
+wrapper.appendChild(bubble);
+stopsList.appendChild(wrapper);
       }, 50);
     });
   }
