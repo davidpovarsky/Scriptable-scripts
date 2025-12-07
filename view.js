@@ -162,7 +162,10 @@ function ensureMapInstance(allPayloads) {
 if (!document.getElementById("map")) return;
 if (!mapInstance) {
 mapInstance = L.map("map");
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "" }).addTo(mapInstance);
+L.tileLayer("https://stamen-tiles.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png", {
+  maxZoom: 20,
+  attribution: ""
+}).addTo(mapInstance);
 }
 mapRouteLayers.forEach(l => { try { mapInstance.removeLayer(l); } catch (e) {} }); mapRouteLayers = [];
 const allLatLngs = [];
