@@ -279,6 +279,7 @@ module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
         const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
         const gtfs = trip.gtfsInfo || {};
         const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
+        const bearing = typeof v.geo?.bearing === "number" ? v.geo.bearing : null; // ← חדש: כיוון מהרכב
 
         return {
           vehicleId: v.vehicleId,
@@ -286,6 +287,7 @@ module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
           routeNumber: gtfs.routeNumber,
           headsign: gtfs.headsign,
           positionOnLine: typeof pos === "number" ? pos : null,
+          bearing, // ← מועבר ל־WebView
           onwardCalls: calls.map(c => ({
             stopCode: c.stopCode,
             eta: c.eta
