@@ -162,7 +162,7 @@ function ensureMapInstance(allPayloads) {
 if (!document.getElementById("map")) return;
 if (!mapInstance) {
 mapInstance = L.map("map");
-L.tileLayer("https://tiles.osm.de/tiles/osmde/{z}/{x}/{y}.png", {
+L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution: ""
 }).addTo(mapInstance);
