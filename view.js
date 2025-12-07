@@ -1,4 +1,3 @@
-
 // view.js
 // מכיל רק את ה-HTML string
 module.exports.getHtml = function() {
@@ -14,25 +13,31 @@ return `<!DOCTYPE html>
 <style>
 /* עדכון סגנון האייקון הכללי - שיהיה מלא ועבה */
 .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 24; font-size: 26px; line-height: 1; }
-/* סגנונות חדשים עבור האייקון המשולב במפה /
+/* סגנונות חדשים עבור האייקון המשולב במפה */
 .bus-marker-container { position: relative; width: 34px; height: 34px; }
-/ העיגול הראשי הצבעוני /
+/* העיגול הראשי הצבעוני */
 .main-bus-icon { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.4); border: 2px solid #fff; box-sizing: border-box; }
-.main-bus-icon .material-symbols-outlined { font-size: 20px; } / הקטנה קלה של האייקון בתוך העיגול */
+.main-bus-icon .material-symbols-outlined { font-size: 20px; }
 /* התגית הקטנה עם מספר הקו */
 .route-badge { position: absolute; top: -6px; right: -6px; background: #fff; border-radius: 99px; height: 18px; min-width: 18px; padding: 0 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid currentColor; box-sizing: border-box; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 10; }
 :root { color-scheme: light dark; }
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f4f4; color: #111; direction: rtl; }
-#topContainer { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
-#map { width: 100%; height: 260px; flex-shrink: 0; border-bottom: 1px solid #ddd; }
-#routesContainer { display: flex; flex-direction: row; gap: 12px; padding: 8px; overflow-x: auto; box-sizing: border-box; flex: 1 1 auto; }
-.route-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; }
+#topContainer { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; position: relative; }
+#map { width: 100%; height: 260px; flex-shrink: 0; border-bottom: 1px solid #ddd; transition: height 0.3s ease; }
+#map.expanded { height: calc(100vh - 80px); }
+#toggleButton { position: absolute; top: 270px; left: 50%; transform: translateX(-50%); z-index: 200; background: #fff; border: none; border-radius: 20px; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #1976d2; transition: all 0.3s ease; }
+#toggleButton:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.3); transform: translateX(-50%) translateY(-2px); }
+#toggleButton:active { transform: translateX(-50%) translateY(0); }
+#toggleButton .material-symbols-outlined { font-size: 20px; }
+#routesContainer { display: flex; flex-direction: row; gap: 12px; padding: 8px; overflow-x: auto; box-sizing: border-box; flex: 1 1 auto; transition: all 0.3s ease; }
+#routesContainer.hidden { opacity: 0; pointer-events: none; height: 0; min-height: 0; padding: 0; overflow: hidden; }
+.route-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; height: fit-content; max-height: calc(100vh - 300px); }
 header { background: #1976d2; color: #fff; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 header .line-main { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 header .route-number { font-weight: 700; font-size: 20px; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.25); }
 header .headsign { font-size: 15px; font-weight: 500; }
 header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: space-between; gap: 10px; }
-.stops-list { background: #fff; position: relative; overflow: hidden; padding: 0; padding-bottom: 20px; transform: translate3d(0,0,0); }
+.stops-list { background: #fff; position: relative; overflow-y: auto; overflow-x: hidden; padding: 0; padding-bottom: 20px; transform: translate3d(0,0,0); flex: 1; max-height: calc(100vh - 400px); }
 .stops-rows { width: 100%; }
 .stop-row { display: flex; flex-direction: row; align-items: stretch; gap: 0; min-height: 50px; }
 .timeline { width: 50px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; position: relative; }
@@ -55,11 +60,50 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 </style>
 </head>
 <body>
-<div id="topContainer"><div id="map"></div><div id="routesContainer"></div></div>
+<div id="topContainer">
+<div id="map"></div>
+<button id="toggleButton">
+<span class="material-symbols-outlined">unfold_less</span>
+<span id="toggleText">הסתר מסלולים</span>
+</button>
+<div id="routesContainer"></div>
+</div>
 <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • המפה מבוססת על מסלולי shape של KavNav.</div>
 <script>
 let payloads = []; let initialized = false; const routeViews = new Map();
 let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; let mapBusLayers = [];
+let routesVisible = true;
+
+// טיפול בכפתור הסתרה/הצגה
+document.addEventListener('DOMContentLoaded', function() {
+const toggleBtn = document.getElementById('toggleButton');
+const routesContainer = document.getElementById('routesContainer');
+const mapDiv = document.getElementById('map');
+const toggleText = document.getElementById('toggleText');
+const toggleIcon = toggleBtn.querySelector('.material-symbols-outlined');
+
+toggleBtn.addEventListener('click', function() {
+routesVisible = !routesVisible;
+if (routesVisible) {
+routesContainer.classList.remove('hidden');
+mapDiv.classList.remove('expanded');
+toggleText.textContent = 'הסתר מסלולים';
+toggleIcon.textContent = 'unfold_less';
+toggleBtn.style.top = '270px';
+} else {
+routesContainer.classList.add('hidden');
+mapDiv.classList.add('expanded');
+toggleText.textContent = 'הצג מסלולים';
+toggleIcon.textContent = 'unfold_more';
+toggleBtn.style.top = 'calc(100vh - 70px)';
+}
+// רענון גודל המפה
+if (mapInstance) {
+setTimeout(() => mapInstance.invalidateSize(), 350);
+}
+});
+});
+
 function buildBusIndex(vehicles) {
 const byStop = new Map(); const now = new Date();
 for (const v of vehicles) {
@@ -76,8 +120,10 @@ byStop.get(stopCode).push({ minutes });
 for (const arr of byStop.values()) { arr.sort((a, b) => a.minutes - b.minutes); }
 return byStop;
 }
+
 function classifyMinutes(m) { if (m <= 3) return "bus-soon"; if (m <= 7) return "bus-mid"; if (m <= 15) return "bus-far"; return "bus-late"; }
 function formatMinutesLabel(m) { return m <= 0 ? "כעת" : m + " דק׳"; }
+
 function ensureLayout(allPayloads) {
 if (initialized) return;
 const container = document.getElementById("routesContainer"); container.innerHTML = "";
@@ -110,8 +156,8 @@ const card = document.createElement("div"); card.className = "route-card";
   routeViews.set(routeIdStr, { card, header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer });
 });
 initialized = true;
-
 }
+
 function ensureMapInstance(allPayloads) {
 if (!document.getElementById("map")) return;
 if (!mapInstance) {
@@ -148,7 +194,6 @@ allLatLngs.push(ll);
     const ll = shapeLatLngs[idx];
     if (ll) {
       const routeNum = v.routeNumber || "";
-      // בניית ה-HTML של האייקון המשולב (עיגול ראשי + תג מספר קו)
       const iconHtml = \`
         <div class="bus-marker-container">
           <div class="main-bus-icon" style="background:\${operatorColor};">
@@ -161,19 +206,19 @@ allLatLngs.push(ll);
       L.marker(ll, {
          icon: L.divIcon({
              html: iconHtml,
-             className: "", // ביטול קלאס דיפולטי כדי שה-CSS שלנו ישלוט
-             iconSize: [34, 34], // גודל הקונטיינר החדש
-             iconAnchor: [17, 17] // מרכוז העוגן
+             className: "",
+             iconSize: [34, 34],
+             iconAnchor: [17, 17]
          }),
-         zIndexOffset: 1000 // וידוא שהאוטובוס תמיד מעל התחנות
+         zIndexOffset: 1000
       }).addTo(group);
     }
   });
   group.addTo(mapInstance); mapRouteLayers.push(group);
 });
 if (allLatLngs.length && !mapDidInitialFit) { mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); mapDidInitialFit = true; }
-
 }
+
 function renderAll() {
 if (!payloads || !payloads.length) return;
 ensureLayout(payloads);
@@ -223,8 +268,8 @@ const opColor = meta.operatorColor || "#1976d2";
     });
   }, 50);
 });
-
 }
+
 window.updateData = function(newP) { payloads = Array.isArray(newP) ? newP : []; renderAll(); };
 </script></body></html>`;
 };
