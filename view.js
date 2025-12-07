@@ -73,6 +73,7 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 let payloads = []; let initialized = false; const routeViews = new Map();
 let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; let mapBusLayers = [];
 let routesVisible = true;
+let allStopsLayer = null;
 
 // טיפול בכפתור הסתרה/הצגה
 document.addEventListener('DOMContentLoaded', function() {
@@ -162,10 +163,43 @@ function ensureMapInstance(allPayloads) {
 if (!document.getElementById("map")) return;
 if (!mapInstance) {
 mapInstance = L.map("map");
+
+// מפה נקייה עם שמות רחובות - Carto Light
 L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution: ""
 }).addTo(mapInstance);
+
+// שכבת כל התחנות מכל stops.json (אם הוזרק מהסקריפט)
+if (!allStopsLayer && window.stopsDataJson) {
+  try {
+    const stops = JSON.parse(window.stopsDataJson || "[]");
+    allStopsLayer = L.layerGroup().addTo(mapInstance);
+
+    stops.forEach(st => {
+      const lat = Number(st.lat);
+      const lon = Number(st.lon);
+      if (!isFinite(lat) || !isFinite(lon)) return;
+
+      L.circleMarker([lat, lon], {
+        radius: 3,
+        weight: 1,
+        color: "#555",
+        fillColor: "#fff",
+        fillOpacity: 1
+      })
+      .bindTooltip(
+        (st.stopName || "") + (st.stopCode ? " (" + st.stopCode + ")" : ""),
+        {direction:"top", offset:[0,-4]}
+      )
+      .addTo(allStopsLayer);
+    });
+
+  } catch (e) {
+    console.error("Error parsing/adding all stops:", e);
+  }
+}
+
 }
 mapRouteLayers.forEach(l => { try { mapInstance.removeLayer(l); } catch (e) {} }); mapRouteLayers = [];
 const allLatLngs = [];
