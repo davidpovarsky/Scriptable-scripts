@@ -58,24 +58,8 @@ module.exports.getHtml = function() {
 
 :root { color-scheme: light dark; }
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f4f4; color: #111; direction: rtl; }
-
-/* === קונטיינר עליון – מפה + פאנל נגרר === */
-#topContainer {
-  position: relative;
-  width: 100%;
-  height: 100vh;
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
-/* המפה – רקע מלא */
-#map {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  width: 100%;
-  height: 100%;
-  transition: none;
-}
+#topContainer { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; position: relative; }
+#map { width: 100%; height: 260px; flex-shrink: 0; border-bottom: 1px solid #ddd; transition: height 0.3s ease; position: relative; }
 
 /* כפתור "מצא אותי" */
 #locateMeBtn {
@@ -97,54 +81,69 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 }
 #locateMeBtn:active { transform: scale(0.95); }
 
-/* === פאנל נגרר למסלולים בתחתית המסך === */
+#map.expanded { height: calc(100vh - 80px); }
+
+/* אזור גרירה ומסלולים */
 #routesWrapper {
   position: absolute;
+  bottom: 0;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 140px;               /* התחלתית: מציץ יפה */
-  background: #fff;
-  border-top-left-radius: 18px;
-  border-top-right-radius: 18px;
-  box-shadow: 0 -3px 12px rgba(0,0,0,0.25);
+  background: #f4f4f4;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.15);
+  transition: transform 0.3s ease;
+  z-index: 200;
   display: flex;
   flex-direction: column;
-  touch-action: none;
-  z-index: 600;
-  transition: height 0.2s ease;
+  height: calc(100vh - 260px);
 }
 
-/* הידית לגרירה */
+#routesWrapper.collapsed {
+  transform: translateY(calc(100% - 40px));
+}
+
 #dragHandle {
-  width: 56px;
-  height: 6px;
-  border-radius: 3px;
-  background: #c0c0c0;
-  margin: 6px auto 4px auto;
+  height: 40px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  flex-shrink: 0;
+  border-bottom: 1px solid #ddd;
 }
 
-/* קונטיינר המסלולים – בתוך הפאנל */
+#dragHandle:active {
+  cursor: grabbing;
+}
+
+#dragHandle .handle-bar {
+  width: 40px;
+  height: 4px;
+  background: #ccc;
+  border-radius: 2px;
+}
+
 #routesContainer {
   display: flex;
   flex-direction: row;
   gap: 12px;
   padding: 8px;
   overflow-x: auto;
+  overflow-y: hidden;
   box-sizing: border-box;
   flex: 1 1 auto;
 }
 
-/* ✂️ אין יותר #routesContainer.hidden או #toggleButton */
-
-/* כרטיסי מסלול וכו' – כמו קודם */
-.route-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; height: fit-content; max-height: calc(100vh - 300px); }
+.route-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; height: fit-content; max-height: calc(100vh - 340px); }
 header { background: #1976d2; color: #fff; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 header .line-main { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 header .route-number { font-weight: 700; font-size: 20px; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.25); }
 header .headsign { font-size: 15px; font-weight: 500; }
 header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: space-between; gap: 10px; }
-.stops-list { background: #fff; position: relative; overflow-y: auto; overflow-x: hidden; padding: 0; padding-bottom: 20px; transform: translate3d(0,0,0); flex: 1; max-height: calc(100vh - 400px); }
+.stops-list { background: #fff; position: relative; overflow-y: auto; overflow-x: hidden; padding: 0; padding-bottom: 20px; transform: translate3d(0,0,0); flex: 1; max-height: calc(100vh - 440px); }
 .stops-rows { width: 100%; }
 .stop-row { display: flex; flex-direction: row; align-items: stretch; gap: 0; min-height: 50px; }
 .timeline { width: 50px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; position: relative; }
@@ -171,10 +170,10 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
   <div id="map">
     <button id="locateMeBtn" title="התמקדות למיקום שלי">📍</button>
   </div>
-
-  <!-- ✅ פאנל נגרר חדש במקום הכפתור -->
   <div id="routesWrapper">
-    <div id="dragHandle"></div>
+    <div id="dragHandle">
+      <div class="handle-bar"></div>
+    </div>
     <div id="routesContainer"></div>
   </div>
 </div>
@@ -182,79 +181,99 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 <script>
 let payloads = []; let initialized = false; const routeViews = new Map();
 let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; let mapBusLayers = [];
-let routesVisible = true;
 let allStopsLayer = null;
 
 // מיקום משתמש (מוזרק מסקריפט Scriptable)
 let userLocation = null;
 let userLocationMarker = null;
 
+// משתני גרירה
+let isDragging = false;
+let startY = 0;
+let startTransform = 0;
+let isCollapsed = false;
+
 document.addEventListener('DOMContentLoaded', function() {
-  const wrapper = document.getElementById('routesWrapper');
-  const handle = document.getElementById('dragHandle');
-  const routesContainer = document.getElementById('routesContainer');
+  const routesWrapper = document.getElementById('routesWrapper');
+  const dragHandle = document.getElementById('dragHandle');
   const mapDiv = document.getElementById('map');
   const locateBtn = document.getElementById('locateMeBtn');
 
-  let dragging = false;
-  let startY = 0;
-  let startHeight = 0;
+  // לוגיקת גרירה
+  function handleDragStart(e) {
+    isDragging = true;
+    dragHandle.style.cursor = 'grabbing';
+    
+    const touch = e.touches ? e.touches[0] : e;
+    startY = touch.clientY;
+    
+    // קבלת הערך הנוכחי של transform
+    const style = window.getComputedStyle(routesWrapper);
+    const matrix = new DOMMatrix(style.transform);
+    startTransform = matrix.m42; // translateY value
+    
+    routesWrapper.style.transition = 'none';
+  }
 
-  const MIN_HEIGHT = 100; // תמיד מציץ יפה
-  const MAX_HEIGHT = Math.max(200, window.innerHeight - 40); // B1 – משאיר 40px למעלה
+  function handleDragMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    
+    const touch = e.touches ? e.touches[0] : e;
+    const deltaY = touch.clientY - startY;
+    const newTransform = startTransform + deltaY;
+    
+    // הגבלות: לא יותר מלמעלה (0) ולא יותר למטה מגובה מלא פחות 40px
+    const maxTransform = routesWrapper.offsetHeight - 40;
+    const clampedTransform = Math.max(0, Math.min(maxTransform, newTransform));
+    
+    routesWrapper.style.transform = `translateY(${clampedTransform}px)`;
+  }
 
-  function applyHeight(panelHeight) {
-    let h = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, panelHeight));
-    wrapper.style.height = h + 'px';
-
-    // המפה היא פול-סקין ברקע – לא משנים height, רק invalidate
+  function handleDragEnd(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    dragHandle.style.cursor = 'grab';
+    
+    routesWrapper.style.transition = 'transform 0.3s ease';
+    
+    // קביעה אם לסגור או לפתוח בהתאם למיקום
+    const currentTransform = parseFloat(routesWrapper.style.transform.match(/translateY\(([^)]+)px\)/)?.[1] || 0);
+    const threshold = (routesWrapper.offsetHeight - 40) / 2;
+    
+    if (currentTransform > threshold) {
+      // סגירה
+      routesWrapper.classList.add('collapsed');
+      isCollapsed = true;
+      mapDiv.classList.add('expanded');
+    } else {
+      // פתיחה
+      routesWrapper.classList.remove('collapsed');
+      isCollapsed = false;
+      mapDiv.classList.remove('expanded');
+    }
+    
+    // איפוס ה-inline transform
+    setTimeout(() => {
+      routesWrapper.style.transform = '';
+    }, 300);
+    
     if (mapInstance) {
-      setTimeout(() => mapInstance.invalidateSize(), 100);
+      setTimeout(() => mapInstance.invalidateSize(), 350);
     }
   }
 
-  // גובה התחלתי
-  applyHeight(140);
+  // אירועי עכבר
+  dragHandle.addEventListener('mousedown', handleDragStart);
+  document.addEventListener('mousemove', handleDragMove);
+  document.addEventListener('mouseup', handleDragEnd);
 
-  function getClientY(ev) {
-    if (ev.touches && ev.touches.length) return ev.touches[0].clientY;
-    if (ev.changedTouches && ev.changedTouches.length) return ev.changedTouches[0].clientY;
-    return ev.clientY;
-  }
+  // אירועי מגע
+  dragHandle.addEventListener('touchstart', handleDragStart, { passive: false });
+  document.addEventListener('touchmove', handleDragMove, { passive: false });
+  document.addEventListener('touchend', handleDragEnd);
 
-  function onDragStart(ev) {
-    dragging = true;
-    startY = getClientY(ev);
-    startHeight = wrapper.offsetHeight;
-  }
-
-  function onDragMove(ev) {
-    if (!dragging) return;
-    const currentY = getClientY(ev);
-    const delta = startY - currentY;      // למעלה = גדל, למטה = קטן
-    applyHeight(startHeight + delta);
-    if (ev.cancelable) ev.preventDefault();
-  }
-
-  function onDragEnd() {
-    dragging = false;
-  }
-
-  // תמיכה ב-Touch
-  if (handle) {
-    handle.addEventListener('touchstart', onDragStart, { passive: true });
-    document.addEventListener('touchmove', onDragMove, { passive: false });
-    document.addEventListener('touchend', onDragEnd);
-  }
-
-  // תמיכה בעכבר
-  if (handle) {
-    handle.addEventListener('mousedown', onDragStart);
-    document.addEventListener('mousemove', onDragMove);
-    document.addEventListener('mouseup', onDragEnd);
-  }
-
-  // כפתור "מצא אותי" – משתמש במיקום שקיבלנו מהאפליקציה
+  // כפתור "מצא אותי"
   if (locateBtn) {
     locateBtn.addEventListener('click', () => {
       if (userLocation && typeof userLocation.lat === "number" && typeof userLocation.lon === "number") {
@@ -266,7 +285,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// פונקציה שממקד את המפה למיקום המשתמש ומצייר עיגול פשוט
+// פונקציה שממקדת את המפה למיקום המשתמש ומציירת עיגול פשוט
 function focusMapOnUser(lat, lon) {
   if (!mapInstance) return;
   if (typeof lat !== "number" || typeof lon !== "number") return;
@@ -349,7 +368,7 @@ function ensureLayout(allPayloads) {
   initialized = true;
 }
 
-// 💡 פונקציה משופרת לייצור גוון ייחודי וחזק יותר
+// 💡 פונקציה משופרת ליצור גוון ייחודי וחזק יותר
 function getVariedColor(baseColor, idStr) {
     let c = baseColor.replace('#', '');
     if (c.length === 3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
@@ -450,21 +469,21 @@ function ensureMapInstance(allPayloads) {
               const bearing = v.bearing || 0; 
               
               // המבנה החדש של האייקון - החץ מסתובב יחד עם הקונטיינר
-              const iconHtml = \`
+              const iconHtml = `
                   <div class="bus-marker-container">
-                      <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
-                         <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
+                      <div class="bus-direction-arrow" style="transform: rotate(${bearing}deg);">
+                         <svg viewBox="0 0 24 24" width="24" height="24" fill="${specificColor}" stroke="white" stroke-width="2">
                             <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
                          </svg>
                       </div>
 
-                      <div class="main-bus-icon" style="background:\${specificColor};">
+                      <div class="main-bus-icon" style="background:${specificColor};">
                           <span class="material-symbols-outlined">directions_bus</span>
                       </div>
 
-                      \${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}
+                      ${routeNum ? `<div class="route-badge" style="color:${specificColor}; border-color:${specificColor};">${routeNum}</div>` : ''}
                   </div>
-              \`;
+              `;
               
               L.marker(ll, {
                   icon: L.divIcon({
