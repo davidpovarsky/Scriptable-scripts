@@ -52,11 +52,12 @@ module.exports.run = async function(argsObj) {
   // 2. אם לא הגיעה התראה – ננסה "קווים סביבי" אוטומטית
   // -------------------------------------------------
   if (!FROM_NOTIFICATION) {
+
   let userLat = null;
   let userLon = null;
 
+  // ניסיון מהמכשיר
   try {
-    // ניסיון לקבל מיקום מהמכשיר
     Location.setAccuracyToBest();
     const loc = await Location.current();
 
@@ -69,23 +70,24 @@ module.exports.run = async function(argsObj) {
     console.error("Device location failed:", e);
   }
 
-  // ---- Fallback אוטומטי ----
+  // שימוש ב־fallback אם המכשיר לא נתן מיקום
   if (userLat === null || userLon === null) {
-    console.log("Using fallback location (server)");
+    console.log("Using fallback location from server…");
     const fallback = await utils.loadFallbackLocation();
+
     userLat = fallback.lat;
     userLon = fallback.lon;
 
     console.log("Server location:", fallback);
   }
 
-  // במקרה שגם fallback לא הצליח → לא מבצעים Nearby
+  // אם עדיין אין מיקום → מדלגים
   if (userLat != null && userLon != null) {
     try {
       const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
       const stopCodes = nearestStops
-        .map((s) => (s && s.stopCode != null ? String(s.stopCode) : ""))
-        .filter((c) => c);
+        .map((s) => (s && s.stopCode ? String(s.stopCode) : ""))
+        .filter(Boolean);
 
       console.log("Nearest stops:", JSON.stringify(nearestStops));
 
