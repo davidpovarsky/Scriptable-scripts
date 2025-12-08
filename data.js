@@ -176,6 +176,7 @@ module.exports.fetchStaticRoutes = async function(routesConfig, routeDate) {
 
     try {
       const url = `${config.API_BASE}/route?routeId=${encodeURIComponent(routeId)}&date=${encodeURIComponent(routeDate)}`;
+      console.log("STATIC ROUTE URL:", url);
       routeData = await utils.fetchJson(url);
     } catch (e) {
       console.error(`Error fetching route ${routeId}: ${e}`);
