@@ -43,11 +43,12 @@ module.exports.run = async function(argsObj) {
     }
   }
 
+  // נשמור מיקום משתמש כדי להעביר ל-HTML
+  let userLat = null;
+  let userLon = null;
+
   // 2. קווים סביבי אוטומטית
   if (!FROM_NOTIFICATION) {
-
-    let userLat = null;
-    let userLon = null;
 
     // ניסיון מהמכשיר
     try {
@@ -107,6 +108,16 @@ module.exports.run = async function(argsObj) {
   const wv = new WebView();
   const html = viewService.getHtml();
   await wv.loadHTML(html);
+
+  // העברת מיקום המשתמש (אם קיים) ל-HTML – הכפתור 📍 ישתמש בזה
+  if (userLat != null && userLon != null) {
+    try {
+      const jsUserLoc = `window.setUserLocation && window.setUserLocation(${userLat}, ${userLon});`;
+      await wv.evaluateJavaScript(jsUserLoc, false);
+    } catch (e) {
+      console.error("Failed injecting user location into WebView:", e);
+    }
+  }
 
   // 4. הזרקת stops.json
   try {
