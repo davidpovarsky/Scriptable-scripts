@@ -145,7 +145,7 @@ for (const c of calls) {
 if (!c || !c.stopCode || !c.eta) continue;
 const stopCode = String(c.stopCode); const etaDate = new Date(c.eta);
 let minutes = Math.round((etaDate.getTime() - now.getTime()) / 60000);
-if (minutes < -2) continue;
+if (minutes < -0) continue;
 if (!byStop.has(stopCode)) byStop.set(stopCode, []);
 byStop.get(stopCode).push({ minutes });
 }
