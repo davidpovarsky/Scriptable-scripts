@@ -1,5 +1,5 @@
 // view.js
-// מכיל את ה-HTML string
+// מכיל את ה-HTML  string
 
 module.exports.getHtml = function() {
   return `<!DOCTYPE html>
