@@ -26,16 +26,16 @@ module.exports.getHtml = function() {
 .bus-direction-arrow {
     position: absolute;
     top: 0; left: 0;
-    width: 100%; height: 100%; /* תופס את כל הגודל כדי להסתובב סביב המרכז */
+    width: 100%; height: 100%;
     display: flex;
     justify-content: center;
-    align-items: flex-start; /* מצמיד את ה-SVG לחלק העליון */
-    z-index: 1; /* מתחת לעיגול הראשי */
+    align-items: flex-start;
+    z-index: 1;
     pointer-events: none;
 }
 
 .bus-direction-arrow svg {
-    margin-top: -14px; /* דוחף את החץ החוצה מעל העיגול */
+    margin-top: -14px;
     filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
 }
 
@@ -48,7 +48,7 @@ module.exports.getHtml = function() {
     box-shadow: 0 2px 5px rgba(0,0,0,0.4); 
     border: 2px solid #fff; 
     box-sizing: border-box; 
-    z-index: 10; /* מעל החץ */
+    z-index: 10;
     position: relative;
 }
 .main-bus-icon .material-symbols-outlined { font-size: 20px; }
@@ -63,21 +63,19 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 /* המפה תופסת את כל המסך ברקע */
 #map { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; z-index: 0; }
 
-/* כפתור "מצא אותי" - ממוקם מחדש */
+/* כפתור "מצא אותי" */
 #locateMeBtn { position: absolute; top: 15px; left: 15px; z-index: 500; background: #ffffff; border: none; border-radius: 8px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 #locateMeBtn:active { transform: scale(0.95); background: #f0f0f0; }
 
-/* --- Bottom Sheet Container (המגירה הנגררת) --- */
+/* --- Bottom Sheet --- */
 #bottomSheet { position: absolute; bottom: 0; left: 0; right: 0; background: #fff; z-index: 1000; border-top-left-radius: 20px; border-top-right-radius: 20px; box-shadow: 0 -2px 15px rgba(0,0,0,0.15); display: flex; flex-direction: column; height: 45vh; min-height: 60px; max-height: 95vh; transition: height 0.3s cubic-bezier(0.25, 1, 0.5, 1); }
 
-/* ידית הגרירה */
 #dragHandleArea { width: 100%; height: 30px; flex-shrink: 0; display: flex; justify-content: center; align-items: center; cursor: grab; touch-action: none; background: #fff; border-top-left-radius: 20px; border-top-right-radius: 20px; }
 .handle-bar { width: 40px; height: 5px; background-color: #e0e0e0; border-radius: 10px; }
 
-/* קונטיינר המסלולים */
 #routesContainer { flex: 1; display: flex; flex-direction: row; gap: 12px; padding: 10px; padding-top: 0; overflow-x: auto; overflow-y: hidden; box-sizing: border-box; background: #fff; }
 
-/* כרטיס מסלול מעודכן */
+/* כרטיס מסלול */
 .route-card { background: #fff; border-radius: 12px; border: 1px solid #eee; min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; height: 100%; }
 
 header { background: #1976d2; color: #fff; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
@@ -85,6 +83,7 @@ header .line-main { display: flex; justify-content: space-between; align-items: 
 header .route-number { font-weight: 700; font-size: 20px; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.25); }
 header .headsign { font-size: 15px; font-weight: 500; }
 header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: space-between; gap: 10px; }
+
 .stops-list { background: #fff; position: relative; overflow-y: auto; overflow-x: hidden; padding: 0; padding-bottom: 20px; transform: translate3d(0,0,0); flex: 1; max-height: calc(100vh - 400px); }
 .stops-rows { width: 100%; }
 .stop-row { display: flex; flex-direction: row; align-items: stretch; gap: 0; min-height: 50px; }
@@ -131,10 +130,8 @@ let userLocation = null;
 let userLocationMarker = null;
 
 document.addEventListener('DOMContentLoaded', function() {
-    // אתחול גרירה
     initBottomSheet();
     
-    // כפתור מצא אותי
     const locateBtn = document.getElementById('locateMeBtn');
     if (locateBtn) {
         locateBtn.addEventListener('click', () => {
@@ -145,14 +142,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// --- לוגיקת גרירת המגירה ---
 function initBottomSheet() {
     const sheet = document.getElementById('bottomSheet');
     const handle = document.getElementById('dragHandleArea');
     
-    const SNAP_MIN = 60; // מצב ממוזער
-    const SNAP_MID_PERCENT = 0.45; // מצב אמצע (45%)
-    const SNAP_MAX_PERCENT = 0.90; // מצב מלא (90%)
+    const SNAP_MIN = 60;
+    const SNAP_MID_PERCENT = 0.45;
+    const SNAP_MAX_PERCENT = 0.90;
 
     let startY = 0;
     let startHeight = 0;
@@ -162,12 +158,12 @@ function initBottomSheet() {
         isDragging = true;
         startY = e.touches[0].clientY;
         startHeight = sheet.getBoundingClientRect().height;
-        sheet.style.transition = 'none'; // ללא אנימציה בזמן גרירה
+        sheet.style.transition = 'none';
     }, { passive: false });
 
     document.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
-        e.preventDefault(); 
+        e.preventDefault();
         const currentY = e.touches[0].clientY;
         const delta = startY - currentY;
         let newHeight = startHeight + delta;
@@ -189,7 +185,6 @@ function initBottomSheet() {
         const midPoint = windowHeight * SNAP_MID_PERCENT;
         const maxPoint = windowHeight * SNAP_MAX_PERCENT;
         
-        // חישוב לאן לקפוץ
         const distToMin = Math.abs(currentHeight - SNAP_MIN);
         const distToMid = Math.abs(currentHeight - midPoint);
         const distToMax = Math.abs(currentHeight - maxPoint);
@@ -204,7 +199,6 @@ function initBottomSheet() {
     });
 }
 
-// פונקציה שממקד את המפה למיקום המשתמש ומצייר עיגול פשוט
 function focusMapOnUser(lat, lon) {
   if (!mapInstance) return;
   if (typeof lat !== "number" || typeof lon !== "number") return;
@@ -227,7 +221,6 @@ function focusMapOnUser(lat, lon) {
   mapInstance.setView(latLng, 16);
 }
 
-// פונקציה שסקריפט Scriptable יקרא אליה כדי להגדיר את מיקום המשתמש
 window.setUserLocation = function(lat, lon) {
   if (typeof lat !== "number" || typeof lon !== "number") return;
   userLocation = { lat, lon };
@@ -287,7 +280,7 @@ function ensureLayout(allPayloads) {
   initialized = true;
 }
 
-// 💡 פונקציה משופרת לייצור גוון ייחודי וחזק יותר
+// 💡 גוון ייחודי לכל routeId
 function getVariedColor(baseColor, idStr) {
     let c = baseColor.replace('#', '');
     if (c.length === 3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
@@ -300,11 +293,8 @@ function getVariedColor(baseColor, idStr) {
         hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
     }
     
-    // יצירת שינוי חזק יותר (בין -60 ל +60)
     const variance = (hash % 120) - 60; 
     
-    // שינוי ה-Tint (לא רק בהירות) ע"י השפעה שונה על הערוצים
-    // אם ה-Hash זוגי, נחזק אדום ונחליש ירוק, וכו'
     if (hash % 2 === 0) {
         r += variance;
         g -= variance / 2;
@@ -322,7 +312,7 @@ function getVariedColor(baseColor, idStr) {
     return "#" + toHex(r) + toHex(g) + toHex(b);
 }
 
-// 🔹 פונקציות עזר ל־Snap למסלול לפי GPS
+/* 🔹 פונקציות עזר ל-Snap למסלול לפי GPS */
 function dist2(lat1, lon1, lat2, lon2) {
   const dLat = lat1 - lat2;
   const dLon = lon1 - lon2;
@@ -397,45 +387,43 @@ function ensureMapInstance(allPayloads) {
       const meta = p.meta || {}; 
       const baseColor = meta.operatorColor || "#1976d2";
       const routeIdStr = String(meta.routeId);
-      
-      // שימוש בפונקציית הצבע החדשה
       const specificColor = getVariedColor(baseColor, routeIdStr); 
 
       const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
       const stops = Array.isArray(p.stops) ? p.stops : [];
       const group = L.layerGroup();
       
+      let shapeLatLngs = [];
       if (shapeCoords.length) {
-          const latlngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
-          if (latlngs.length) {
-              L.polyline(latlngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(group);
-              latlngs.forEach(ll => allLatLngs.push(ll));
+          shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
+          if (shapeLatLngs.length) {
+              L.polyline(shapeLatLngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(group);
+              shapeLatLngs.forEach(ll => allLatLngs.push(ll));
           }
       }
       
       stops.forEach(s => {
           if (typeof s.lat === "number" && typeof s.lon === "number") {
               const ll = [s.lat, s.lon];
-              L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" }).bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]}).addTo(group);
+              L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" })
+                .bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]})
+                .addTo(group);
               allLatLngs.push(ll);
           }
       });
 
       const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-      const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
       
       vehicles.forEach(v => {
           if (!shapeLatLngs.length) return;
 
           let ll = null;
-
-          // 🔹 1) ניסיון ראשון: GPS אמיתי → Snap למסלול
           const hasGps = (typeof v.lat === "number") && (typeof v.lon === "number");
+
           if (hasGps) {
             ll = snapToPolyline(v.lat, v.lon, shapeLatLngs);
           }
 
-          // 🔹 2) fallback: positionOnLine אם אין GPS או אם snap נכשל
           if (!ll && typeof v.positionOnLine === "number") {
             const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
             ll = shapeLatLngs[idx] || null;
@@ -446,29 +434,28 @@ function ensureMapInstance(allPayloads) {
           const routeNum = v.routeNumber || "";
           const bearing = v.bearing || 0; 
           
-          // המבנה החדש של האייקון - החץ מסתובב יחד עם הקונטיינר
-          const iconHtml = `
+          const iconHtml = \`
               <div class="bus-marker-container">
-                  <div class="bus-direction-arrow" style="transform: rotate(${bearing}deg);">
-                     <svg viewBox="0 0 24 24" width="24" height="24" fill="${specificColor}" stroke="white" stroke-width="2">
+                  <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
+                     <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
                         <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
                      </svg>
                   </div>
 
-                  <div class="main-bus-icon" style="background:${specificColor};">
+                  <div class="main-bus-icon" style="background:\${specificColor};">
                       <span class="material-symbols-outlined">directions_bus</span>
                   </div>
 
-                  ${routeNum ? `<div class="route-badge" style="color:${specificColor}; border-color:${specificColor};">${routeNum}</div>` : ''}
+                  \${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}
               </div>
-          `;
+          \`;
           
           L.marker(ll, {
               icon: L.divIcon({
                   html: iconHtml,
                   className: "",
                   iconSize: [34, 34],
-                  iconAnchor: [17, 17] // מרכז מדויק
+                  iconAnchor: [17, 17]
               }),
               zIndexOffset: 1000
           }).addTo(group);
@@ -489,7 +476,6 @@ function renderAll() {
     const view = routeViews.get(String(meta.routeId)); if (!view) return;
     const { header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer } = view;
 
-    // צבע ייחודי גם לכרטיס
     const baseColor = meta.operatorColor || "#1976d2";
     const specificColor = getVariedColor(baseColor, String(meta.routeId));
 
