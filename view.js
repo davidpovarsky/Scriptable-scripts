@@ -114,6 +114,37 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 .bus-late { background: #f5f5f5; color: #757575; border: 1px solid #e0e0e0; }
 .footer-note-global { margin: 4px 0 10px; font-size: 10px; color: #999; text-align: center; }
 .bus-icon { position: absolute; right: 25px; font-size: 24px; z-index: 50; pointer-events: none; will-change: top; transform: translate3d(50%, -50%, 0); -webkit-transform: translate3d(50%, -50%, 0); backface-visibility: hidden; transition: top 1s linear; }
+/* === DRAGGABLE ROUTES PANEL === */
+
+#routesWrapper {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px; /* החלק שתמיד מציץ */
+  background: #fff;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+  transition: height 0.25s ease, transform 0.2s ease;
+  overflow: hidden;
+  touch-action: none;
+}
+
+#dragHandle {
+  width: 50px;
+  height: 6px;
+  background: #ccc;
+  border-radius: 3px;
+  margin: 8px auto;
+}
+
+#routesContainer {
+  height: calc(100% - 30px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px;
+}
 </style>
 </head>
 <body>
@@ -121,10 +152,10 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
   <div id="map">
     <button id="locateMeBtn" title="התמקדות למיקום שלי">📍</button>
   </div>
-  <button id="toggleButton">
-    <span class="material-symbols-outlined">unfold_less</span>
-    <span id="toggleText">הסתר מסלולים</span>
-  </button>
+ <div id="routesWrapper">
+  <div id="dragHandle"></div>
+  <div id="routesContainer"></div>
+</div>
   <div id="routesContainer"></div>
 </div>
 <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • המפה מבוססת על מסלולי shape של KavNav.</div>
@@ -138,31 +169,42 @@ let allStopsLayer = null;
 let userLocation = null;
 let userLocationMarker = null;
 
-document.addEventListener('DOMContentLoaded', function() {
-  const toggleBtn = document.getElementById('toggleButton');
-  const routesContainer = document.getElementById('routesContainer');
-  const mapDiv = document.getElementById('map');
-  const toggleText = document.getElementById('toggleText');
-  const toggleIcon = toggleBtn.querySelector('.material-symbols-outlined');
-  const locateBtn = document.getElementById('locateMeBtn');
+document.addEventListener("DOMContentLoaded", function () {
 
-  toggleBtn.addEventListener('click', function() {
-    routesVisible = !routesVisible;
-    if (routesVisible) {
-      routesContainer.classList.remove('hidden');
-      mapDiv.classList.remove('expanded');
-      toggleText.textContent = 'הסתר מסלולים';
-      toggleIcon.textContent = 'unfold_less';
-      toggleBtn.style.top = '270px';
-    } else {
-      routesContainer.classList.add('hidden');
-      mapDiv.classList.add('expanded');
-      toggleText.textContent = 'הצג מסלולים';
-      toggleIcon.textContent = 'unfold_more';
-      toggleBtn.style.top = 'calc(100vh - 70px)';
+  const wrapper = document.getElementById("routesWrapper");
+  const handle = document.getElementById("dragHandle");
+  const mapDiv = document.getElementById("map");
+
+  let startY = 0;
+  let startHeight = 0;
+  const MIN_HEIGHT = 40;                        // כמה תמיד מציץ
+  const MAX_HEIGHT = window.innerHeight * 0.65; // כמה הפאנל יכול להיפתח
+
+  function setHeight(h) {
+    h = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, h));
+    wrapper.style.height = h + "px";
+
+    // המפה מתעדכנת לפי גובה חדש
+    mapDiv.style.height = (window.innerHeight - h - 20) + "px";
+
+    if (window.mapInstance) {
+      setTimeout(() => mapInstance.invalidateSize(), 120);
     }
-    if (mapInstance) { setTimeout(() => mapInstance.invalidateSize(), 350); }
+  }
+
+  // התחלת גרירה
+  handle.addEventListener("touchstart", (e) => {
+    startY = e.touches[0].clientY;
+    startHeight = wrapper.offsetHeight;
   });
+
+  // גרירה בפועל
+  handle.addEventListener("touchmove", (e) => {
+    const delta = startY - e.touches[0].clientY;
+    setHeight(startHeight + delta);
+  });
+
+});
 
   // כפתור "מצא אותי" – משתמש במיקום שקיבלנו מהאפליקציה
   if (locateBtn) {
