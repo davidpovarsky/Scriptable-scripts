@@ -58,36 +58,24 @@ module.exports.getHtml = function() {
 
 :root { color-scheme: light dark; }
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f4f4; color: #111; direction: rtl; }
-#topContainer { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; position: relative; }
-#map { width: 100%; height: 260px; flex-shrink: 0; border-bottom: 1px solid #ddd; transition: height 0.3s ease; position: relative; }
 
-/* פאנל נגרר למסלולים בתחתית המסך */
-#routesWrapper {
+/* === קונטיינר עליון – מפה + פאנל נגרר === */
+#topContainer {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* המפה – רקע מלא */
+#map {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 80px; /* גובה התחלתי: מציץ מעט */
-  background: #fff;
-  border-top-left-radius: 14px;
-  border-top-right-radius: 14px;
-  box-shadow: 0 -3px 10px rgba(0,0,0,0.25);
-  display: flex;
-  flex-direction: column;
-  touch-action: none;
-  transition: height 0.25s ease;
-  z-index: 300;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%;
+  height: 100%;
+  transition: none;
 }
-
-#dragHandle {
-  width: 56px;
-  height: 6px;
-  border-radius: 3px;
-  background: #c0c0c0;
-  margin: 6px auto 2px auto;
-}
-
-/* routesContainer כעת יושב בתוך הפאנל הנגרר ותופס את שאר הגובה */
 
 /* כפתור "מצא אותי" */
 #locateMeBtn {
@@ -109,13 +97,47 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 }
 #locateMeBtn:active { transform: scale(0.95); }
 
-#map.expanded { height: calc(100vh - 80px); }
-#toggleButton { position: absolute; top: 270px; left: 50%; transform: translateX(-50%); z-index: 200; background: #fff; border: none; border-radius: 20px; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #1976d2; transition: all 0.3s ease; }
-#toggleButton:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.3); transform: translateX(-50%) translateY(-2px); }
-#toggleButton:active { transform: translateX(-50%) translateY(0); }
-#toggleButton .material-symbols-outlined { font-size: 20px; }
-#routesContainer { display: flex; flex-direction: row; gap: 12px; padding: 8px; overflow-x: auto; box-sizing: border-box; flex: 1 1 auto; transition: all 0.3s ease; }
-#routesContainer.hidden { opacity: 0; pointer-events: none; height: 0; min-height: 0; padding: 0; overflow: hidden; }
+/* === פאנל נגרר למסלולים בתחתית המסך === */
+#routesWrapper {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 140px;               /* התחלתית: מציץ יפה */
+  background: #fff;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  box-shadow: 0 -3px 12px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  touch-action: none;
+  z-index: 600;
+  transition: height 0.2s ease;
+}
+
+/* הידית לגרירה */
+#dragHandle {
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: #c0c0c0;
+  margin: 6px auto 4px auto;
+}
+
+/* קונטיינר המסלולים – בתוך הפאנל */
+#routesContainer {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  padding: 8px;
+  overflow-x: auto;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+}
+
+/* ✂️ אין יותר #routesContainer.hidden או #toggleButton */
+
+/* כרטיסי מסלול וכו' – כמו קודם */
 .route-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; height: fit-content; max-height: calc(100vh - 300px); }
 header { background: #1976d2; color: #fff; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 header .line-main { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -149,6 +171,8 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
   <div id="map">
     <button id="locateMeBtn" title="התמקדות למיקום שלי">📍</button>
   </div>
+
+  <!-- ✅ פאנל נגרר חדש במקום הכפתור -->
   <div id="routesWrapper">
     <div id="dragHandle"></div>
     <div id="routesContainer"></div>
@@ -176,25 +200,21 @@ document.addEventListener('DOMContentLoaded', function() {
   let startY = 0;
   let startHeight = 0;
 
-  const MIN_HEIGHT = 80; // כמה תמיד מציץ
-  const MAX_HEIGHT = Math.min(window.innerHeight * 0.8, window.innerHeight - 120);
+  const MIN_HEIGHT = 100; // תמיד מציץ יפה
+  const MAX_HEIGHT = Math.max(200, window.innerHeight - 40); // B1 – משאיר 40px למעלה
 
-  function applyHeights(panelHeight) {
-    const h = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, panelHeight));
+  function applyHeight(panelHeight) {
+    let h = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, panelHeight));
     wrapper.style.height = h + 'px';
 
-    const mapHeight = window.innerHeight - h;
-    if (mapHeight > 120) {
-      mapDiv.style.height = mapHeight + 'px';
-    }
-
+    // המפה היא פול-סקין ברקע – לא משנים height, רק invalidate
     if (mapInstance) {
-      setTimeout(() => mapInstance.invalidateSize(), 150);
+      setTimeout(() => mapInstance.invalidateSize(), 100);
     }
   }
 
-  // גובה התחלתי: פאנל בינוני + מפה נוחה
-  applyHeights(MIN_HEIGHT + 140);
+  // גובה התחלתי
+  applyHeight(140);
 
   function getClientY(ev) {
     if (ev.touches && ev.touches.length) return ev.touches[0].clientY;
@@ -211,8 +231,8 @@ document.addEventListener('DOMContentLoaded', function() {
   function onDragMove(ev) {
     if (!dragging) return;
     const currentY = getClientY(ev);
-    const delta = startY - currentY;
-    applyHeights(startHeight + delta);
+    const delta = startY - currentY;      // למעלה = גדל, למטה = קטן
+    applyHeight(startHeight + delta);
     if (ev.cancelable) ev.preventDefault();
   }
 
@@ -220,10 +240,15 @@ document.addEventListener('DOMContentLoaded', function() {
     dragging = false;
   }
 
+  // תמיכה ב-Touch
   if (handle) {
     handle.addEventListener('touchstart', onDragStart, { passive: true });
     document.addEventListener('touchmove', onDragMove, { passive: false });
     document.addEventListener('touchend', onDragEnd);
+  }
+
+  // תמיכה בעכבר
+  if (handle) {
     handle.addEventListener('mousedown', onDragStart);
     document.addEventListener('mousemove', onDragMove);
     document.addEventListener('mouseup', onDragEnd);
