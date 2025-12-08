@@ -52,11 +52,56 @@ module.exports.run = async function(argsObj) {
   // 2. אם לא הגיעה התראה – ננסה "קווים סביבי" אוטומטית
   // -------------------------------------------------
   if (!FROM_NOTIFICATION) {
+  let userLat = null;
+  let userLon = null;
+
+  try {
+    // ניסיון לקבל מיקום מהמכשיר
+    Location.setAccuracyToBest();
+    const loc = await Location.current();
+
+    if (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number") {
+      userLat = loc.latitude;
+      userLon = loc.longitude;
+      console.log("Using device location:", userLat, userLon);
+    }
+  } catch (e) {
+    console.error("Device location failed:", e);
+  }
+
+  // ---- Fallback אוטומטי ----
+  if (userLat === null || userLon === null) {
+    console.log("Using fallback location (server)");
+    const fallback = await utils.loadFallbackLocation();
+    userLat = fallback.lat;
+    userLon = fallback.lon;
+
+    console.log("Server location:", fallback);
+  }
+
+  // במקרה שגם fallback לא הצליח → לא מבצעים Nearby
+  if (userLat != null && userLon != null) {
     try {
-      Location.setAccuracyToBest();
-      const loc = await Location.current();
-      const userLat = loc.latitude;
-      const userLon = loc.longitude;
+      const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
+      const stopCodes = nearestStops
+        .map((s) => (s && s.stopCode != null ? String(s.stopCode) : ""))
+        .filter((c) => c);
+
+      console.log("Nearest stops:", JSON.stringify(nearestStops));
+
+      if (stopCodes.length) {
+        const activeRoutes = await dataService.fetchActiveRoutesForStops(stopCodes);
+        console.log("Active routes near user:", JSON.stringify(activeRoutes));
+
+        if (Array.isArray(activeRoutes) && activeRoutes.length) {
+          ROUTES = activeRoutes;
+        }
+      }
+    } catch (e) {
+      console.error("Error while building nearby routes:", e);
+    }
+  }
+}
 
       // שליפת 3 התחנות הקרובות שיש להן stopCode
       const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
