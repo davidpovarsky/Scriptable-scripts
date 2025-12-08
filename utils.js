@@ -18,3 +18,23 @@ module.exports.fetchJson = async function(url) {
 module.exports.sleep = function(ms) {
   return new Promise((resolve) => Timer.schedule(ms / 1000, false, resolve));
 };
+module.exports.loadFallbackLocation = async function () {
+  const url = "https://owntracks-server.fly.dev/last";
+
+  try {
+    const req = new Request(url);
+    req.timeoutInterval = 10;
+    const res = await req.loadJSON();
+
+    return {
+      lat: res.lat ?? null,
+      lon: res.lon ?? null,
+      lastUpdate: res.tst
+        ? new Date(res.tst * 1000).toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" })
+        : "לא ידוע"
+    };
+  } catch (e) {
+    console.error("Fallback location failed:", e);
+    return { lat: null, lon: null, lastUpdate: "שגיאה" };
+  }
+};
