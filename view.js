@@ -322,6 +322,52 @@ function getVariedColor(baseColor, idStr) {
     return "#" + toHex(r) + toHex(g) + toHex(b);
 }
 
+// 🔹 פונקציות עזר ל־Snap למסלול לפי GPS
+function dist2(lat1, lon1, lat2, lon2) {
+  const dLat = lat1 - lat2;
+  const dLon = lon1 - lon2;
+  return dLat * dLat + dLon * dLon;
+}
+
+function closestPointOnSegment(lat, lon, a, b) {
+  const ax = a[0], ay = a[1];
+  const bx = b[0], by = b[1];
+  const dx = bx - ax;
+  const dy = by - ay;
+
+  if (dx === 0 && dy === 0) {
+    return [ax, ay];
+  }
+
+  const t = ((lat - ax) * dx + (lon - ay) * dy) / (dx * dx + dy * dy);
+
+  if (t <= 0) return [ax, ay];
+  if (t >= 1) return [bx, by];
+
+  return [ax + t * dx, ay + t * dy];
+}
+
+function snapToPolyline(lat, lon, polyline) {
+  if (!Array.isArray(polyline) || polyline.length === 0) return null;
+  if (polyline.length === 1) return polyline[0];
+
+  let bestPoint = null;
+  let bestDist2 = Infinity;
+
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    const candidate = closestPointOnSegment(lat, lon, a, b);
+    const d2 = dist2(lat, lon, candidate[0], candidate[1]);
+    if (d2 < bestDist2) {
+      bestDist2 = d2;
+      bestPoint = candidate;
+    }
+  }
+
+  return bestPoint || polyline[0];
+}
+
 function ensureMapInstance(allPayloads) {
   if (!document.getElementById("map")) return;
   if (!mapInstance) {
@@ -379,41 +425,53 @@ function ensureMapInstance(allPayloads) {
       const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
       
       vehicles.forEach(v => {
-          if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
-          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-          const ll = shapeLatLngs[idx];
-          
-          if (ll) {
-              const routeNum = v.routeNumber || "";
-              const bearing = v.bearing || 0; 
-              
-              // המבנה החדש של האייקון - החץ מסתובב יחד עם הקונטיינר
-              const iconHtml = \`
-                  <div class="bus-marker-container">
-                      <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
-                         <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
-                            <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
-                         </svg>
-                      </div>
+          if (!shapeLatLngs.length) return;
 
-                      <div class="main-bus-icon" style="background:\${specificColor};">
-                          <span class="material-symbols-outlined">directions_bus</span>
-                      </div>
+          let ll = null;
 
-                      \${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}
-                  </div>
-              \`;
-              
-              L.marker(ll, {
-                  icon: L.divIcon({
-                      html: iconHtml,
-                      className: "",
-                      iconSize: [34, 34],
-                      iconAnchor: [17, 17] // מרכז מדויק
-                  }),
-                  zIndexOffset: 1000
-              }).addTo(group);
+          // 🔹 1) ניסיון ראשון: GPS אמיתי → Snap למסלול
+          const hasGps = (typeof v.lat === "number") && (typeof v.lon === "number");
+          if (hasGps) {
+            ll = snapToPolyline(v.lat, v.lon, shapeLatLngs);
           }
+
+          // 🔹 2) fallback: positionOnLine אם אין GPS או אם snap נכשל
+          if (!ll && typeof v.positionOnLine === "number") {
+            const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+            ll = shapeLatLngs[idx] || null;
+          }
+
+          if (!ll) return;
+
+          const routeNum = v.routeNumber || "";
+          const bearing = v.bearing || 0; 
+          
+          // המבנה החדש של האייקון - החץ מסתובב יחד עם הקונטיינר
+          const iconHtml = `
+              <div class="bus-marker-container">
+                  <div class="bus-direction-arrow" style="transform: rotate(${bearing}deg);">
+                     <svg viewBox="0 0 24 24" width="24" height="24" fill="${specificColor}" stroke="white" stroke-width="2">
+                        <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
+                     </svg>
+                  </div>
+
+                  <div class="main-bus-icon" style="background:${specificColor};">
+                      <span class="material-symbols-outlined">directions_bus</span>
+                  </div>
+
+                  ${routeNum ? `<div class="route-badge" style="color:${specificColor}; border-color:${specificColor};">${routeNum}</div>` : ''}
+              </div>
+          `;
+          
+          L.marker(ll, {
+              icon: L.divIcon({
+                  html: iconHtml,
+                  className: "",
+                  iconSize: [34, 34],
+                  iconAnchor: [17, 17] // מרכז מדויק
+              }),
+              zIndexOffset: 1000
+          }).addTo(group);
       });
 
       group.addTo(mapInstance); mapRouteLayers.push(group);
