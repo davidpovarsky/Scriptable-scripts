@@ -9,23 +9,19 @@ const viewService = importModule('view');
 // נשתמש בפונקציה אסינכרונית כדי שנוכל לקרוא לה מבחוץ
 module.exports.run = async function(argsObj) {
 
-  // האם הופעל מתוך התראה
   const FROM_NOTIFICATION = !!(argsObj && argsObj.notification);
   const routeDate = utils.isoDateTodayLocal();
 
-  // -----------------------------
   // 1. קביעת מסלולים ראשונית
-  // -----------------------------
   let ROUTES = Array.isArray(config.DEFAULT_ROUTES)
     ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
     : [];
 
-  // קודם כל – אם הגיעה התראה עם userInfo שמכילה מסלולים, נכבד אותה
+  // אם הגיעה התראה עם מסלולים → נכבד אותה
   if (argsObj && argsObj.notification && argsObj.notification.userInfo) {
     try {
       const ui = argsObj.notification.userInfo;
 
-      // אפשרות 1: מערך אובייקטים של מסלולים
       if (Array.isArray(ui.routes) && ui.routes.length) {
         ROUTES = ui.routes
           .map((r) => {
@@ -36,7 +32,6 @@ module.exports.run = async function(argsObj) {
           })
           .filter((x) => x && Number.isFinite(x.routeId));
       }
-      // אפשרות 2: מערך של routeIds בלבד
       else if (Array.isArray(ui.routeIds) && ui.routeIds.length) {
         ROUTES = ui.routeIds
           .map((id) => Number(id))
@@ -48,102 +43,72 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // -------------------------------------------------
-  // 2. אם לא הגיעה התראה – ננסה "קווים סביבי" אוטומטית
-  // -------------------------------------------------
+  // 2. קווים סביבי אוטומטית
   if (!FROM_NOTIFICATION) {
 
-  let userLat = null;
-  let userLon = null;
+    let userLat = null;
+    let userLon = null;
 
-  // ניסיון מהמכשיר
-  try {
-    Location.setAccuracyToBest();
-    const loc = await Location.current();
-
-    if (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number") {
-      userLat = loc.latitude;
-      userLon = loc.longitude;
-      console.log("Using device location:", userLat, userLon);
-    }
-  } catch (e) {
-    console.error("Device location failed:", e);
-  }
-
-  // שימוש ב־fallback אם המכשיר לא נתן מיקום
-  if (userLat === null || userLon === null) {
-    console.log("Using fallback location from server…");
-    const fallback = await utils.loadFallbackLocation();
-
-    userLat = fallback.lat;
-    userLon = fallback.lon;
-
-    console.log("Server location:", fallback);
-  }
-
-  // אם עדיין אין מיקום → מדלגים
-  if (userLat != null && userLon != null) {
+    // ניסיון מהמכשיר
     try {
-      const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
-      const stopCodes = nearestStops
-        .map((s) => (s && s.stopCode ? String(s.stopCode) : ""))
-        .filter(Boolean);
+      Location.setAccuracyToBest();
+      const loc = await Location.current();
 
-      console.log("Nearest stops:", JSON.stringify(nearestStops));
-
-      if (stopCodes.length) {
-        const activeRoutes = await dataService.fetchActiveRoutesForStops(stopCodes);
-        console.log("Active routes near user:", JSON.stringify(activeRoutes));
-
-        if (Array.isArray(activeRoutes) && activeRoutes.length) {
-          ROUTES = activeRoutes;
-        }
+      if (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number") {
+        userLat = loc.latitude;
+        userLon = loc.longitude;
+        console.log("Using device location:", userLat, userLon);
       }
     } catch (e) {
-      console.error("Error while building nearby routes:", e);
+      console.error("Device location failed:", e);
     }
-  }
-}
 
-      // שליפת 3 התחנות הקרובות שיש להן stopCode
-      const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
-      const stopCodes = nearestStops
-        .map((s) => (s && s.stopCode != null ? String(s.stopCode) : ""))
-        .filter((c) => c);
+    // fallback לשרת
+    if (userLat === null || userLon === null) {
+      console.log("Using fallback location…");
+      const fallback = await utils.loadFallbackLocation();
+      userLat = fallback.lat;
+      userLon = fallback.lon;
+      console.log("Server location:", fallback);
+    }
 
-      console.log("Nearest stops:", JSON.stringify(nearestStops));
+    // אם עדיין אין מיקום — דילוג
+    if (userLat != null && userLon != null) {
+      try {
+        const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
+        const stopCodes = nearestStops
+          .map((s) => (s && s.stopCode ? String(s.stopCode) : ""))
+          .filter(Boolean);
 
-      if (stopCodes.length) {
-        // קווים שיש להם זמן אמת בתחנות האלו (מבוסס על /realtime?stopCode=XXX)
-        const activeRoutes = await dataService.fetchActiveRoutesForStops(stopCodes);
-        console.log("Active routes near user:", JSON.stringify(activeRoutes));
+        console.log("Nearest stops:", JSON.stringify(nearestStops));
 
-        if (Array.isArray(activeRoutes) && activeRoutes.length) {
-          ROUTES = activeRoutes;
+        if (stopCodes.length) {
+          const activeRoutes = await dataService.fetchActiveRoutesForStops(stopCodes);
+          console.log("Active routes near user:", JSON.stringify(activeRoutes));
+
+          if (Array.isArray(activeRoutes) && activeRoutes.length) {
+            ROUTES = activeRoutes;
+          }
         }
+      } catch (e) {
+        console.error("Error while building nearby routes:", e);
       }
-    } catch (e) {
-      console.error("Error while building nearby routes:", e);
     }
   }
 
-  // אם עדיין אין שום מסלול – נחזור לברירת מחדל
+  // אם עדיין אין מסלולים — ברירת מחדל
   if (!Array.isArray(ROUTES) || !ROUTES.length) {
     ROUTES = Array.isArray(config.DEFAULT_ROUTES)
       ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
       : [];
   }
 
-  // -----------------------------
-  // 3. הכנת WebView ו-HTML
-  // -----------------------------
+  // 3. יצירת WebView
   const wv = new WebView();
   const html = viewService.getHtml();
   await wv.loadHTML(html);
 
-  // -----------------------------
-  // 4. הזרקת stops.json לתוך ה־WebView
-  // -----------------------------
+  // 4. הזרקת stops.json
   try {
     const fm = FileManager.iCloud();
     const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
@@ -152,16 +117,12 @@ module.exports.run = async function(argsObj) {
       const stopsRaw = fm.readString(stopsFile);
       const js = `window.stopsDataJson = ${JSON.stringify(stopsRaw)};`;
       await wv.evaluateJavaScript(js, false);
-    } else {
-      console.error("stops.json not found in iCloud documentsDirectory");
     }
   } catch (e) {
-    console.error("Failed injecting stops.json into WebView:", e);
+    console.error("Failed injecting stops.json:", e);
   }
 
-  // -----------------------------
-  // 5. טעינת נתוני בסיס (סטטי)
-  // -----------------------------
+  // 5. נתוני בסיס
   let routesStatic = [];
   try {
     routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
@@ -169,20 +130,13 @@ module.exports.run = async function(argsObj) {
     console.error("Error fetching static routes:", e);
   }
 
-  if (!Array.isArray(routesStatic) || !routesStatic.length) {
-    console.error("No static routes loaded at all, aborting.");
-    // בכל זאת נציג את המסך הריק כדי שלא יהיה קריסה
-    if (FROM_NOTIFICATION) {
-      await wv.present();
-    } else {
-      await wv.present(true);
-    }
+  if (!routesStatic.length) {
+    if (FROM_NOTIFICATION) await wv.present();
+    else await wv.present(true);
     return;
   }
 
-  // -----------------------------
-  // 6. פונקציית רענון זמן אמת
-  // -----------------------------
+  // 6. רענון זמן אמת
   let keepRefreshing = true;
 
   async function pushPayloadOnce() {
@@ -203,20 +157,12 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // נריץ רענון ראשון לפני הצגה
   await pushPayloadOnce();
-
-  // התחלת הלולאה ברקע
   const loopPromise = refreshLoop();
 
-  // הצגה
-  if (FROM_NOTIFICATION) {
-    await wv.present();
-  } else {
-    await wv.present(true);
-  }
+  if (FROM_NOTIFICATION) await wv.present();
+  else await wv.present(true);
 
-  // סיום
   keepRefreshing = false;
-  try { await loopPromise; } catch (e) { console.error("Loop error: " + e); }
+  try { await loopPromise; } catch (e) {}
 };
