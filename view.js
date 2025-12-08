@@ -125,9 +125,7 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 let payloads = []; let initialized = false; const routeViews = new Map();
 let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; let mapBusLayers = [];
 let allStopsLayer = null;
-// שכבות חדשות – שכבה סטטית למסלולים ושכבה דינמית לרכבים
-let routesStaticLayer = null;
-let vehiclesLayer = null;
+
 // מיקום משתמש
 let userLocation = null;
 let userLocationMarker = null;
@@ -346,97 +344,80 @@ function ensureMapInstance(allPayloads) {
       } catch (e) { console.error("Error stops:", e); }
     }
   }
-  // --- שכבה סטטית עבור shape + stops (נטענת פעם אחת בלבד) ---
-if (!routesStaticLayer) {
-    routesStaticLayer = L.layerGroup().addTo(mapInstance);
+  mapRouteLayers.forEach(l => { try { mapInstance.removeLayer(l); } catch (e) {} }); mapRouteLayers = [];
+  const allLatLngs = [];
 
-    allPayloads.forEach(p => {
-        const meta = p.meta || {};
-        const baseColor = meta.operatorColor || "#1976d2";
-        const routeIdStr = String(meta.routeId);
-        const specificColor = getVariedColor(baseColor, routeIdStr);
+  allPayloads.forEach(p => {
+      const meta = p.meta || {}; 
+      const baseColor = meta.operatorColor || "#1976d2";
+      const routeIdStr = String(meta.routeId);
+      
+      // שימוש בפונקציית הצבע החדשה
+      const specificColor = getVariedColor(baseColor, routeIdStr); 
 
-        // --- shape סטטי ---
-        const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
-        const latlngs = shapeCoords
-            .map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null)
-            .filter(Boolean);
-
-        if (latlngs.length) {
-            L.polyline(latlngs, { weight: 4, opacity: 0.85, color: specificColor })
-              .addTo(routesStaticLayer);
-        }
-
-        // --- תחנות סטטיות ---
-        const stops = Array.isArray(p.stops) ? p.stops : [];
-        stops.forEach(s => {
-            if (typeof s.lat === "number" && typeof s.lon === "number") {
-                L.circleMarker([s.lat, s.lon], {
-                    radius: 3,
-                    weight: 1,
-                    color: "#666"
-                })
-                .bindTooltip(
-                    (s.stopName || "") + (s.stopCode ? " (" + s.stopCode + ")" : ""),
-                    { direction: "top", offset: [0, -4] }
-                )
-                .addTo(routesStaticLayer);
-            }
-        });
-    });
-}
+      const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
+      const stops = Array.isArray(p.stops) ? p.stops : [];
+      const group = L.layerGroup();
+      
+      if (shapeCoords.length) {
+          const latlngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
+          if (latlngs.length) {
+              L.polyline(latlngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(group);
+              latlngs.forEach(ll => allLatLngs.push(ll));
+          }
+      }
+      
+      stops.forEach(s => {
+          if (typeof s.lat === "number" && typeof s.lon === "number") {
+              const ll = [s.lat, s.lon];
+              L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" }).bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]}).addTo(group);
+              allLatLngs.push(ll);
+          }
+      });
 
       const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
       const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
       
-      // --- שכבת רכבים דינמית בלבד ---
-// מנקים את שכבת הרכבים הקודמת
-if (vehiclesLayer) {
-    try { mapInstance.removeLayer(vehiclesLayer); } catch (e) {}
-}
+      vehicles.forEach(v => {
+          if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
+          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+          const ll = shapeLatLngs[idx];
+          
+          if (ll) {
+              const routeNum = v.routeNumber || "";
+              const bearing = v.bearing || 0; 
+              
+              // המבנה החדש של האייקון - החץ מסתובב יחד עם הקונטיינר
+              const iconHtml = \`
+                  <div class="bus-marker-container">
+                      <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
+                         <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
+                            <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
+                         </svg>
+                      </div>
 
-vehiclesLayer = L.layerGroup().addTo(mapInstance);
+                      <div class="main-bus-icon" style="background:\${specificColor};">
+                          <span class="material-symbols-outlined">directions_bus</span>
+                      </div>
 
-const shapeLatLngs = shapeCoords
-    .map(c => Array.isArray(c) ? [c[1], c[0]] : null)
-    .filter(Boolean);
+                      \${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}
+                  </div>
+              \`;
+              
+              L.marker(ll, {
+                  icon: L.divIcon({
+                      html: iconHtml,
+                      className: "",
+                      iconSize: [34, 34],
+                      iconAnchor: [17, 17] // מרכז מדויק
+                  }),
+                  zIndexOffset: 1000
+              }).addTo(group);
+          }
+      });
 
-vehicles.forEach(v => {
-    if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
-
-    const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-    const ll = shapeLatLngs[idx];
-    if (!ll) return;
-
-    const routeNum = v.routeNumber || "";
-    const bearing = v.bearing || 0;
-
-    const iconHtml = `
-        <div class="bus-marker-container">
-            <div class="bus-direction-arrow" style="transform: rotate(${bearing}deg);">
-               <svg viewBox="0 0 24 24" width="24" height="24" fill="${specificColor}" stroke="white" stroke-width="2">
-                  <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
-               </svg>
-            </div>
-
-            <div class="main-bus-icon" style="background:${specificColor};">
-                <span class="material-symbols-outlined">directions_bus</span>
-            </div>
-
-            ${routeNum ? `<div class="route-badge" style="color:${specificColor}; border-color:${specificColor};">${routeNum}</div>` : ''}
-        </div>
-    `;
-
-    L.marker(ll, {
-        icon: L.divIcon({
-            html: iconHtml,
-            className: "",
-            iconSize: [34, 34],
-            iconAnchor: [17, 17]
-        }),
-        zIndexOffset: 1000
-    }).addTo(vehiclesLayer);
-});
+      group.addTo(mapInstance); mapRouteLayers.push(group);
+  });
   if (allLatLngs.length && !mapDidInitialFit) { mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); mapDidInitialFit = true; }
 }
 
