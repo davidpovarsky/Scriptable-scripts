@@ -1,5 +1,5 @@
 // view.js
-// מכיל את ה-HTML  string
+// מכיל את ה-HTML string
 
 module.exports.getHtml = function() {
   return `<!DOCTYPE html>
@@ -12,34 +12,30 @@ module.exports.getHtml = function() {
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <style>
-/* עדכון סגנון האייקון הכללי */
 .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'Wght' 600, 'GRAD' 0, 'opsz' 24; font-size: 26px; line-height: 1; }
 
-/* קונטיינר האייקון במפה */
 .bus-marker-container { 
     position: relative; 
     width: 34px; height: 34px; 
     display: flex; justify-content: center; align-items: center; 
 }
 
-/* --- תיקון החץ: כעת הוא מסתובב סביב המרכז של הקונטיינר --- */
 .bus-direction-arrow {
     position: absolute;
     top: 0; left: 0;
-    width: 100%; height: 100%; /* תופס את כל הגודל כדי להסתובב סביב המרכז */
+    width: 100%; height: 100%;
     display: flex;
     justify-content: center;
-    align-items: flex-start; /* מצמיד את ה-SVG לחלק העליון */
-    z-index: 1; /* מתחת לעיגול הראשי */
+    align-items: flex-start;
+    z-index: 1;
     pointer-events: none;
 }
 
 .bus-direction-arrow svg {
-    margin-top: -14px; /* דוחף את החץ החוצה מעל העיגול */
+    margin-top: -14px;
     filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
 }
 
-/* העיגול הראשי הצבעוני */
 .main-bus-icon { 
     width: 34px; height: 34px; 
     border-radius: 50%; 
@@ -48,12 +44,11 @@ module.exports.getHtml = function() {
     box-shadow: 0 2px 5px rgba(0,0,0,0.4); 
     border: 2px solid #fff; 
     box-sizing: border-box; 
-    z-index: 10; /* מעל החץ */
+    z-index: 10;
     position: relative;
 }
 .main-bus-icon .material-symbols-outlined { font-size: 20px; }
 
-/* התגית הקטנה עם מספר הקו */
 .route-badge { position: absolute; top: -6px; right: -6px; background: #fff; border-radius: 99px; height: 18px; min-width: 18px; padding: 0 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid currentColor; box-sizing: border-box; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 20; }
 
 :root { color-scheme: light dark; }
@@ -61,7 +56,6 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 #topContainer { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; position: relative; }
 #map { width: 100%; height: 260px; flex-shrink: 0; border-bottom: 1px solid #ddd; transition: height 0.3s ease; position: relative; }
 
-/* כפתור "מצא אותי" */
 #locateMeBtn {
   position: absolute;
   top: 10px;
@@ -83,7 +77,6 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 
 #map.expanded { height: calc(100vh - 80px); }
 
-/* אזור גרירה ומסלולים */
 #routesWrapper {
   position: absolute;
   bottom: 0;
@@ -179,15 +172,16 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 </div>
 <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • המפה מבוססת על מסלולי shape של KavNav.</div>
 <script>
-let payloads = []; let initialized = false; const routeViews = new Map();
-let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; let mapBusLayers = [];
+let payloads = []; 
+let initialized = false; 
+const routeViews = new Map();
+let mapInstance = null; 
+let mapRouteLayers = []; 
+let mapDidInitialFit = false; 
+let mapBusLayers = [];
 let allStopsLayer = null;
-
-// מיקום משתמש (מוזרק מסקריפט Scriptable)
 let userLocation = null;
 let userLocationMarker = null;
-
-// משתני גרירה
 let isDragging = false;
 let startY = 0;
 let startTransform = 0;
@@ -199,208 +193,193 @@ document.addEventListener('DOMContentLoaded', function() {
   const mapDiv = document.getElementById('map');
   const locateBtn = document.getElementById('locateMeBtn');
 
-  // לוגיקת גרירה
   function handleDragStart(e) {
     isDragging = true;
     dragHandle.style.cursor = 'grabbing';
-    
     const touch = e.touches ? e.touches[0] : e;
     startY = touch.clientY;
-    
-    // קבלת הערך הנוכחי של transform
     const style = window.getComputedStyle(routesWrapper);
     const matrix = new DOMMatrix(style.transform);
-    startTransform = matrix.m42; // translateY value
-    
+    startTransform = matrix.m42;
     routesWrapper.style.transition = 'none';
   }
 
   function handleDragMove(e) {
     if (!isDragging) return;
     e.preventDefault();
-    
     const touch = e.touches ? e.touches[0] : e;
     const deltaY = touch.clientY - startY;
     const newTransform = startTransform + deltaY;
-    
-    // הגבלות: לא יותר מלמעלה (0) ולא יותר למטה מגובה מלא פחות 40px
     const maxTransform = routesWrapper.offsetHeight - 40;
     const clampedTransform = Math.max(0, Math.min(maxTransform, newTransform));
-    
-    routesWrapper.style.transform = `translateY(${clampedTransform}px)`;
+    routesWrapper.style.transform = 'translateY(' + clampedTransform + 'px)';
   }
 
   function handleDragEnd(e) {
     if (!isDragging) return;
     isDragging = false;
     dragHandle.style.cursor = 'grab';
-    
     routesWrapper.style.transition = 'transform 0.3s ease';
-    
-    // קביעה אם לסגור או לפתוח בהתאם למיקום
-    const currentTransform = parseFloat(routesWrapper.style.transform.match(/translateY\(([^)]+)px\)/)?.[1] || 0);
+    const match = routesWrapper.style.transform.match(/translateY\\(([^)]+)px\\)/);
+    const currentTransform = match ? parseFloat(match[1]) : 0;
     const threshold = (routesWrapper.offsetHeight - 40) / 2;
-    
     if (currentTransform > threshold) {
-      // סגירה
       routesWrapper.classList.add('collapsed');
       isCollapsed = true;
       mapDiv.classList.add('expanded');
     } else {
-      // פתיחה
       routesWrapper.classList.remove('collapsed');
       isCollapsed = false;
       mapDiv.classList.remove('expanded');
     }
-    
-    // איפוס ה-inline transform
-    setTimeout(() => {
-      routesWrapper.style.transform = '';
-    }, 300);
-    
-    if (mapInstance) {
-      setTimeout(() => mapInstance.invalidateSize(), 350);
-    }
+    setTimeout(function() { routesWrapper.style.transform = ''; }, 300);
+    if (mapInstance) { setTimeout(function() { mapInstance.invalidateSize(); }, 350); }
   }
 
-  // אירועי עכבר
   dragHandle.addEventListener('mousedown', handleDragStart);
   document.addEventListener('mousemove', handleDragMove);
   document.addEventListener('mouseup', handleDragEnd);
-
-  // אירועי מגע
   dragHandle.addEventListener('touchstart', handleDragStart, { passive: false });
   document.addEventListener('touchmove', handleDragMove, { passive: false });
   document.addEventListener('touchend', handleDragEnd);
 
-  // כפתור "מצא אותי"
   if (locateBtn) {
-    locateBtn.addEventListener('click', () => {
+    locateBtn.addEventListener('click', function() {
       if (userLocation && typeof userLocation.lat === "number" && typeof userLocation.lon === "number") {
         focusMapOnUser(userLocation.lat, userLocation.lon);
-      } else {
-        console.warn("אין מיקום משתמש זמין למיקוד.");
       }
     });
   }
 });
 
-// פונקציה שממקדת את המפה למיקום המשתמש ומציירת עיגול פשוט
 function focusMapOnUser(lat, lon) {
   if (!mapInstance) return;
   if (typeof lat !== "number" || typeof lon !== "number") return;
-
   const latLng = [lat, lon];
-
   if (userLocationMarker) {
     try { mapInstance.removeLayer(userLocationMarker); } catch (e) {}
     userLocationMarker = null;
   }
-
   userLocationMarker = L.circleMarker(latLng, {
-    radius: 8,
-    color: "#1976d2",
-    weight: 2,
-    fillColor: "#1976d2",
-    fillOpacity: 0.5
+    radius: 8, color: "#1976d2", weight: 2, fillColor: "#1976d2", fillOpacity: 0.5
   }).addTo(mapInstance);
-
   mapInstance.setView(latLng, 16);
 }
 
-// פונקציה שסקריפט Scriptable יקרא אליה כדי להגדיר את מיקום המשתמש
 window.setUserLocation = function(lat, lon) {
   if (typeof lat !== "number" || typeof lon !== "number") return;
-  userLocation = { lat, lon };
+  userLocation = { lat: lat, lon: lon };
 };
 
 function buildBusIndex(vehicles) {
-  const byStop = new Map(); const now = new Date();
+  const byStop = new Map(); 
+  const now = new Date();
   for (const v of vehicles) {
     const calls = Array.isArray(v.onwardCalls) ? v.onwardCalls : [];
     for (const c of calls) {
       if (!c || !c.stopCode || !c.eta) continue;
-      const stopCode = String(c.stopCode); const etaDate = new Date(c.eta);
+      const stopCode = String(c.stopCode); 
+      const etaDate = new Date(c.eta);
       let minutes = Math.round((etaDate.getTime() - now.getTime()) / 60000);
       if (minutes < -2) continue;
       if (!byStop.has(stopCode)) byStop.set(stopCode, []);
-      byStop.get(stopCode).push({ minutes });
+      byStop.get(stopCode).push({ minutes: minutes });
     }
   }
-  for (const arr of byStop.values()) { arr.sort((a, b) => a.minutes - b.minutes); }
+  for (const arr of byStop.values()) { 
+    arr.sort(function(a, b) { return a.minutes - b.minutes; }); 
+  }
   return byStop;
 }
 
-function classifyMinutes(m) { if (m <= 3) return "bus-soon"; if (m <= 7) return "bus-mid"; if (m <= 15) return "bus-far"; return "bus-late"; }
-function formatMinutesLabel(m) { return m <= 0 ? "כעת" : m + " דק׳"; }
+function classifyMinutes(m) { 
+  if (m <= 3) return "bus-soon"; 
+  if (m <= 7) return "bus-mid"; 
+  if (m <= 15) return "bus-far"; 
+  return "bus-late"; 
+}
+
+function formatMinutesLabel(m) { 
+  return m <= 0 ? "כעת" : m + " דק׳"; 
+}
 
 function ensureLayout(allPayloads) {
   if (initialized) return;
-  const container = document.getElementById("routesContainer"); container.innerHTML = "";
-  allPayloads.forEach((p) => {
-    const meta = p.meta || {}; const routeIdStr = String(meta.routeId);
-    const card = document.createElement("div"); card.className = "route-card";
+  const container = document.getElementById("routesContainer"); 
+  container.innerHTML = "";
+  allPayloads.forEach(function(p) {
+    const meta = p.meta || {}; 
+    const routeIdStr = String(meta.routeId);
+    const card = document.createElement("div"); 
+    card.className = "route-card";
     const header = document.createElement("header");
-    const lineMain = document.createElement("div"); lineMain.className = "line-main";
+    const lineMain = document.createElement("div"); 
+    lineMain.className = "line-main";
     const leftDiv = document.createElement("div");
-    const routeNumSpan = document.createElement("span"); routeNumSpan.className = "route-number";
-    const headsignSpan = document.createElement("span"); headsignSpan.className = "headsign";
+    const routeNumSpan = document.createElement("span"); 
+    routeNumSpan.className = "route-number";
+    const headsignSpan = document.createElement("span"); 
+    headsignSpan.className = "headsign";
     leftDiv.append(routeNumSpan, headsignSpan);
-    const metaLineDiv = document.createElement("div"); metaLineDiv.style.fontSize = "12px"; metaLineDiv.style.opacity = "0.9";
+    const metaLineDiv = document.createElement("div"); 
+    metaLineDiv.style.fontSize = "12px"; 
+    metaLineDiv.style.opacity = "0.9";
     lineMain.append(leftDiv, metaLineDiv);
-    
-    const subDiv = document.createElement("div"); subDiv.className = "sub";
+    const subDiv = document.createElement("div"); 
+    subDiv.className = "sub";
     const routeDateSpan = document.createElement("span"); 
-    const snapshotSpan = document.createElement("span"); snapshotSpan.textContent = "עדכון: -";
+    const snapshotSpan = document.createElement("span"); 
+    snapshotSpan.textContent = "עדכון: -";
     subDiv.append(routeDateSpan, snapshotSpan);
-    
     header.append(lineMain, subDiv);
-    
-    const stopsList = document.createElement("div"); stopsList.className = "stops-list";
-    const rowsContainer = document.createElement("div"); rowsContainer.className = "stops-rows";
+    const stopsList = document.createElement("div"); 
+    stopsList.className = "stops-list";
+    const rowsContainer = document.createElement("div"); 
+    rowsContainer.className = "stops-rows";
     stopsList.appendChild(rowsContainer);
-    
     card.append(header, stopsList);
     container.appendChild(card);
-    
-    routeViews.set(routeIdStr, { card, header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer });
+    routeViews.set(routeIdStr, { 
+      card: card, 
+      header: header, 
+      routeNumSpan: routeNumSpan, 
+      headsignSpan: headsignSpan, 
+      metaLineDiv: metaLineDiv, 
+      routeDateSpan: routeDateSpan, 
+      snapshotSpan: snapshotSpan, 
+      stopsList: stopsList, 
+      rowsContainer: rowsContainer 
+    });
   });
   initialized = true;
 }
 
-// 💡 פונקציה משופרת ליצור גוון ייחודי וחזק יותר
 function getVariedColor(baseColor, idStr) {
-    let c = baseColor.replace('#', '');
-    if (c.length === 3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
-    let r = parseInt(c.substring(0,2), 16);
-    let g = parseInt(c.substring(2,4), 16);
-    let b = parseInt(c.substring(4,6), 16);
-
-    let hash = 0;
-    for (let i = 0; i < idStr.length; i++) {
-        hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    
-    // יצירת שינוי חזק יותר (בין -60 ל +60)
-    const variance = (hash % 120) - 60; 
-    
-    // שינוי ה-Tint (לא רק בהירות) ע"י השפעה שונה על הערוצים
-    // אם ה-Hash זוגי, נחזק אדום ונחליש ירוק, וכו'
-    if (hash % 2 === 0) {
-        r += variance;
-        g -= variance / 2;
-        b += variance / 3;
-    } else {
-        r -= variance / 2;
-        g += variance;
-        b -= variance / 3;
-    }
-
-    const clamp = (num) => Math.min(255, Math.max(0, Math.round(num)));
-    r = clamp(r); g = clamp(g); b = clamp(b);
-
-    const toHex = (n) => n.toString(16).padStart(2, '0');
-    return "#" + toHex(r) + toHex(g) + toHex(b);
+  let c = baseColor.replace('#', '');
+  if (c.length === 3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+  let r = parseInt(c.substring(0,2), 16);
+  let g = parseInt(c.substring(2,4), 16);
+  let b = parseInt(c.substring(4,6), 16);
+  let hash = 0;
+  for (let i = 0; i < idStr.length; i++) {
+    hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const variance = (hash % 120) - 60; 
+  if (hash % 2 === 0) {
+    r += variance;
+    g -= variance / 2;
+    b += variance / 3;
+  } else {
+    r -= variance / 2;
+    g += variance;
+    b -= variance / 3;
+  }
+  const clamp = function(num) { return Math.min(255, Math.max(0, Math.round(num))); };
+  r = clamp(r); 
+  g = clamp(g); 
+  b = clamp(b);
+  const toHex = function(n) { return n.toString(16).padStart(2, '0'); };
+  return "#" + toHex(r) + toHex(g) + toHex(b);
 }
 
 function ensureMapInstance(allPayloads) {
@@ -410,153 +389,159 @@ function ensureMapInstance(allPayloads) {
     L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: ""
     }).addTo(mapInstance);
-
     if (!allStopsLayer && window.stopsDataJson) {
       try {
         const stops = JSON.parse(window.stopsDataJson || "[]");
         allStopsLayer = L.layerGroup().addTo(mapInstance);
-        stops.forEach(st => {
-          const lat = Number(st.lat); const lon = Number(st.lon);
+        stops.forEach(function(st) {
+          const lat = Number(st.lat); 
+          const lon = Number(st.lon);
           if (!isFinite(lat) || !isFinite(lon)) return;
           L.circleMarker([lat, lon], { radius: 3, weight: 1, color: "#555", fillColor: "#fff", fillOpacity: 1 })
           .bindTooltip((st.stopName || "") + (st.stopCode ? " (" + st.stopCode + ")" : ""), {direction:"top", offset:[0,-4]})
           .addTo(allStopsLayer);
         });
-      } catch (e) { console.error("Error stops:", e); }
+      } catch (e) {}
     }
   }
-  mapRouteLayers.forEach(l => { try { mapInstance.removeLayer(l); } catch (e) {} }); mapRouteLayers = [];
+  mapRouteLayers.forEach(function(l) { 
+    try { mapInstance.removeLayer(l); } catch (e) {} 
+  }); 
+  mapRouteLayers = [];
   const allLatLngs = [];
-
-  allPayloads.forEach(p => {
-      const meta = p.meta || {}; 
-      const baseColor = meta.operatorColor || "#1976d2";
-      const routeIdStr = String(meta.routeId);
-      
-      // שימוש בפונקציית הצבע החדשה
-      const specificColor = getVariedColor(baseColor, routeIdStr); 
-
-      const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
-      const stops = Array.isArray(p.stops) ? p.stops : [];
-      const group = L.layerGroup();
-      
-      if (shapeCoords.length) {
-          const latlngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
-          if (latlngs.length) {
-              L.polyline(latlngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(group);
-              latlngs.forEach(ll => allLatLngs.push(ll));
-          }
+  allPayloads.forEach(function(p) {
+    const meta = p.meta || {}; 
+    const baseColor = meta.operatorColor || "#1976d2";
+    const routeIdStr = String(meta.routeId);
+    const specificColor = getVariedColor(baseColor, routeIdStr); 
+    const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
+    const stops = Array.isArray(p.stops) ? p.stops : [];
+    const group = L.layerGroup();
+    if (shapeCoords.length) {
+      const latlngs = shapeCoords.map(function(c) { 
+        return Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null; 
+      }).filter(Boolean);
+      if (latlngs.length) {
+        L.polyline(latlngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(group);
+        latlngs.forEach(function(ll) { allLatLngs.push(ll); });
       }
-      
-      stops.forEach(s => {
-          if (typeof s.lat === "number" && typeof s.lon === "number") {
-              const ll = [s.lat, s.lon];
-              L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" }).bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]}).addTo(group);
-              allLatLngs.push(ll);
-          }
-      });
-
-      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-      const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
-      
-      vehicles.forEach(v => {
-          if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
-          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-          const ll = shapeLatLngs[idx];
-          
-          if (ll) {
-              const routeNum = v.routeNumber || "";
-              const bearing = v.bearing || 0; 
-              
-              // המבנה החדש של האייקון - החץ מסתובב יחד עם הקונטיינר
-              const iconHtml = `
-                  <div class="bus-marker-container">
-                      <div class="bus-direction-arrow" style="transform: rotate(${bearing}deg);">
-                         <svg viewBox="0 0 24 24" width="24" height="24" fill="${specificColor}" stroke="white" stroke-width="2">
-                            <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
-                         </svg>
-                      </div>
-
-                      <div class="main-bus-icon" style="background:${specificColor};">
-                          <span class="material-symbols-outlined">directions_bus</span>
-                      </div>
-
-                      ${routeNum ? `<div class="route-badge" style="color:${specificColor}; border-color:${specificColor};">${routeNum}</div>` : ''}
-                  </div>
-              `;
-              
-              L.marker(ll, {
-                  icon: L.divIcon({
-                      html: iconHtml,
-                      className: "",
-                      iconSize: [34, 34],
-                      iconAnchor: [17, 17] // מרכז מדויק
-                  }),
-                  zIndexOffset: 1000
-              }).addTo(group);
-          }
-      });
-
-      group.addTo(mapInstance); mapRouteLayers.push(group);
+    }
+    stops.forEach(function(s) {
+      if (typeof s.lat === "number" && typeof s.lon === "number") {
+        const ll = [s.lat, s.lon];
+        L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" })
+        .bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]})
+        .addTo(group);
+        allLatLngs.push(ll);
+      }
+    });
+    const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
+    const shapeLatLngs = shapeCoords.map(function(c) { 
+      return Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null; 
+    }).filter(Boolean);
+    vehicles.forEach(function(v) {
+      if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
+      const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+      const ll = shapeLatLngs[idx];
+      if (ll) {
+        const routeNum = v.routeNumber || "";
+        const bearing = v.bearing || 0; 
+        const iconHtml = '<div class="bus-marker-container"><div class="bus-direction-arrow" style="transform: rotate('+bearing+'deg);"><svg viewBox="0 0 24 24" width="24" height="24" fill="'+specificColor+'" stroke="white" stroke-width="2"><path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" /></svg></div><div class="main-bus-icon" style="background:'+specificColor+';"><span class="material-symbols-outlined">directions_bus</span></div>'+(routeNum ? '<div class="route-badge" style="color:'+specificColor+'; border-color:'+specificColor+';">'+routeNum+'</div>' : '')+'</div>';
+        L.marker(ll, {
+          icon: L.divIcon({ html: iconHtml, className: "", iconSize: [34, 34], iconAnchor: [17, 17] }),
+          zIndexOffset: 1000
+        }).addTo(group);
+      }
+    });
+    group.addTo(mapInstance); 
+    mapRouteLayers.push(group);
   });
-  if (allLatLngs.length && !mapDidInitialFit) { mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); mapDidInitialFit = true; }
+  if (allLatLngs.length && !mapDidInitialFit) { 
+    mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); 
+    mapDidInitialFit = true; 
+  }
 }
 
 function renderAll() {
   if (!payloads || !payloads.length) return;
   ensureLayout(payloads);
   ensureMapInstance(payloads);
-  payloads.forEach((payload) => {
-    const meta = payload.meta || {}; const stops = payload.stops || []; const vehicles = payload.vehicles || [];
+  payloads.forEach(function(payload) {
+    const meta = payload.meta || {}; 
+    const stops = payload.stops || []; 
+    const vehicles = payload.vehicles || [];
     const busesByStop = buildBusIndex(vehicles);
-    const view = routeViews.get(String(meta.routeId)); if (!view) return;
-    const { header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer } = view;
-
-    // צבע ייחודי גם לכרטיס
+    const view = routeViews.get(String(meta.routeId)); 
+    if (!view) return;
+    const header = view.header;
+    const routeNumSpan = view.routeNumSpan;
+    const headsignSpan = view.headsignSpan;
+    const metaLineDiv = view.metaLineDiv;
+    const routeDateSpan = view.routeDateSpan;
+    const snapshotSpan = view.snapshotSpan;
+    const stopsList = view.stopsList;
+    const rowsContainer = view.rowsContainer;
     const baseColor = meta.operatorColor || "#1976d2";
     const specificColor = getVariedColor(baseColor, String(meta.routeId));
-
     header.style.background = specificColor;
     routeNumSpan.textContent = meta.routeNumber || meta.routeCode || "";
     headsignSpan.textContent = meta.headsign || "";
     metaLineDiv.textContent = "קו " + (meta.routeCode || "");
     routeDateSpan.textContent = meta.routeDate || "";
     const snap = meta.lastSnapshot || meta.lastVehicleReport || "-";
-    snapshotSpan.textContent = "עדכון: " + (snap.split("T")[1]?.split(".")[0] || snap);
-    
+    const snapParts = snap.split("T");
+    const snapTime = snapParts.length > 1 ? snapParts[1].split(".")[0] : snap;
+    snapshotSpan.textContent = "עדכון: " + snapTime;
     rowsContainer.innerHTML = "";
-    stops.forEach((stop, idx) => {
-      const row = document.createElement("div"); row.className = "stop-row";
-      const timeline = document.createElement("div"); timeline.className = "timeline" + (idx===0?" first":"") + (idx===stops.length-1?" last":"");
+    stops.forEach(function(stop, idx) {
+      const row = document.createElement("div"); 
+      row.className = "stop-row";
+      const timeline = document.createElement("div"); 
+      timeline.className = "timeline" + (idx===0?" first":"") + (idx===stops.length-1?" last":"");
       timeline.innerHTML = '<div class="timeline-line line-top"></div><div class="timeline-circle" style="border-color:'+specificColor+'"></div><div class="timeline-line line-bottom"></div>';
-      
-      const main = document.createElement("div"); main.className = "stop-main";
+      const main = document.createElement("div"); 
+      main.className = "stop-main";
       main.innerHTML = '<div class="stop-name"><span class="seq-num" style="color:'+specificColor+'">'+(idx+1)+'.</span><span>'+stop.stopName+'</span></div><div class="stop-code">'+(stop.stopCode||"#"+stop.stopSequence)+'</div>';
-      
       const buses = (stop.stopCode ? busesByStop.get(String(stop.stopCode)) : []) || [];
       if (buses.length) {
-        const busCont = document.createElement("div"); busCont.className = "stop-buses";
-        buses.slice(0, 3).forEach(b => {
-           const chip = document.createElement("div"); chip.className = "bus-chip "+classifyMinutes(b.minutes); chip.textContent = formatMinutesLabel(b.minutes); busCont.appendChild(chip);
+        const busCont = document.createElement("div"); 
+        busCont.className = "stop-buses";
+        buses.slice(0, 3).forEach(function(b) {
+          const chip = document.createElement("div"); 
+          chip.className = "bus-chip "+classifyMinutes(b.minutes); 
+          chip.textContent = formatMinutesLabel(b.minutes); 
+          busCont.appendChild(chip);
         });
         main.appendChild(busCont);
       }
-      row.append(timeline, main); rowsContainer.appendChild(row);
+      row.append(timeline, main); 
+      rowsContainer.appendChild(row);
     });
-    
-    setTimeout(() => {
-      stopsList.querySelectorAll(".bus-icon").forEach(e => e.remove());
+    setTimeout(function() {
+      stopsList.querySelectorAll(".bus-icon").forEach(function(e) { e.remove(); });
       const h = rowsContainer.offsetHeight;
-      vehicles.forEach(v => {
-        const pos = v.positionOnLine; if (pos==null||isNaN(pos)) return;
-        let y = pos * h; if (y<10) y=10; if(y>h-15) y=h-15;
-        const icon = document.createElement("div"); icon.className = "bus-icon material-symbols-outlined"; icon.textContent = "directions_bus";
-        icon.style.top = y + "px"; icon.style.color = specificColor; stopsList.appendChild(icon);
+      vehicles.forEach(function(v) {
+        const pos = v.positionOnLine; 
+        if (pos==null||isNaN(pos)) return;
+        let y = pos * h; 
+        if (y<10) y=10; 
+        if(y>h-15) y=h-15;
+        const icon = document.createElement("div"); 
+        icon.className = "bus-icon material-symbols-outlined"; 
+        icon.textContent = "directions_bus";
+        icon.style.top = y + "px"; 
+        icon.style.color = specificColor; 
+        stopsList.appendChild(icon);
       });
     }, 50);
   });
 }
 
-window.updateData = function(newP) { payloads = Array.isArray(newP) ? newP : []; renderAll(); };
-</script></body></html>`;
+window.updateData = function(newP) { 
+  payloads = Array.isArray(newP) ? newP : []; 
+  renderAll(); 
+};
+</script>
+</body>
+</html>`;
 };
