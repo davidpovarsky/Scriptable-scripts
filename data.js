@@ -163,8 +163,8 @@ async function fetchShapeIdAndCoordsForRoute(routeInfo) {
     if (coords.length) routeInfo.shapeCoords = coords;
 
   } catch (e) {
-    console.    error(`Error fetching shapes: ${e}`);
-  }
+    console.error(`Error fetching shapes: ${e}`);
+}
 }
 
 
