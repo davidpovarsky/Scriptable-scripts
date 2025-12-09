@@ -124,7 +124,7 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 let payloads = []; let initialized = false; const routeViews = new Map();
 let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; let mapBusLayers = [];
 let allStopsLayer = null;
-
+let missingCounters = new Map();
 // מיקום משתמש
 let userLocation = null;
 let userLocationMarker = null;
@@ -227,22 +227,59 @@ window.setUserLocation = function(lat, lon) {
 };
 
 function buildBusIndex(vehicles) {
-  const byStop = new Map(); const now = new Date();
-  for (const v of vehicles) {
+  // רשימת אוטובוסים שהתקבלו עכשיו
+  const activeIds = new Set(vehicles.map(v => v.vehicleId));
+
+  // נעדכן missingCounters
+  activeIds.forEach(id => missingCounters.set(id, 0));
+
+  missingCounters.forEach((count, vehId) => {
+    if (!activeIds.has(vehId)) {
+      missingCounters.set(vehId, count + 1);
+    }
+  });
+
+  // מחיקה של אלה שנעלמו פעמיים ברצף
+  missingCounters.forEach((count, vehId) => {
+    if (count >= 2) {
+      missingCounters.delete(vehId);
+    }
+  });
+
+  // סינון רשימת האוטובוסים — רק אלה שנמצאים missingCounters
+  const filteredVehicles = vehicles.filter(v => {
+    const cnt = missingCounters.get(v.vehicleId);
+    return cnt !== undefined; // עדיין לא "נמחק"
+  });
+
+  // בניית ETA לפי onwardCalls — אבל רק לרכבים שעברו את הסינון
+  const byStop = new Map();
+  const now = new Date();
+
+  for (const v of filteredVehicles) {
     const calls = Array.isArray(v.onwardCalls) ? v.onwardCalls : [];
+
     for (const c of calls) {
       if (!c || !c.stopCode || !c.eta) continue;
-      const stopCode = String(c.stopCode); const etaDate = new Date(c.eta);
-      let minutes = Math.round((etaDate.getTime() - now.getTime()) / 60000);
+
+      const stopCode = String(c.stopCode);
+      const etaDate = new Date(c.eta);
+      const minutes = Math.round((etaDate.getTime() - now.getTime()) / 60000);
+
       if (minutes < -0) continue;
+
       if (!byStop.has(stopCode)) byStop.set(stopCode, []);
       byStop.get(stopCode).push({ minutes });
     }
   }
-  for (const arr of byStop.values()) { arr.sort((a, b) => a.minutes - b.minutes); }
+
+  // למיין כל סטיה
+  for (const arr of byStop.values()) {
+    arr.sort((a, b) => a.minutes - b.minutes);
+  }
+
   return byStop;
 }
-
 function classifyMinutes(m) { if (m <= 3) return "bus-soon"; if (m <= 7) return "bus-mid"; if (m <= 15) return "bus-far"; return "bus-late"; }
 function formatMinutesLabel(m) { return m <= 0 ? "כעת" : m + " דק׳"; }
 
