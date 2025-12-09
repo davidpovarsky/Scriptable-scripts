@@ -508,7 +508,16 @@ function renderAll() {
   ensureLayout(payloads);
   ensureMapInstance(payloads);
   payloads.forEach((payload) => {
-    const meta = payload.meta || {}; const stops = payload.stops || []; const vehicles = payload.vehicles || [];
+    const meta = payload.meta || {};
+const stops = payload.stops || [];
+let vehicles = payload.vehicles || [];
+
+// 🔥 סינון אוטובוסים לפי ה-shapeId הנכון של המסלול המוצג
+vehicles = vehicles.filter(v => {
+    const vehShape = v.trip?.gtfsInfo?.shapeId;
+    const routeShape = meta.shapeId;
+    return vehShape && routeShape && String(vehShape) === String(routeShape);
+});
     const busesByStop = buildBusIndex(vehicles);
     const view = routeViews.get(String(meta.routeId)); if (!view) return;
     const { header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer } = view;
