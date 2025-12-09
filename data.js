@@ -273,36 +273,40 @@ module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
 
       const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
 
-      const slimVehicles = vehiclesRaw.map(v => {
-        const trip = v.trip || {};
-        const onwardCalls = trip.onwardCalls || {};
-        const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
-        const gtfs = trip.gtfsInfo || {};
-        const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
+// ⭐ סינון חובה – כדי לא לערבב בין שני כיווני המסלול
+const relevantVehicles = vehiclesRaw.filter(v =>
+  v.trip && String(v.trip.routeId) === String(r.routeId)
+);
 
-        // 🔹 GPS אמיתי (אם קיים)
-        const loc = v.geo && v.geo.location ? v.geo.location : {};
-        const lat = (typeof loc.lat === "number") ? loc.lat : null;
-        const lon = (typeof loc.lon === "number") ? loc.lon : null;
+// ⭐ אם משום־מה אין התאמות – נשמור על fallback שלא יפיל את המערכת
+const filtered = relevantVehicles.length ? relevantVehicles : vehiclesRaw;
 
-        return {
-          vehicleId: v.vehicleId,
-          lastReported: v.lastReported,
-          routeNumber: gtfs.routeNumber,
-          headsign: gtfs.headsign,
-          // 💡 bearing (כיוון הנסיעה)
-          bearing: v.bearing || v.geo?.bearing || 0,
-          // GPS גולמי
-          lat,
-          lon,
-          // fallback – positionOnLine
-          positionOnLine: typeof pos === "number" ? pos : null,
-          onwardCalls: calls.map(c => ({
-            stopCode: c.stopCode,
-            eta: c.eta
-          }))
-        };
-      });
+const slimVehicles = filtered.map(v => {
+    const trip = v.trip || {};
+    const onwardCalls = trip.onwardCalls || {};
+    const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
+    const gtfs = trip.gtfsInfo || {};
+    const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
+
+    const loc = v.geo && v.geo.location ? v.geo.location : {};
+    const lat = (typeof loc.lat === "number") ? loc.lat : null;
+    const lon = (typeof loc.lon === "number") ? loc.lon : null;
+
+    return {
+      vehicleId: v.vehicleId,
+      lastReported: v.lastReported,
+      routeNumber: gtfs.routeNumber,
+      headsign: gtfs.headsign,
+      bearing: v.bearing || v.geo?.bearing || 0,
+      lat,
+      lon,
+      positionOnLine: typeof pos === "number" ? pos : null,
+      onwardCalls: calls.map(c => ({
+        stopCode: c.stopCode,
+        eta: c.eta
+      }))
+    };
+});
 
       allPayloads.push({
         meta: {
