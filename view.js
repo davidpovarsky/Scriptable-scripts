@@ -412,18 +412,7 @@ function ensureMapInstance(allPayloads) {
           }
       });
 
-      // 🔹 כאן מסתנן: רק רכבים שתואמים ל-shapeId של המסלול
-      let vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-
-      const metaShapeId = p.shapeId || meta.shapeId || meta.gtfsShapeId || null;
-      if (metaShapeId != null) {
-          const shapeIdStr = String(metaShapeId);
-          vehicles = vehicles.filter(v => {
-              const vShape = v.shapeId || v.gtfsShapeId || (v.trip && v.trip.shapeId) || null;
-              if (vShape == null) return true; // אם אין ל-v shapeId – לא נפסול אותו בכוח
-              return String(vShape) === shapeIdStr;
-          });
-      }
+      const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
       
       vehicles.forEach(v => {
           if (!shapeLatLngs.length) return;
@@ -482,21 +471,7 @@ function renderAll() {
   ensureLayout(payloads);
   ensureMapInstance(payloads);
   payloads.forEach((payload) => {
-    const meta = payload.meta || {}; 
-    const stops = payload.stops || []; 
-    let vehicles = Array.isArray(payload.vehicles) ? payload.vehicles : [];
-
-    // 🔹 גם בגרף – מסננים אוטובוסים לפי shapeId של המסלול (אם קיים)
-    const metaShapeId = payload.shapeId || meta.shapeId || meta.gtfsShapeId || null;
-    if (metaShapeId != null) {
-      const shapeIdStr = String(metaShapeId);
-      vehicles = vehicles.filter(v => {
-        const vShape = v.shapeId || v.gtfsShapeId || (v.trip && v.trip.shapeId) || null;
-        if (vShape == null) return true;
-        return String(vShape) === shapeIdStr;
-      });
-    }
-
+    const meta = payload.meta || {}; const stops = payload.stops || []; const vehicles = payload.vehicles || [];
     const busesByStop = buildBusIndex(vehicles);
     const view = routeViews.get(String(meta.routeId)); if (!view) return;
     const { header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer } = view;
