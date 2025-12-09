@@ -122,7 +122,10 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • המפה מבוססת על מסלולי shape של KavNav.</div>
 <script>
 let payloads = []; let initialized = false; const routeViews = new Map();
-let mapInstance = null; let mapRouteLayers = []; let mapDidInitialFit = false; let mapBusLayers = [];
+let mapInstance = null; 
+const staticRouteLayers = new Map(); // מילון לשמירת שכבות קבועות (קו ותחנות)
+let busLayerGroup = null;            // שכבה אחת לאוטובוסים שמתנקה כל פעם
+let mapDidInitialFit = false; 
 let allStopsLayer = null;
 
 // מיקום משתמש
@@ -360,11 +363,18 @@ function snapToPolyline(lat, lon, polyline) {
 
 function ensureMapInstance(allPayloads) {
   if (!document.getElementById("map")) return;
+  
+  // 1. אתחול מפה ראשוני (רץ רק פעם אחת)
   if (!mapInstance) {
     mapInstance = L.map("map");
     L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: ""
     }).addTo(mapInstance);
+
+    // שכבת אוטובוסים - נוצרת פעם אחת, אבל התוכן שלה מתנקה
+    busLayerGroup = L.layerGroup().addTo(mapInstance);
+    // דואג שהאוטובוסים תמיד יהיו מעל הקווים
+    busLayerGroup.setZIndex(1000);
 
     if (!allStopsLayer && window.stopsDataJson) {
       try {
@@ -380,91 +390,93 @@ function ensureMapInstance(allPayloads) {
       } catch (e) { console.error("Error stops:", e); }
     }
   }
-  mapRouteLayers.forEach(l => { try { mapInstance.removeLayer(l); } catch (e) {} }); mapRouteLayers = [];
+
+  // 2. ניקוי רק של האוטובוסים (השכבות הסטטיות נשארות!)
+  if (busLayerGroup) busLayerGroup.clearLayers();
+
   const allLatLngs = [];
 
   allPayloads.forEach(p => {
       const meta = p.meta || {}; 
-      const baseColor = meta.operatorColor || "#1976d2";
       const routeIdStr = String(meta.routeId);
+      const baseColor = meta.operatorColor || "#1976d2";
       const specificColor = getVariedColor(baseColor, routeIdStr); 
-
       const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
       const stops = Array.isArray(p.stops) ? p.stops : [];
-      const group = L.layerGroup();
       
-      let shapeLatLngs = [];
-      if (shapeCoords.length) {
-          shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
-          if (shapeLatLngs.length) {
-              L.polyline(shapeLatLngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(group);
-              shapeLatLngs.forEach(ll => allLatLngs.push(ll));
-          }
-      }
-      
-      stops.forEach(s => {
-          if (typeof s.lat === "number" && typeof s.lon === "number") {
-              const ll = [s.lat, s.lon];
-              L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" })
-                .bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]})
-                .addTo(group);
-              allLatLngs.push(ll);
-          }
-      });
+      // חישוב נקודות למיקום האוטובוס (צריך את זה גם אם לא מציירים קו מחדש)
+      const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
+      shapeLatLngs.forEach(ll => allLatLngs.push(ll));
 
+      // --- בדיקה: האם המסלול הסטטי כבר קיים? ---
+      if (!staticRouteLayers.has(routeIdStr)) {
+          // אם לא קיים - יוצרים אותו פעם אחת ושומרים בזיכרון
+          const staticGroup = L.layerGroup();
+
+          if (shapeLatLngs.length) {
+              L.polyline(shapeLatLngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(staticGroup);
+          }
+          
+          stops.forEach(s => {
+              if (typeof s.lat === "number" && typeof s.lon === "number") {
+                  const ll = [s.lat, s.lon];
+                  L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" })
+                   .bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]})
+                   .addTo(staticGroup);
+                  // לא מוסיפים ל-allLatLngs כאן כי כבר הוספנו את המסלול
+              }
+          });
+
+          staticGroup.addTo(mapInstance);
+          staticRouteLayers.set(routeIdStr, staticGroup);
+      }
+
+      // --- טיפול באוטובוסים (רץ כל 10 שניות) ---
       const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
       
       vehicles.forEach(v => {
-          if (!shapeLatLngs.length) return;
-
-          let ll = null;
-          const hasGps = (typeof v.lat === "number") && (typeof v.lon === "number");
-
-          if (hasGps) {
-            ll = snapToPolyline(v.lat, v.lon, shapeLatLngs);
-          }
-
-          if (!ll && typeof v.positionOnLine === "number") {
-            const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-            ll = shapeLatLngs[idx] || null;
-          }
-
-          if (!ll) return;
-
-          const routeNum = v.routeNumber || "";
-          const bearing = v.bearing || 0; 
+          if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
+          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+          const ll = shapeLatLngs[idx];
           
-          const iconHtml = \`
-              <div class="bus-marker-container">
-                  <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
-                     <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
-                        <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
-                     </svg>
+          if (ll) {
+              const routeNum = v.routeNumber || "";
+              const bearing = v.bearing || 0; 
+              
+              const iconHtml = \`
+                  <div class="bus-marker-container">
+                      <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
+                         <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
+                            <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
+                         </svg>
+                      </div>
+                      <div class="main-bus-icon" style="background:\${specificColor};">
+                          <span class="material-symbols-outlined">directions_bus</span>
+                      </div>
+                      \${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}
                   </div>
-
-                  <div class="main-bus-icon" style="background:\${specificColor};">
-                      <span class="material-symbols-outlined">directions_bus</span>
-                  </div>
-
-                  \${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}
-              </div>
-          \`;
-          
-          L.marker(ll, {
-              icon: L.divIcon({
-                  html: iconHtml,
-                  className: "",
-                  iconSize: [34, 34],
-                  iconAnchor: [17, 17]
-              }),
-              zIndexOffset: 1000
-          }).addTo(group);
+              \`;
+              
+              L.marker(ll, {
+                  icon: L.divIcon({
+                      html: iconHtml,
+                      className: "",
+                      iconSize: [34, 34],
+                      iconAnchor: [17, 17]
+                  }),
+                  zIndexOffset: 1000 // מוודא שהאוטובוס מעל הכל
+              }).addTo(busLayerGroup); // הוספה לשכבת האוטובוסים המתנקה
+          }
       });
-
-      group.addTo(mapInstance); mapRouteLayers.push(group);
   });
-  if (allLatLngs.length && !mapDidInitialFit) { mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); mapDidInitialFit = true; }
+
+  // התאמת זום ראשונית בלבד
+  if (allLatLngs.length && !mapDidInitialFit) { 
+      mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); 
+      mapDidInitialFit = true; 
+  }
 }
+
 
 function renderAll() {
   if (!payloads || !payloads.length) return;
