@@ -119,19 +119,43 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // 4. הזרקת stops.json
-  try {
+  // 4. הזרקת stops.json ל-HTML לפי מצב הריצה
+try {
+  let stopsData = null;
+
+  if (config.APP_MODE === "scriptable") {
+    // טעינה מה-iCloud
     const fm = FileManager.iCloud();
     const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
     try { await fm.downloadFileFromiCloud(stopsFile); } catch (e) {}
     if (fm.fileExists(stopsFile)) {
-      const stopsRaw = fm.readString(stopsFile);
-      const js = `window.stopsDataJson = ${JSON.stringify(stopsRaw)};`;
-      await wv.evaluateJavaScript(js, false);
+      const raw = fm.readString(stopsFile);
+      stopsData = JSON.parse(raw);
+      console.log("Injected stops.json from iCloud");
+    } else {
+      console.warn("stops.json missing in iCloud");
     }
-  } catch (e) {
-    console.error("Failed injecting stops.json:", e);
+  } 
+  
+  else {
+    // טעינה מגיטהאב
+    try {
+      stopsData = await utils.fetchJson(config.STOPS_URL);
+      console.log("Injected stops.json from GitHub");
+    } catch (e) {
+      console.error("Failed loading stops.json from GitHub:", e);
+    }
   }
+
+  // הזרקה ל-HTML רק אם הצלחנו לטעון נתונים
+  if (stopsData) {
+    const js = `window.stopsDataJson = ${JSON.stringify(stopsData)};`;
+    await wv.evaluateJavaScript(js, false);
+  }
+
+} catch (e) {
+  console.error("Failed injecting stops.json:", e);
+}
 
   // 5. נתוני בסיס
   let routesStatic = [];
