@@ -378,7 +378,7 @@ function ensureMapInstance(allPayloads) {
 
     if (!allStopsLayer && window.stopsDataJson) {
       try {
-const stops = window.stopsDataJson || [];
+        const stops = JSON.parse(window.stopsDataJson || "[]");
         allStopsLayer = L.layerGroup().addTo(mapInstance);
         stops.forEach(st => {
           const lat = Number(st.lat); const lon = Number(st.lon);
