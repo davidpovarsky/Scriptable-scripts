@@ -121,7 +121,7 @@ module.exports.run = async function(argsObj) {
 
   // 4. הזרקת stops.json// 4. הזרקת stops.json מהריפו דרך ה־cache של data.js
 try {
-  const stopsData = await importModule('data').loadLocalStops();
+const stopsData = await dataService.loadLocalStops();
   const stopsArray = Array.from(stopsData.byId.values());
 
   const js = `window.stopsDataJson = ${JSON.stringify(stopsArray)};`;
