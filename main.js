@@ -118,10 +118,9 @@ module.exports.run = async function(argsObj) {
       console.error("Failed injecting user location into WebView:", e);
     }
   }
-
-  // 4. הזרקת stops.json// 4. הזרקת stops.json מהריפו דרך ה־cache של data.js
+// 4. הזרקת stops.json מהריפו דרך ה־cache של data.js
 try {
-const stopsData = await dataService.loadLocalStops();
+  const stopsData = await dataService.loadLocalStops();
   const stopsArray = Array.from(stopsData.byId.values());
 
   const js = `window.stopsDataJson = ${JSON.stringify(stopsArray)};`;
