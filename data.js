@@ -4,45 +4,39 @@ const config = importModule('config');
 const utils = importModule('utils');
 
 // טעינת תחנות מקומיות
-
-
-
-// טעינת תחנות מהריפו + Cache כדי לא לטעון פעמיים
-let gStopsCache = null;
-
 async function loadLocalStops() {
-  if (gStopsCache) return gStopsCache;  // 🟦 חוסך טעינות מיותרות
+  const fm = FileManager.iCloud();
+  const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
 
+  try { await fm.downloadFileFromiCloud(stopsFile); } catch(e) {}
+
+  if (!fm.fileExists(stopsFile)) return { byId: new Map(), byCode: new Map() };
+
+  const stopsDataRaw = fm.readString(stopsFile);
+  let stopsData;
   try {
-    const url = config.STOPS_URL;
-    const stopsData = await utils.fetchJson(url);
-
-    const stopsArray = Array.isArray(stopsData)
-      ? stopsData
-      : (Array.isArray(stopsData.stops) ? stopsData.stops : []);
-
-    const stopsById = new Map();
-    const stopsByCode = new Map();
-
-    for (const s of stopsArray) {
-      if (!s) continue;
-      const id = String(s.stopId ?? "");
-      const code = String(s.stopCode ?? "");
-      if (id) stopsById.set(id, s);
-      if (code) stopsByCode.set(code, s);
-    }
-
-    gStopsCache = { byId: stopsById, byCode: stopsByCode };
-    return gStopsCache;
-
+    stopsData = JSON.parse(stopsDataRaw);
   } catch (e) {
-    console.error("Failed loading stops from repo:", e);
-    gStopsCache = { byId: new Map(), byCode: new Map() };
-    return gStopsCache;
+    console.error("Error parsing stops.json");
+    return { byId: new Map(), byCode: new Map() };
   }
+
+  const stopsArray = Array.isArray(stopsData) ? stopsData :
+                     (Array.isArray(stopsData.stops) ? stopsData.stops : []);
+
+  const stopsById = new Map();
+  const stopsByCode = new Map();
+
+  for (const s of stopsArray) {
+    if (!s) continue;
+    const id = String(s.stopId ?? "");
+    const code = String(s.stopCode ?? "");
+    if (id) stopsById.set(id, s);
+    if (code) stopsByCode.set(code, s);
+  }
+
+  return { byId: stopsById, byCode: stopsByCode };
 }
-
-
 
 
 // ===== פונקציות חדשות: תחנות קרובות =====
