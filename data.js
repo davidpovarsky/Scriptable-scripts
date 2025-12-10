@@ -4,78 +4,44 @@ const config = importModule('config');
 const utils = importModule('utils');
 
 // טעינת תחנות מקומיות
+
+
+
+// טעינת תחנות מהריפו + Cache כדי לא לטעון פעמיים
+let gStopsCache = null;
+
 async function loadLocalStops() {
-
-  // --- מצב דפדפן / Local HTML: טעינה מגיטהאב ---
-  if (config.APP_MODE === "local") {
-    try {
-      const stopsData = await utils.fetchJson(config.STOPS_URL);
-
-      const stopsArray = Array.isArray(stopsData)
-        ? stopsData
-        : (Array.isArray(stopsData.stops) ? stopsData.stops : []);
-
-      const stopsById = new Map();
-      const stopsByCode = new Map();
-
-      for (const s of stopsArray) {
-        if (!s) continue;
-        const id = String(s.stopId ?? "");
-        const code = String(s.stopCode ?? "");
-        if (id) stopsById.set(id, s);
-        if (code) stopsByCode.set(code, s);
-      }
-
-      console.log("Loaded stops.json from GitHub (local mode)");
-      return { byId: stopsById, byCode: stopsByCode };
-
-    } catch (e) {
-      console.error("Failed loading stops.json from GitHub:", e);
-      return { byId: new Map(), byCode: new Map() };
-    }
-  }
-
-
-
-  // --- מצב Scriptable: טעינה מה-iCloud כרגיל ---
-  const fm = FileManager.iCloud();
-  const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
-
-  try { await fm.downloadFileFromiCloud(stopsFile); } catch (e) {}
-
-  if (!fm.fileExists(stopsFile)) {
-    console.warn("stops.json not found in iCloud");
-    return { byId: new Map(), byCode: new Map() };
-  }
-
-  let stopsDataRaw = fm.readString(stopsFile);
-  let stopsData;
+  if (gStopsCache) return gStopsCache;  // 🟦 חוסך טעינות מיותרות
 
   try {
-    stopsData = JSON.parse(stopsDataRaw);
+    const url = config.STOPS_URL;
+    const stopsData = await utils.fetchJson(url);
+
+    const stopsArray = Array.isArray(stopsData)
+      ? stopsData
+      : (Array.isArray(stopsData.stops) ? stopsData.stops : []);
+
+    const stopsById = new Map();
+    const stopsByCode = new Map();
+
+    for (const s of stopsArray) {
+      if (!s) continue;
+      const id = String(s.stopId ?? "");
+      const code = String(s.stopCode ?? "");
+      if (id) stopsById.set(id, s);
+      if (code) stopsByCode.set(code, s);
+    }
+
+    gStopsCache = { byId: stopsById, byCode: stopsByCode };
+    return gStopsCache;
+
   } catch (e) {
-    console.error("Error parsing stops.json:", e);
-    return { byId: new Map(), byCode: new Map() };
+    console.error("Failed loading stops from repo:", e);
+    gStopsCache = { byId: new Map(), byCode: new Map() };
+    return gStopsCache;
   }
-
-  const stopsArray = Array.isArray(stopsData)
-    ? stopsData
-    : (Array.isArray(stopsData.stops) ? stopsData.stops : []);
-
-  const stopsById = new Map();
-  const stopsByCode = new Map();
-
-  for (const s of stopsArray) {
-    if (!s) continue;
-    const id = String(s.stopId ?? "");
-    const code = String(s.stopCode ?? "");
-    if (id) stopsById.set(id, s);
-    if (code) stopsByCode.set(code, s);
-  }
-
-  console.log("Loaded stops.json from iCloud (scriptable mode)");
-  return { byId: stopsById, byCode: stopsByCode };
 }
+
 
 
 
