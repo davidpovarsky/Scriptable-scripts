@@ -9,19 +9,7 @@ module.exports.isoDateTodayLocal = function() {
   return `${year}-${month}-${day}`;
 };
 
-const config = importModule("config");
-
 module.exports.fetchJson = async function(url) {
-
-  // --- אם רצים ב-HTML מקומי → שליחת הבקשה דרך הפרוקסי ---
-  if (config.APP_MODE === "local") {
-    const proxyUrl = config.PROXY_URL + "?url=" + encodeURIComponent(url);
-    const req = new Request(proxyUrl);
-    req.timeoutInterval = 20;
-    return await req.loadJSON();
-  }
-
-  // --- Scriptable רגיל ---
   const req = new Request(url);
   req.timeoutInterval = 20;
   return await req.loadJSON();
