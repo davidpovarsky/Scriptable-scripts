@@ -1,4 +1,4 @@
-re// config.js
+// config.js
 // מכיל את כל הקבועים וההגדרות
 // מצב הריצה: "scriptable" או "local"
 module.exports.APP_MODE = "scriptable";  
@@ -7,7 +7,6 @@ module.exports.APP_MODE = "scriptable";
 module.exports.PROXY_URL = "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec";
 module.exports.API_BASE = "https://kavnav.com/api";
 module.exports.REFRESH_INTERVAL_MS = 10000;
-module.exports.STOPS_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/refs/heads/main/stops.json";
 
 // ברירת מחדל למסלולים אם אין התראה
 module.exports.DEFAULT_ROUTES = [
