@@ -5,24 +5,62 @@ const utils = importModule('utils');
 
 // טעינת תחנות מקומיות
 async function loadLocalStops() {
+
+  // --- מצב דפדפן / Local HTML: טעינה מגיטהאב ---
+  if (config.APP_MODE === "local") {
+    try {
+      const stopsData = await utils.fetchJson(config.STOPS_URL);
+
+      const stopsArray = Array.isArray(stopsData)
+        ? stopsData
+        : (Array.isArray(stopsData.stops) ? stopsData.stops : []);
+
+      const stopsById = new Map();
+      const stopsByCode = new Map();
+
+      for (const s of stopsArray) {
+        if (!s) continue;
+        const id = String(s.stopId ?? "");
+        const code = String(s.stopCode ?? "");
+        if (id) stopsById.set(id, s);
+        if (code) stopsByCode.set(code, s);
+      }
+
+      console.log("Loaded stops.json from GitHub (local mode)");
+      return { byId: stopsById, byCode: stopsByCode };
+
+    } catch (e) {
+      console.error("Failed loading stops.json from GitHub:", e);
+      return { byId: new Map(), byCode: new Map() };
+    }
+  }
+
+
+
+  // --- מצב Scriptable: טעינה מה-iCloud כרגיל ---
   const fm = FileManager.iCloud();
   const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
 
-  try { await fm.downloadFileFromiCloud(stopsFile); } catch(e) {}
+  try { await fm.downloadFileFromiCloud(stopsFile); } catch (e) {}
 
-  if (!fm.fileExists(stopsFile)) return { byId: new Map(), byCode: new Map() };
-
-  const stopsDataRaw = fm.readString(stopsFile);
-  let stopsData;
-  try {
-    stopsData = JSON.parse(stopsDataRaw);
-  } catch (e) {
-    console.error("Error parsing stops.json");
+  if (!fm.fileExists(stopsFile)) {
+    console.warn("stops.json not found in iCloud");
     return { byId: new Map(), byCode: new Map() };
   }
 
-  const stopsArray = Array.isArray(stopsData) ? stopsData :
-                     (Array.isArray(stopsData.stops) ? stopsData.stops : []);
+  let stopsDataRaw = fm.readString(stopsFile);
+  let stopsData;
+
+  try {
+    stopsData = JSON.parse(stopsDataRaw);
+  } catch (e) {
+    console.error("Error parsing stops.json:", e);
+    return { byId: new Map(), byCode: new Map() };
+  }
+
+  const stopsArray = Array.isArray(stopsData)
+    ? stopsData
+    : (Array.isArray(stopsData.stops) ? stopsData.stops : []);
 
   const stopsById = new Map();
   const stopsByCode = new Map();
@@ -35,8 +73,10 @@ async function loadLocalStops() {
     if (code) stopsByCode.set(code, s);
   }
 
+  console.log("Loaded stops.json from iCloud (scriptable mode)");
   return { byId: stopsById, byCode: stopsByCode };
 }
+
 
 
 // ===== פונקציות חדשות: תחנות קרובות =====
