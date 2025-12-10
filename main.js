@@ -119,19 +119,18 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // 4. הזרקת stops.json
-  try {
-    const fm = FileManager.iCloud();
-    const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
-    try { await fm.downloadFileFromiCloud(stopsFile); } catch (e) {}
-    if (fm.fileExists(stopsFile)) {
-      const stopsRaw = fm.readString(stopsFile);
-      const js = `window.stopsDataJson = ${JSON.stringify(stopsRaw)};`;
-      await wv.evaluateJavaScript(js, false);
-    }
-  } catch (e) {
-    console.error("Failed injecting stops.json:", e);
-  }
+  // 4. הזרקת stops.json// 4. הזרקת stops.json מהריפו דרך ה־cache של data.js
+try {
+  const stopsData = await importModule('data').loadLocalStops();
+  const stopsArray = Array.from(stopsData.byId.values());
+
+  const js = `window.stopsDataJson = ${JSON.stringify(stopsArray)};`;
+  await wv.evaluateJavaScript(js, false);
+
+  console.log(`Injected ${stopsArray.length} stops from cache into HTML.`);
+} catch (e) {
+  console.error("Failed injecting stops.json:", e);
+}
 
   // 5. נתוני בסיס
   let routesStatic = [];
