@@ -51,7 +51,7 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 .bus-far  { background: #e1f5fe; color: #0277bd; border: 1px solid #b3e5fc; }
 .bus-late { background: #f5f5f5; color: #757575; border: 1px solid #e0e0e0; }
 .footer-note-global { margin: 4px 0 10px; font-size: 10px; color: #999; text-align: center; }
-.bus-icon { position: absolute; right: 25px; font-size: 24px; z-index: 50; pointer-events: none; will-change: top; transform: translate3d(50%, -50%, 0); backface-visibility: hidden; transition: top 1s linear; }
+.bus-icon { position: absolute; right: 25px; font-size: 24px; z-index: 50; pointer-events: none; will-change: top; transform: translate3d(50%, -50%, 0); -webkit-transform: translate3d(50%, -50%, 0); backface-visibility: hidden; transition: top 1s linear; }
 </style>
 </head>
 <body>
@@ -68,6 +68,7 @@ header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: spa
 </div>
 
 <script>
+// 🚀 מצב גלובלי
 let payloads = [];
 let initialized = false;
 const routeViews = new Map();
@@ -78,16 +79,19 @@ let mapDidInitialFit = false;
 let allStopsLayer = null;
 let userLocation = null;
 let userLocationMarker = null;
-const vehicleMarkers = new Map();
+
+// 🚀 מפת סמנים קיימים לעדכון חכם
+const vehicleMarkers = new Map(); // vehicleId -> marker
 
 document.addEventListener('DOMContentLoaded', function() {
     initBottomSheet();
+    
     const locateBtn = document.getElementById('locateMeBtn');
     if (locateBtn) {
         locateBtn.addEventListener('click', () => {
           if (userLocation && typeof userLocation.lat === "number" && typeof userLocation.lon === "number") {
             focusMapOnUser(userLocation.lat, userLocation.lon);
-          }
+          } else { console.warn("אין מיקום משתמש זמין למיקוד."); }
         });
     }
 });
@@ -95,11 +99,18 @@ document.addEventListener('DOMContentLoaded', function() {
 function initBottomSheet() {
     const sheet = document.getElementById('bottomSheet');
     const handle = document.getElementById('dragHandleArea');
-    const SNAP_MIN = 60, SNAP_MID_PERCENT = 0.45, SNAP_MAX_PERCENT = 0.90;
-    let startY = 0, startHeight = 0, isDragging = false;
+    
+    const SNAP_MIN = 60;
+    const SNAP_MID_PERCENT = 0.45;
+    const SNAP_MAX_PERCENT = 0.90;
+
+    let startY = 0;
+    let startHeight = 0;
+    let isDragging = false;
 
     handle.addEventListener('touchstart', (e) => {
-        isDragging = true; startY = e.touches[0].clientY;
+        isDragging = true;
+        startY = e.touches[0].clientY;
         startHeight = sheet.getBoundingClientRect().height;
         sheet.style.transition = 'none';
     }, { passive: false });
@@ -110,9 +121,11 @@ function initBottomSheet() {
         const currentY = e.touches[0].clientY;
         const delta = startY - currentY;
         let newHeight = startHeight + delta;
+        
         const maxH = window.innerHeight * 0.95;
         if (newHeight < SNAP_MIN) newHeight = SNAP_MIN;
         if (newHeight > maxH) newHeight = maxH;
+        
         sheet.style.height = newHeight + "px";
     }, { passive: false });
 
@@ -120,53 +133,74 @@ function initBottomSheet() {
         if (!isDragging) return;
         isDragging = false;
         sheet.style.transition = 'height 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
+        
         const currentHeight = sheet.getBoundingClientRect().height;
         const windowHeight = window.innerHeight;
         const midPoint = windowHeight * SNAP_MID_PERCENT;
         const maxPoint = windowHeight * SNAP_MAX_PERCENT;
+        
         const distToMin = Math.abs(currentHeight - SNAP_MIN);
         const distToMid = Math.abs(currentHeight - midPoint);
         const distToMax = Math.abs(currentHeight - maxPoint);
         const min = Math.min(distToMin, distToMid, distToMax);
+        
         let targetHeight;
         if (min === distToMin) targetHeight = SNAP_MIN;
         else if (min === distToMid) targetHeight = midPoint;
         else targetHeight = maxPoint;
+        
         sheet.style.height = targetHeight + "px";
     });
 }
 
 function focusMapOnUser(lat, lon) {
-  if (!mapInstance || typeof lat !== "number" || typeof lon !== "number") return;
+  if (!mapInstance) return;
+  if (typeof lat !== "number" || typeof lon !== "number") return;
+
   const latLng = [lat, lon];
+
   if (userLocationMarker) {
     try { mapInstance.removeLayer(userLocationMarker); } catch (e) {}
     userLocationMarker = null;
   }
+
   userLocationMarker = L.circleMarker(latLng, {
-    radius: 8, color: "#1976d2", weight: 2, fillColor: "#1976d2", fillOpacity: 0.5
+    radius: 8,
+    color: "#1976d2",
+    weight: 2,
+    fillColor: "#1976d2",
+    fillOpacity: 0.5
   }).addTo(mapInstance);
+
   mapInstance.setView(latLng, 16);
 }
 
 window.setUserLocation = function(lat, lon) {
-  if (typeof lat === "number" && typeof lon === "number") userLocation = { lat, lon };
+  if (typeof lat !== "number" || typeof lon !== "number") return;
+  userLocation = { lat, lon };
 };
 
 function buildBusIndex(vehicles) {
-  const byStop = new Map(), now = new Date();
+  const byStop = new Map();
+  const now = new Date();
+  
   for (const v of vehicles) {
     const calls = Array.isArray(v.onwardCalls) ? v.onwardCalls : [];
     for (const c of calls) {
       if (!c || !c.stopCode || !c.eta) continue;
-      const stopCode = String(c.stopCode), etaDate = new Date(c.eta);
+      const stopCode = String(c.stopCode);
+      const etaDate = new Date(c.eta);
       let minutes = Math.round((etaDate.getTime() - now.getTime()) / 60000);
       if (minutes < 0) continue;
       if (!byStop.has(stopCode)) byStop.set(stopCode, []);
       byStop.get(stopCode).push({ minutes });
     }
   }
-  for (const arr of byStop.values()) arr.sort((a, b) => a.minutes - b.minutes);
+  
+  for (const arr of byStop.values()) {
+    arr.sort((a, b) => a.minutes - b.minutes);
+  }
+  
   return byStop;
 }
 
@@ -177,36 +211,70 @@ function classifyMinutes(m) {
   return "bus-late";
 }
 
-function formatMinutesLabel(m) { return m <= 0 ? "כעת" : m + " דק׳"; }
+function formatMinutesLabel(m) {
+  return m <= 0 ? "כעת" : m + " דק׳";
+}
 
 function ensureLayout(allPayloads) {
   if (initialized) return;
+  
   const container = document.getElementById("routesContainer");
   container.innerHTML = "";
+  
   allPayloads.forEach((p) => {
-    const meta = p.meta || {}, routeIdStr = String(meta.routeId);
-    const card = document.createElement("div"); card.className = "route-card";
+    const meta = p.meta || {};
+    const routeIdStr = String(meta.routeId);
+    
+    const card = document.createElement("div");
+    card.className = "route-card";
+    
     const header = document.createElement("header");
-    const lineMain = document.createElement("div"); lineMain.className = "line-main";
+    const lineMain = document.createElement("div");
+    lineMain.className = "line-main";
+    
     const leftDiv = document.createElement("div");
-    const routeNumSpan = document.createElement("span"); routeNumSpan.className = "route-number";
-    const headsignSpan = document.createElement("span"); headsignSpan.className = "headsign";
+    const routeNumSpan = document.createElement("span");
+    routeNumSpan.className = "route-number";
+    const headsignSpan = document.createElement("span");
+    headsignSpan.className = "headsign";
     leftDiv.append(routeNumSpan, headsignSpan);
+    
     const metaLineDiv = document.createElement("div");
-    metaLineDiv.style.fontSize = "12px"; metaLineDiv.style.opacity = "0.9";
+    metaLineDiv.style.fontSize = "12px";
+    metaLineDiv.style.opacity = "0.9";
     lineMain.append(leftDiv, metaLineDiv);
-    const subDiv = document.createElement("div"); subDiv.className = "sub";
+    
+    const subDiv = document.createElement("div");
+    subDiv.className = "sub";
     const routeDateSpan = document.createElement("span");
-    const snapshotSpan = document.createElement("span"); snapshotSpan.textContent = "עדכון: -";
+    const snapshotSpan = document.createElement("span");
+    snapshotSpan.textContent = "עדכון: -";
     subDiv.append(routeDateSpan, snapshotSpan);
+    
     header.append(lineMain, subDiv);
-    const stopsList = document.createElement("div"); stopsList.className = "stops-list";
-    const rowsContainer = document.createElement("div"); rowsContainer.className = "stops-rows";
+    
+    const stopsList = document.createElement("div");
+    stopsList.className = "stops-list";
+    const rowsContainer = document.createElement("div");
+    rowsContainer.className = "stops-rows";
     stopsList.appendChild(rowsContainer);
+    
     card.append(header, stopsList);
     container.appendChild(card);
-    routeViews.set(routeIdStr, { card, header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer });
+    
+    routeViews.set(routeIdStr, {
+      card,
+      header,
+      routeNumSpan,
+      headsignSpan,
+      metaLineDiv,
+      routeDateSpan,
+      snapshotSpan,
+      stopsList,
+      rowsContainer
+    });
   });
+  
   initialized = true;
 }
 
@@ -216,159 +284,376 @@ function getVariedColor(baseColor, idStr) {
     let r = parseInt(c.substring(0,2), 16);
     let g = parseInt(c.substring(2,4), 16);
     let b = parseInt(c.substring(4,6), 16);
+
     let hash = 0;
-    for (let i = 0; i < idStr.length; i++) hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+    for (let i = 0; i < idStr.length; i++) {
+        hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
     const variance = (hash % 120) - 60;
-    if (hash % 2 === 0) { r += variance; g -= variance / 2; b += variance / 3; }
-    else { r -= variance / 2; g += variance; b -= variance / 3; }
+    
+    if (hash % 2 === 0) {
+        r += variance;
+        g -= variance / 2;
+        b += variance / 3;
+    } else {
+        r -= variance / 2;
+        g += variance;
+        b -= variance / 3;
+    }
+
     const clamp = (num) => Math.min(255, Math.max(0, Math.round(num)));
     r = clamp(r); g = clamp(g); b = clamp(b);
+
     const toHex = (n) => n.toString(16).padStart(2, '0');
     return "#" + toHex(r) + toHex(g) + toHex(b);
 }
 
+// 🚀 עדכון חכם של מפה - רק מה שהשתנה
 function updateMapVehicles(allPayloads) {
   if (!mapInstance || !busLayerGroup) return;
+  
   const currentVehicleIds = new Set();
+  
   allPayloads.forEach(p => {
-    const meta = p.meta || {}, routeIdStr = String(meta.routeId);
+    const meta = p.meta || {};
+    const routeIdStr = String(meta.routeId);
     const baseColor = meta.operatorColor || "#1976d2";
     const specificColor = getVariedColor(baseColor, routeIdStr);
     const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
-    const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
+    const shapeLatLngs = shapeCoords.map(c => 
+      Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null
+    ).filter(Boolean);
+    
     const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
+    
     vehicles.forEach(v => {
       if (typeof v.positionOnLine !== "number" || !shapeLatLngs.length) return;
+      
       const vehicleKey = \`\${routeIdStr}-\${v.vehicleId}\`;
       currentVehicleIds.add(vehicleKey);
+      
       const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
       const ll = shapeLatLngs[idx];
+      
       if (!ll) return;
-      const routeNum = v.routeNumber || "", bearing = v.bearing || 0;
+      
+      const routeNum = v.routeNumber || "";
+      const bearing = v.bearing || 0;
+      
+      // 🚀 בדיקה: האם הסמן כבר קיים?
       const existingMarker = vehicleMarkers.get(vehicleKey);
+      
       if (existingMarker) {
+        // עדכון מיקום וסיבוב בלבד
         existingMarker.setLatLng(ll);
+        
         const iconEl = existingMarker.getElement();
         if (iconEl) {
           const arrow = iconEl.querySelector('.bus-direction-arrow');
-          if (arrow) arrow.style.transform = \`rotate(\${bearing}deg)\`;
+          if (arrow) {
+            arrow.style.transform = \`rotate(\${bearing}deg)\`;
+          }
         }
       } else {
-        const iconHtml = \`<div class="bus-marker-container"><div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);"><svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2"><path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" /></svg></div><div class="main-bus-icon" style="background:\${specificColor};"><span class="material-symbols-outlined">directions_bus</span></div>\${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}</div>\`;
-        const marker = L.marker(ll, { icon: L.divIcon({ html: iconHtml, className: "", iconSize: [34, 34], iconAnchor: [17, 17] }), zIndexOffset: 1000 }).addTo(busLayerGroup);
+        // יצירת סמן חדש
+        const iconHtml = \`
+          <div class="bus-marker-container">
+            <div class="bus-direction-arrow" style="transform: rotate(\${bearing}deg);">
+               <svg viewBox="0 0 24 24" width="24" height="24" fill="\${specificColor}" stroke="white" stroke-width="2">
+                  <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
+               </svg>
+            </div>
+            <div class="main-bus-icon" style="background:\${specificColor};">
+                <span class="material-symbols-outlined">directions_bus</span>
+            </div>
+            \${routeNum ? \`<div class="route-badge" style="color:\${specificColor}; border-color:\${specificColor};">\${routeNum}</div>\` : ''}
+          </div>
+        \`;
+        
+        const marker = L.marker(ll, {
+          icon: L.divIcon({
+            html: iconHtml,
+            className: "",
+            iconSize: [34, 34],
+            iconAnchor: [17, 17]
+          }),
+          zIndexOffset: 1000
+        }).addTo(busLayerGroup);
+        
         vehicleMarkers.set(vehicleKey, marker);
       }
     });
   });
+  
+  // 🚀 הסרת סמנים שכבר לא קיימים
   for (const [key, marker] of vehicleMarkers.entries()) {
-    if (!currentVehicleIds.has(key)) { busLayerGroup.removeLayer(marker); vehicleMarkers.delete(key); }
+    if (!currentVehicleIds.has(key)) {
+      busLayerGroup.removeLayer(marker);
+      vehicleMarkers.delete(key);
+    }
   }
 }
 
 function ensureMapInstance(allPayloads) {
   if (!document.getElementById("map")) return;
+  
   if (!mapInstance) {
     mapInstance = L.map("map");
-    L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "" }).addTo(mapInstance);
+    L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: ""
+    }).addTo(mapInstance);
+
     busLayerGroup = L.layerGroup().addTo(mapInstance);
     busLayerGroup.setZIndex(1000);
+
     if (!allStopsLayer && window.stopsDataJson) {
       try {
         const stops = JSON.parse(window.stopsDataJson || "[]");
         allStopsLayer = L.layerGroup().addTo(mapInstance);
         stops.forEach(st => {
-          const lat = Number(st.lat), lon = Number(st.lon);
+          const lat = Number(st.lat);
+          const lon = Number(st.lon);
           if (!isFinite(lat) || !isFinite(lon)) return;
-          L.circleMarker([lat, lon], { radius: 3, weight: 1, color: "#555", fillColor: "#fff", fillOpacity: 1 }).bindTooltip((st.stopName || "") + (st.stopCode ? " (" + st.stopCode + ")" : ""), {direction:"top", offset:[0,-4]}).addTo(allStopsLayer);
+          L.circleMarker([lat, lon], {
+            radius: 3,
+            weight: 1,
+            color: "#555",
+            fillColor: "#fff",
+            fillOpacity: 1
+          })
+          .bindTooltip((st.stopName || "") + (st.stopCode ? " (" + st.stopCode + ")" : ""), {
+            direction: "top",
+            offset: [0, -4]
+          })
+          .addTo(allStopsLayer);
         });
-      } catch (e) {}
+      } catch (e) {
+        console.error("Error stops:", e);
+      }
     }
   }
+
   const allLatLngs = [];
+
   allPayloads.forEach(p => {
-    const meta = p.meta || {}, routeIdStr = String(meta.routeId);
+    const meta = p.meta || {};
+    const routeIdStr = String(meta.routeId);
     const baseColor = meta.operatorColor || "#1976d2";
     const specificColor = getVariedColor(baseColor, routeIdStr);
     const shapeCoords = Array.isArray(p.shapeCoords) ? p.shapeCoords : [];
     const stops = Array.isArray(p.stops) ? p.stops : [];
-    const shapeLatLngs = shapeCoords.map(c => Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null).filter(Boolean);
+    
+    const shapeLatLngs = shapeCoords.map(c => 
+      Array.isArray(c) && c.length >= 2 ? [c[1], c[0]] : null
+    ).filter(Boolean);
+    
     shapeLatLngs.forEach(ll => allLatLngs.push(ll));
+
     if (!staticRouteLayers.has(routeIdStr)) {
       const staticGroup = L.layerGroup();
-      if (shapeLatLngs.length) L.polyline(shapeLatLngs, { weight: 4, opacity: 0.85, color: specificColor }).addTo(staticGroup);
+
+      if (shapeLatLngs.length) {
+        L.polyline(shapeLatLngs, {
+          weight: 4,
+          opacity: 0.85,
+          color: specificColor
+        }).addTo(staticGroup);
+      }
+      
       stops.forEach(s => {
         if (typeof s.lat === "number" && typeof s.lon === "number") {
           const ll = [s.lat, s.lon];
-          L.circleMarker(ll, { radius: 3, weight: 1, color: "#666" }).bindTooltip((s.stopName||"")+(s.stopCode?" ("+s.stopCode+")":""),{direction:"top",offset:[0,-4]}).addTo(staticGroup);
+          L.circleMarker(ll, {
+            radius: 3,
+            weight: 1,
+            color: "#666"
+          })
+          .bindTooltip(
+            (s.stopName || "") + (s.stopCode ? " (" + s.stopCode + ")" : ""),
+            { direction: "top", offset: [0, -4] }
+          )
+          .addTo(staticGroup);
         }
       });
+
       staticGroup.addTo(mapInstance);
       staticRouteLayers.set(routeIdStr, staticGroup);
     }
   });
+
+  // 🚀 עדכון רכבים בלבד
   updateMapVehicles(allPayloads);
-  if (allLatLngs.length && !mapDidInitialFit) { mapInstance.fitBounds(allLatLngs, { padding: [20, 20] }); mapDidInitialFit = true; }
+
+  if (allLatLngs.length && !mapDidInitialFit) {
+    mapInstance.fitBounds(allLatLngs, { padding: [20, 20] });
+    mapDidInitialFit = true;
+  }
 }
 
+// 🚀 עדכון DOM חכם - רק מה שהשתנה
 function renderAll() {
   if (!payloads || !payloads.length) return;
+  
   ensureLayout(payloads);
   ensureMapInstance(payloads);
+  
   payloads.forEach((payload) => {
-    const meta = payload.meta || {}, stops = payload.stops || [], vehicles = payload.vehicles || [];
+    const meta = payload.meta || {};
+    const stops = payload.stops || [];
+    const vehicles = payload.vehicles || [];
     const busesByStop = buildBusIndex(vehicles);
-    const view = routeViews.get(String(meta.routeId)); if (!view) return;
-    const { header, routeNumSpan, headsignSpan, metaLineDiv, routeDateSpan, snapshotSpan, stopsList, rowsContainer } = view;
+    
+    const view = routeViews.get(String(meta.routeId));
+    if (!view) return;
+    
+    const {
+      header,
+      routeNumSpan,
+      headsignSpan,
+      metaLineDiv,
+      routeDateSpan,
+      snapshotSpan,
+      stopsList,
+      rowsContainer
+    } = view;
+
     const baseColor = meta.operatorColor || "#1976d2";
     const specificColor = getVariedColor(baseColor, String(meta.routeId));
-    if (header.style.background !== specificColor) header.style.background = specificColor;
+
+    // 🚀 עדכון רק אם השתנה
+    if (header.style.background !== specificColor) {
+      header.style.background = specificColor;
+    }
+    
     const newRouteNum = meta.routeNumber || meta.routeCode || "";
-    if (routeNumSpan.textContent !== newRouteNum) routeNumSpan.textContent = newRouteNum;
+    if (routeNumSpan.textContent !== newRouteNum) {
+      routeNumSpan.textContent = newRouteNum;
+    }
+    
     const newHeadsign = meta.headsign || "";
-    if (headsignSpan.textContent !== newHeadsign) headsignSpan.textContent = newHeadsign;
+    if (headsignSpan.textContent !== newHeadsign) {
+      headsignSpan.textContent = newHeadsign;
+    }
+    
     const newMetaLine = "קו " + (meta.routeCode || "");
-    if (metaLineDiv.textContent !== newMetaLine) metaLineDiv.textContent = newMetaLine;
+    if (metaLineDiv.textContent !== newMetaLine) {
+      metaLineDiv.textContent = newMetaLine;
+    }
+    
     const newRouteDate = meta.routeDate || "";
-    if (routeDateSpan.textContent !== newRouteDate) routeDateSpan.textContent = newRouteDate;
+    if (routeDateSpan.textContent !== newRouteDate) {
+      routeDateSpan.textContent = newRouteDate;
+    }
+    
     const snap = meta.lastSnapshot || meta.lastVehicleReport || "-";
     const newSnapshot = "עדכון: " + (snap.split("T")[1]?.split(".")[0] || snap);
-    if (snapshotSpan.textContent !== newSnapshot) snapshotSpan.textContent = newSnapshot;
+    if (snapshotSpan.textContent !== newSnapshot) {
+      snapshotSpan.textContent = newSnapshot;
+    }
+    
+    // 🚀 עדכון תחנות רק בפעם הראשונה
     if (rowsContainer.children.length === 0) {
       stops.forEach((stop, idx) => {
-        const row = document.createElement("div"); row.className = "stop-row";
-        const timeline = document.createElement("div"); timeline.className = "timeline" + (idx===0?" first":"") + (idx===stops.length-1?" last":"");
-        timeline.innerHTML = '<div class="timeline-line line-top"></div><div class="timeline-circle" style="border-color:'+specificColor+'"></div><div class="timeline-line line-bottom"></div>';
-        const main = document.createElement("div"); main.className = "stop-main";
-        main.innerHTML = '<div class="stop-name"><span class="seq-num" style="color:'+specificColor+'">'+(idx+1)+'.</span><span>'+stop.stopName+'</span></div><div class="stop-code">'+(stop.stopCode||"#"+stop.stopSequence)+'</div><div class="stop-buses"></div>';
-        row.append(timeline, main); rowsContainer.appendChild(row);
+        const row = document.createElement("div");
+        row.className = "stop-row";
+        row.dataset.stopCode = stop.stopCode || "";
+        
+        const timeline = document.createElement("div");
+        timeline.className = "timeline" + 
+          (idx === 0 ? " first" : "") + 
+          (idx === stops.length - 1 ? " last" : "");
+        timeline.innerHTML = 
+          '<div class="timeline-line line-top"></div>' +
+          '<div class="timeline-circle" style="border-color:' + specificColor + '"></div>' +
+          '<div class="timeline-line line-bottom"></div>';
+        
+        const main = document.createElement("div");
+        main.className = "stop-main";
+        main.innerHTML = 
+          '<div class="stop-name">' +
+            '<span class="seq-num" style="color:' + specificColor + '">' + (idx + 1) + '.</span>' +
+            '<span>' + stop.stopName + '</span>' +
+          '</div>' +
+          '<div class="stop-code">' + (stop.stopCode || "#" + stop.stopSequence) + '</div>' +
+          '<div class="stop-buses"></div>';
+		row.append(timeline, main);
+        rowsContainer.appendChild(row);
       });
     }
+    
+    // 🚀 עדכון רק הזמנים של האוטובוסים
     stops.forEach((stop, idx) => {
-      const stopCode = stop.stopCode; if (!stopCode) return;
-      const row = rowsContainer.children[idx]; if (!row) return;
-      const busesContainer = row.querySelector('.stop-buses'); if (!busesContainer) return;
+      const stopCode = stop.stopCode;
+      if (!stopCode) return;
+      
+      const row = rowsContainer.children[idx];
+      if (!row) return;
+      
+      const busesContainer = row.querySelector('.stop-buses');
+      if (!busesContainer) return;
+      
       const buses = busesByStop.get(String(stopCode)) || [];
-      busesContainer.innerHTML = "";
-      buses.slice(0, 3).forEach(b => {
-        const chip = document.createElement("div");
-        chip.className = "bus-chip " + classifyMinutes(b.minutes);
-        chip.textContent = formatMinutesLabel(b.minutes);
-        busesContainer.appendChild(chip);
-      });
+      
+      // מחיקת התוכן הישן רק אם יש שינוי
+      const currentChips = Array.from(busesContainer.children);
+      const newChipsNeeded = buses.slice(0, 3);
+      
+      if (currentChips.length !== newChipsNeeded.length) {
+        busesContainer.innerHTML = "";
+        newChipsNeeded.forEach(b => {
+          const chip = document.createElement("div");
+          chip.className = "bus-chip " + classifyMinutes(b.minutes);
+          chip.textContent = formatMinutesLabel(b.minutes);
+          busesContainer.appendChild(chip);
+        });
+      } else {
+        // עדכון התוכן הקיים
+        currentChips.forEach((chip, i) => {
+          if (i >= newChipsNeeded.length) return;
+          const b = newChipsNeeded[i];
+          const newClass = "bus-chip " + classifyMinutes(b.minutes);
+          const newText = formatMinutesLabel(b.minutes);
+          
+          if (chip.className !== newClass) chip.className = newClass;
+          if (chip.textContent !== newText) chip.textContent = newText;
+        });
+      }
     });
+    
+    // 🚀 עדכון אייקונים של רכבים בצד
     setTimeout(() => {
       stopsList.querySelectorAll(".bus-icon").forEach(e => e.remove());
       const h = rowsContainer.offsetHeight;
+      
       vehicles.forEach(v => {
-        const pos = v.positionOnLine; if (pos==null||isNaN(pos)) return;
-        let y = pos * h; if (y<10) y=10; if(y>h-15) y=h-15;
-        const icon = document.createElement("div"); icon.className = "bus-icon material-symbols-outlined"; icon.textContent = "directions_bus";
-        icon.style.top = y + "px"; icon.style.color = specificColor; stopsList.appendChild(icon);
+        const pos = v.positionOnLine;
+        if (pos == null || isNaN(pos)) return;
+        
+        let y = pos * h;
+        if (y < 10) y = 10;
+        if (y > h - 15) y = h - 15;
+        
+        const icon = document.createElement("div");
+        icon.className = "bus-icon material-symbols-outlined";
+        icon.textContent = "directions_bus";
+        icon.style.top = y + "px";
+        icon.style.color = specificColor;
+        stopsList.appendChild(icon);
       });
     }, 50);
   });
 }
 
-window.updateData = function(newP) { payloads = Array.isArray(newP) ? newP : []; renderAll(); };
-</script></body></html>`;
+window.updateData = function(newP) {
+  payloads = Array.isArray(newP) ? newP : [];
+  
+  // 🚀 בפעם הראשונה - render מלא
+  // בפעמים הבאות - רק עדכון
+  renderAll();
 };
+</script>
+</body>
+</html>`;
+};</parameter>
