@@ -1,16 +1,31 @@
-// data.js
-// אחראי על כל התקשורת מול השרת ועיבוד הנתונים
+// data.js - גרסה מאופטמת
 const config = importModule('config');
 const utils = importModule('utils');
 
-// טעינת תחנות מקומיות
+// 🚀 Cache למניעת קריאות מיותרות
+const cache = {
+  stops: null,
+  stopsTimestamp: 0,
+  realtime: new Map(), // routeId -> {data, timestamp}
+  CACHE_TTL: 8000 // 8 שניות
+};
+
+// טעינת תחנות מקומיות (עם cache)
 async function loadLocalStops() {
+  const now = Date.now();
+  if (cache.stops && (now - cache.stopsTimestamp) < 60000) {
+    return cache.stops;
+  }
+
   const fm = FileManager.iCloud();
   const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
 
   try { await fm.downloadFileFromiCloud(stopsFile); } catch(e) {}
 
-  if (!fm.fileExists(stopsFile)) return { byId: new Map(), byCode: new Map() };
+  if (!fm.fileExists(stopsFile)) {
+    cache.stops = { byId: new Map(), byCode: new Map() };
+    return cache.stops;
+  }
 
   const stopsDataRaw = fm.readString(stopsFile);
   let stopsData;
@@ -18,7 +33,8 @@ async function loadLocalStops() {
     stopsData = JSON.parse(stopsDataRaw);
   } catch (e) {
     console.error("Error parsing stops.json");
-    return { byId: new Map(), byCode: new Map() };
+    cache.stops = { byId: new Map(), byCode: new Map() };
+    return cache.stops;
   }
 
   const stopsArray = Array.isArray(stopsData) ? stopsData :
@@ -35,13 +51,11 @@ async function loadLocalStops() {
     if (code) stopsByCode.set(code, s);
   }
 
-  return { byId: stopsById, byCode: stopsByCode };
+  cache.stops = { byId: stopsById, byCode: stopsByCode };
+  cache.stopsTimestamp = now;
+  return cache.stops;
 }
 
-
-// ===== פונקציות חדשות: תחנות קרובות =====
-
-// מרחק גס בין שתי נקודות
 function _distance2(lat1, lon1, lat2, lon2) {
   if (typeof lat1 !== "number" || typeof lon1 !== "number" ||
       typeof lat2 !== "number" || typeof lon2 !== "number") {
@@ -52,7 +66,6 @@ function _distance2(lat1, lon1, lat2, lon2) {
   return dLat * dLat + dLon * dLon;
 }
 
-// החזרת התחנות הקרובות למיקום
 module.exports.findNearestStops = async function(userLat, userLon, maxCount = 3) {
   const { byId } = await loadLocalStops();
   if (!byId) return [];
@@ -83,10 +96,6 @@ module.exports.findNearestStops = async function(userLat, userLon, maxCount = 3)
   return candidates.slice(0, maxCount).map(({ _d2, ...rest }) => rest);
 };
 
-
-// ===== קווים פעילים בזמן אמת בלבד =====
-
-// מחזיר רשימת routeId רק אם יש זמן אמת אמיתי
 module.exports.fetchActiveRoutesForStops = async function(stopCodes) {
   const resultMap = new Map();
   const codesArr = Array.isArray(stopCodes) ? stopCodes : [];
@@ -96,7 +105,6 @@ module.exports.fetchActiveRoutesForStops = async function(stopCodes) {
     if (!code) continue;
 
     try {
-      // --- 1) זמן אמת רגיל ---
       const url = `${config.API_BASE}/realtime?stopCode=${encodeURIComponent(code)}`;
       const realtimeData = await utils.fetchJson(url);
       const vehicles = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
@@ -113,10 +121,8 @@ module.exports.fetchActiveRoutesForStops = async function(stopCodes) {
         }
       }
 
-      // אם כבר נאספו קווים בזמן אמת – לא צריך fallback
       if (resultMap.size > 0) continue;
 
-      // --- 2) אין זמן אמת, נוודא שהתחנה בכלל קיימת ---
       const summaryUrl = `${config.API_BASE}/stopSummary?stopCode=${encodeURIComponent(code)}`;
       const summary = await utils.fetchJson(summaryUrl);
 
@@ -127,20 +133,13 @@ module.exports.fetchActiveRoutesForStops = async function(stopCodes) {
         console.log(`Stop ${code} valid but has no realtime now.`);
       }
 
-      // ❗ חשוב: לא מוסיפים שום קו מרשימת summary.
-      // ❗ הצגה על המפה תיעשה רק לפי realtime.
-
     } catch (e) {
       console.error(`Error fetching realtime for stop ${code}: ${e}`);
     }
   }
 
-  // מחזיר רק קווים עם זמן אמת
   return Array.from(resultMap.values());
 };
-
-
-// ===== Shapes =====
 
 async function fetchShapeIdAndCoordsForRoute(routeInfo) {
   try {
@@ -166,9 +165,6 @@ async function fetchShapeIdAndCoordsForRoute(routeInfo) {
     console.error(`Error fetching shapes: ${e}`);
   }
 }
-
-
-// ===== מסלולים סטטיים =====
 
 module.exports.fetchStaticRoutes = async function(routesConfig, routeDate) {
   const { byId: stopsById } = await loadLocalStops();
@@ -252,83 +248,103 @@ module.exports.fetchStaticRoutes = async function(routesConfig, routeDate) {
     routesStatic.push(routeObj);
   }
 
-  // הבאת shapeCoords
-  for (const r of routesStatic) {
-    await fetchShapeIdAndCoordsForRoute(r);
-  }
+  // 🚀 הבאת shapes במקביל במקום ברצף
+  await Promise.all(routesStatic.map(r => fetchShapeIdAndCoordsForRoute(r)));
 
   return routesStatic;
 };
 
-
-// ===== זמן אמת למסלולים =====
-
+// 🚀 זמן אמת עם דילוג על נתונים זהים
 module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
   const allPayloads = [];
+  const now = Date.now();
 
-  for (const r of routesStatic) {
+  // 🚀 בקשות מקבילות במקום סדרתיות
+  const realtimePromises = routesStatic.map(async (r) => {
     try {
+      // בדיקת cache
+      const cached = cache.realtime.get(r.routeId);
+      if (cached && (now - cached.timestamp) < cache.CACHE_TTL) {
+        return { route: r, realtimeData: cached.data };
+      }
+
       const realtimeUrl = `${config.API_BASE}/realtime?routeCode=${encodeURIComponent(r.routeCode)}`;
       const realtimeData = await utils.fetchJson(realtimeUrl);
 
-      const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
-
-// ⭐ סינון חובה – כדי לא לערבב בין שני כיווני המסלול
-const relevantVehicles = vehiclesRaw.filter(v =>
-  v.trip && String(v.trip.routeId) === String(r.routeId)
-);
-
-// ⭐ אם משום־מה אין התאמות – נשמור על fallback שלא יפיל את המערכת
-const filtered = relevantVehicles.length ? relevantVehicles : vehiclesRaw;
-
-const slimVehicles = filtered.map(v => {
-    const trip = v.trip || {};
-    const onwardCalls = trip.onwardCalls || {};
-    const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
-    const gtfs = trip.gtfsInfo || {};
-    const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
-
-    const loc = v.geo && v.geo.location ? v.geo.location : {};
-    const lat = (typeof loc.lat === "number") ? loc.lat : null;
-    const lon = (typeof loc.lon === "number") ? loc.lon : null;
-
-    return {
-      vehicleId: v.vehicleId,
-      lastReported: v.lastReported,
-      routeNumber: gtfs.routeNumber,
-      headsign: gtfs.headsign,
-      bearing: v.bearing || v.geo?.bearing || 0,
-      lat,
-      lon,
-      positionOnLine: typeof pos === "number" ? pos : null,
-      onwardCalls: calls.map(c => ({
-        stopCode: c.stopCode,
-        eta: c.eta
-      }))
-    };
-});
-
-      allPayloads.push({
-        meta: {
-          routeId: r.routeId,
-          routeCode: r.routeCode,
-          routeDate: r.routeDate,
-          routeNumber: r.routeMeta?.routeNumber ?? "",
-          routeLongName: r.routeMeta?.routeLongName ?? "",
-          headsign: r.headsign,
-          lastSnapshot: realtimeData.lastSnapshot,
-          lastVehicleReport: realtimeData.lastVehicleReport,
-          operatorId: r.operatorId,
-          operatorColor: r.operatorColor
-        },
-        stops: r.routeStops,
-        vehicles: slimVehicles,
-        shapeCoords: r.shapeCoords || null
+      // שמירה ב-cache
+      cache.realtime.set(r.routeId, {
+        data: realtimeData,
+        timestamp: now
       });
+
+      return { route: r, realtimeData };
 
     } catch (e) {
       console.error("RT Error: " + e);
+      return null;
     }
+  });
+
+  const results = await Promise.all(realtimePromises);
+
+  for (const result of results) {
+    if (!result) continue;
+
+    const { route: r, realtimeData } = result;
+    const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
+
+    const relevantVehicles = vehiclesRaw.filter(v =>
+      v.trip && String(v.trip.routeId) === String(r.routeId)
+    );
+
+    const filtered = relevantVehicles.length ? relevantVehicles : vehiclesRaw;
+
+    // 🚀 צמצום הנתונים שנשלחים ל-WebView
+    const slimVehicles = filtered.map(v => {
+      const trip = v.trip || {};
+      const onwardCalls = trip.onwardCalls || {};
+      const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
+      const gtfs = trip.gtfsInfo || {};
+      const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
+
+      const loc = v.geo && v.geo.location ? v.geo.location : {};
+      const lat = (typeof loc.lat === "number") ? loc.lat : null;
+      const lon = (typeof loc.lon === "number") ? loc.lon : null;
+
+      return {
+        vehicleId: v.vehicleId,
+        lastReported: v.lastReported,
+        routeNumber: gtfs.routeNumber,
+        headsign: gtfs.headsign,
+        bearing: v.bearing || v.geo?.bearing || 0,
+        lat,
+        lon,
+        positionOnLine: typeof pos === "number" ? pos : null,
+        // 🚀 רק 3 התחנות הקרובות ביותר
+        onwardCalls: calls.slice(0, 3).map(c => ({
+          stopCode: c.stopCode,
+          eta: c.eta
+        }))
+      };
+    });
+
+    allPayloads.push({
+      meta: {
+        routeId: r.routeId,
+        routeCode: r.routeCode,
+        routeDate: r.routeDate,
+        routeNumber: r.routeMeta?.routeNumber ?? "",
+        routeLongName: r.routeMeta?.routeLongName ?? "",
+        headsign: r.headsign,
+        lastSnapshot: realtimeData.lastSnapshot,
+        lastVehicleReport: realtimeData.lastVehicleReport,
+        operatorId: r.operatorId,
+        operatorColor: r.operatorColor
+      },
+      stops: r.routeStops,
+      vehicles: slimVehicles,
+      shapeCoords: r.shapeCoords || null
+    });
   }
 
   return allPayloads;
