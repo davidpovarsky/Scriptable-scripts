@@ -13,7 +13,7 @@ var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 // ===============================
 // פונקציות עזר
 // ===============================
-const helpers = {
+var helpers = {
   formatDate: function(date) {
     const offset = date.getTimezoneOffset() * 60000;
     return new Date(date - offset).toISOString().slice(0, 10);

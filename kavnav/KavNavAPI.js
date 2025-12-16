@@ -6,7 +6,7 @@
 var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
 var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
-let Config, Helpers;
+var Config, Helpers;
 
 if (IS_SCRIPTABLE) {
   Config = importModule('kavnav/KavNavConfig');
@@ -268,7 +268,7 @@ async function getStopData(stopCode) {
 // ===============================
 // Export לפי סביבה
 // ===============================
-const API = {
+var API = {
   getLocation,
   findNearbyStops,
   getStopData

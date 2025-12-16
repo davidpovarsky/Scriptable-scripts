@@ -9,7 +9,7 @@ var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 // ===============================
 // CSS - משותף לכולם
 // ===============================
-const CSS_CONTENT = `
+var CSS_CONTENT = `
 :root { --bg:#0b0f14; --card:#1f2937; --text:#e5e7eb; --accent:#2563eb; --realtime:#22c55e; --stale:#f97316; }
 body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system, sans-serif; padding-bottom:20px; }
 
@@ -55,7 +55,7 @@ h2 { margin:0 0 16px 0; font-size:18px; color:#9ca3af; font-weight:normal; }
 // ===============================
 // JavaScript - משותף לכולם
 // ===============================
-const JS_CONTENT = `
+var JS_CONTENT = `
 let STOPS = [];
 let DATA = {};
 let currentStopCode = null;
@@ -323,7 +323,7 @@ ${htmlBody}
 // ===============================
 // Export לפי סביבה
 // ===============================
-const UI = {
+var UI = {
   buildHTML,
   CSS_CONTENT,  // מייצא גם את ה-CSS לשימוש נפרד
   JS_CONTENT    // מייצא גם את ה-JS לשימוש נפרד

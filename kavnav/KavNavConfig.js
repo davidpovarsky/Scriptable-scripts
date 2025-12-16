@@ -19,7 +19,7 @@ var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 // ===============================
 // הגדרות כלליות
 // ===============================
-const config = {
+var config = {
   BASE_URL: "https://kavnav.com/api",
   PROXY_URL: "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec?url=",
   
