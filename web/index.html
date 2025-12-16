@@ -12,10 +12,8 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-  <!-- Your CSS -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/style.css">
-
-
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="map">
@@ -28,7 +26,12 @@
     <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • מבוסס KavNav</div>
   </div>
 
-  <!-- Your JS -->
-<script src="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/app.js"></script>
+  <!-- הגדרת מצב ריצה -->
+  <script>
+    window.APP_ENVIRONMENT = 'local';
+  </script>
+
+  <!-- JavaScript -->
+  <script src="app.js"></script>
 </body>
 </html>
