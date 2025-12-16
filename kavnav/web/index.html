@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+    <title>KavNav - זמני הגעה בזמן אמת</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <button id="refresh-btn" onclick="triggerRefresh()">
+            <svg viewBox="0 0 24 24">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+            </svg>
+        </button>
+        <div id="scroll-area"></div>
+    </header>
+
+    <div id="content"></div>
+
+    <!-- טעינת הקבצים המשותפים -->
+    <script src="../KavNavConfig.js"></script>
+    <script src="../KavNavHelpers.js"></script>
+    <script src="../KavNavAPI.js"></script>
+    <script src="app.js"></script>
+    <script src="../KavNavMain.js"></script>
+</body>
+</html>
