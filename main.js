@@ -107,12 +107,13 @@ module.exports.run = async function(argsObj) {
   // 3. יצירת WebView
 const wv = new WebView();
 
-// טוענים את האתר המפוצל מתוך הקבצים שה-Loader הוריד למכשיר (FileManager.local)
-const fmLocal = FileManager.local();
-const indexPath = fmLocal.joinPath(fmLocal.documentsDirectory(), "web/index.html");
+console.log("✅ WEB-SPLIT MODE: loading web/index.html from device");
 
-if (!fmLocal.fileExists(indexPath)) {
-  throw new Error("❌ לא נמצא web/index.html במכשיר. תריץ שוב את ה-Loader ותוודא שהוא הוריד web/index.html");
+const fm = FileManager.local();
+const indexPath = fm.joinPath(fm.documentsDirectory(), "web/index.html");
+
+if (!fm.fileExists(indexPath)) {
+  throw new Error("❌ web/index.html לא נמצא במכשיר. תריץ Loader ותוודא Updated: web/index.html");
 }
 
 await wv.loadFile(indexPath);
