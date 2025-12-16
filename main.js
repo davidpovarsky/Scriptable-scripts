@@ -106,8 +106,10 @@ module.exports.run = async function(argsObj) {
 
   // 3. יצירת WebView
   const wv = new WebView();
-  const html = viewService.getHtml();
-  await wv.loadHTML(html);
+
+// טוענים את index.html מה-GitHub (דרך jsDelivr כדי לקבל HTML "אמיתי")
+const INDEX_URL = "https://cdn.jsdelivr.net/gh/davidpovarsky/notes@main/web/index.html";
+await wv.loadURL(INDEX_URL);
 
   // העברת מיקום המשתמש (אם קיים) ל-HTML – הכפתור 📍 ישתמש בזה
   if (userLat != null && userLon != null) {
