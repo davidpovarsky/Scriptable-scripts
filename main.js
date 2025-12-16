@@ -105,10 +105,38 @@ module.exports.run = async function(argsObj) {
   }
 
   // 3. יצירת WebView
-  const wv = new WebView();
+const wv = new WebView();
 
-const INDEX_URL = "https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/index.html";
-await wv.loadURL(INDEX_URL);
+// טוענים את האתר המפוצל מתוך הקבצים שה-Loader הוריד למכשיר (FileManager.local)
+const fmLocal = FileManager.local();
+const indexPath = fmLocal.joinPath(fmLocal.documentsDirectory(), "web/index.html");
+
+if (!fmLocal.fileExists(indexPath)) {
+  throw new Error("❌ לא נמצא web/index.html במכשיר. תריץ שוב את ה-Loader ותוודא שהוא הוריד web/index.html");
+}
+
+await wv.loadFile(indexPath);
+
+// מחכים שה-JS של האתר (web/app.js) יטען ויצור את הפונקציות
+async function waitForWebAppReady(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const ok = await wv.evaluateJavaScript(
+        "typeof window.initStaticData==='function' && typeof window.updateRealtimeData==='function'",
+        false
+      );
+      if (ok) return true;
+    } catch (e) {}
+    await utils.sleep(100);
+  }
+  return false;
+}
+
+const ready = await waitForWebAppReady();
+if (!ready) {
+  throw new Error("❌ ה-HTML נטען אבל app.js לא עלה (אין initStaticData/updateRealtimeData). בדוק שב-index.html יש <script src=\"app.js\"></script> וש-app.js נמצא באותה תיקייה.");
+}
 
   // העברת מיקום המשתמש (אם קיים) ל-HTML – הכפתור 📍 ישתמש בזה
   if (userLat != null && userLon != null) {
