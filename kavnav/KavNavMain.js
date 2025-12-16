@@ -53,7 +53,7 @@ async function main() {
     wv.shouldAllowRequest = (req) => {
       if (req.url.startsWith("kavnav://")) {
         const cmd = req.url.replace("kavnav://", "");
-        handleCommand(cmd, wv);
+        handleCommandInternal(cmd, wv);
         return false;
       }
       return true;
@@ -80,7 +80,7 @@ async function main() {
   } else {
     // Browser - DOM רגיל
     // הפונקציה handleCommand נרשמת ב-window
-    window.handleCommand = (cmd) => handleCommand(cmd, null);
+    window.handleCommand = (cmd) => handleCommandInternal(cmd, null);
     
     // בדיקה אם יש פרמטרים ב-URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -97,7 +97,7 @@ async function main() {
   }
 }
 
-async function handleCommand(cmd, wv) {
+async function handleCommandInternal(cmd, wv) {
   if (cmd.startsWith("setActiveStop/")) {
     const code = cmd.split("/")[1];
     STATE.activeStopCode = code;
@@ -126,10 +126,10 @@ async function handleCommand(cmd, wv) {
         a.message = "האם לעבור לחיפוש לפי מיקום?";
         a.addAction("כן");
         a.addCancelAction("ביטול");
-        if (await a.presentAlert() === 0) handleCommand("refreshLocation", wv);
+        if (await a.presentAlert() === 0) handleCommandInternal("refreshLocation", wv);
       } else {
         if (confirm("האם לעבור לחיפוש לפי מיקום?")) {
-          handleCommand("refreshLocation", wv);
+          handleCommandInternal("refreshLocation", wv);
         }
       }
       return;
