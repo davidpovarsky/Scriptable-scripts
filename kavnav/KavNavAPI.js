@@ -147,7 +147,7 @@ module.exports.getStopData = async function(stopCode) {
       const minutes = Helpers.getMinutesDiff(eta);
       
       // סינון קווים שכבר עברו מזמן
-      if (minutes < -5 || minutes > Config.LOOKAHEAD_MINUTES) return;
+      if (minutes < -0 || minutes > Config.LOOKAHEAD_MINUTES) return;
 
       const tripId = bus.trip.gtfsInfo?.tripId;
       if (tripId) realtimeTrips.add(tripId);
