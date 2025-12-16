@@ -7,8 +7,8 @@
 // ===============================
 // זיהוי סביבה וטעינת תלויות
 // ===============================
-const IS_SCRIPTABLE = typeof FileManager !== 'undefined';
-const IS_BROWSER = !IS_SCRIPTABLE;
+const IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
+const IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
 let Config, Helpers, API, UI;
 

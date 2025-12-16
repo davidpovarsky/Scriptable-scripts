@@ -5,10 +5,10 @@
 // KavNavHelpers - פונקציות עזר משותפות ל-Scriptable ודפדפן
 
 // ===============================
-// זיהוי סביבה
+// זיהוי סביבה (שימוש במשתנים גלובליים)
 // ===============================
-const IS_SCRIPTABLE = typeof FileManager !== 'undefined';
-const IS_BROWSER = !IS_SCRIPTABLE;
+const IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
+const IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
 // ===============================
 // פונקציות עזר
