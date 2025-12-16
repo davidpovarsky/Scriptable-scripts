@@ -1,7 +1,9 @@
 // config.js
 // מכיל את כל הקבועים וההגדרות
+
 // מצב הריצה: "scriptable" או "local"
-module.exports.APP_MODE = "scriptable";  
+// זה יוגדר אוטומטית על פי הסביבה
+module.exports.APP_MODE = typeof importModule !== 'undefined' ? "scriptable" : "local";
 
 // כתובת הפרוקסי
 module.exports.PROXY_URL = "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec";
