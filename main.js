@@ -105,39 +105,9 @@ module.exports.run = async function(argsObj) {
   }
 
   // 3. יצירת WebView
-const wv = new WebView();
-
-console.log("✅ WEB-SPLIT MODE: loading web/index.html from device");
-
-const fm = FileManager.local();
-const indexPath = fm.joinPath(fm.documentsDirectory(), "web/index.html");
-
-if (!fm.fileExists(indexPath)) {
-  throw new Error("❌ web/index.html לא נמצא במכשיר. תריץ Loader ותוודא Updated: web/index.html");
-}
-
-await wv.loadFile(indexPath);
-
-// מחכים שה-JS של האתר (web/app.js) יטען ויצור את הפונקציות
-async function waitForWebAppReady(timeoutMs = 8000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const ok = await wv.evaluateJavaScript(
-        "typeof window.initStaticData==='function' && typeof window.updateRealtimeData==='function'",
-        false
-      );
-      if (ok) return true;
-    } catch (e) {}
-    await utils.sleep(100);
-  }
-  return false;
-}
-
-const ready = await waitForWebAppReady();
-if (!ready) {
-  throw new Error("❌ ה-HTML נטען אבל app.js לא עלה (אין initStaticData/updateRealtimeData). בדוק שב-index.html יש <script src=\"app.js\"></script> וש-app.js נמצא באותה תיקייה.");
-}
+  const wv = new WebView();
+  const html = viewService.getHtml();
+  await wv.loadHTML(html);
 
   // העברת מיקום המשתמש (אם קיים) ל-HTML – הכפתור 📍 ישתמש בזה
   if (userLat != null && userLon != null) {
