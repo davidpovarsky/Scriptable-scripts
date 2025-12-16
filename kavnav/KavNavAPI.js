@@ -24,17 +24,10 @@ if (IS_SCRIPTABLE) {
 // ===============================
 function buildUrl(originalUrl) {
   if (IS_BROWSER) {
-    // בדפדפן - בדוק אם זה local או GitHub Pages
-    const isLocal = window.location.protocol === 'file:' || 
-                    window.location.hostname === 'localhost' || 
-                    window.location.hostname === '127.0.0.1';
-    
-    if (isLocal) {
-      // Local - השתמש ב-PROXY
-      return Config.PROXY_URL + encodeURIComponent(originalUrl);
-    }
+    // בדפדפן - תמיד השתמש ב-PROXY (בגלל CORS)
+    return Config.PROXY_URL + encodeURIComponent(originalUrl);
   }
-  // Scriptable או GitHub Pages - URL ישיר
+  // Scriptable - URL ישיר
   return originalUrl;
 }
 
