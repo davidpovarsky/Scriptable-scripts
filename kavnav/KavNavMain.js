@@ -18,11 +18,13 @@ if (IS_SCRIPTABLE) {
   API = importModule('kavnav/KavNavAPI');
   UI = importModule('kavnav/KavNavUI');
 } else {
-  // בדפדפן - המשתנים נטענים מ-window
-  Config = window.KavNavConfig;
-  Helpers = window.KavNavHelpers;
-  API = window.KavNavAPI;
-  UI = window.KavNavUI;
+  // בדפדפן - השתמש ישירות מ-window (ללא הגדרה מחדש)
+  if (typeof window.KavNavConfig !== 'undefined') {
+    Config = window.KavNavConfig;
+    Helpers = window.KavNavHelpers;
+    API = window.KavNavAPI;
+    UI = window.KavNavUI;
+  }
 }
 
 // ===============================

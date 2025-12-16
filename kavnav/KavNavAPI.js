@@ -12,8 +12,11 @@ if (IS_SCRIPTABLE) {
   Config = importModule('kavnav/KavNavConfig');
   Helpers = importModule('kavnav/KavNavHelpers');
 } else {
-  Config = window.KavNavConfig;
-  Helpers = window.KavNavHelpers;
+  // בדפדפן - השתמש ישירות מ-window (ללא הגדרה מחדש)
+  if (typeof window.KavNavConfig !== 'undefined') {
+    Config = window.KavNavConfig;
+    Helpers = window.KavNavHelpers;
+  }
 }
 
 // ===============================
