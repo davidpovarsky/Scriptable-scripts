@@ -1,3 +1,7 @@
+{
+type: uploaded file
+fileName: KavNavUI.js
+fullContent:
 // KavNavUI.js
 
 module.exports.buildHTML = function() {
@@ -8,7 +12,7 @@ module.exports.buildHTML = function() {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
 <style>
-:root { --bg:#0b0f14; --card:#1f2937; --text:#e5e7eb; --accent:#2563eb; --realtime:#22c55e; --stale:#f97316; } /* הוספנו משתנה לכתום */
+:root { --bg:#0b0f14; --card:#1f2937; --text:#e5e7eb; --accent:#2563eb; --realtime:#22c55e; --stale:#f97316; }
 body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system, sans-serif; padding-bottom:20px; }
 
 header { display:flex; align-items:center; background:#111827; position:sticky; top:0; z-index:100; box-shadow:0 4px 6px -1px rgba(0,0,0,0.3); height:60px; }
@@ -37,10 +41,7 @@ h2 { margin:0 0 16px 0; font-size:18px; color:#9ca3af; font-weight:normal; }
 .times-row { display:flex; gap:10px; overflow-x:auto; min-height: 34px; }
 .time-chip { background:rgba(255,255,255,0.05); padding:4px 10px; border-radius:8px; font-size:14px; display:flex; align-items:center; gap:4px; white-space:nowrap; transition: background 0.3s; }
 
-/* ✅ עיצוב לזמן אמת תקין */
 .time-chip.realtime { background:rgba(34,197,94,0.15); color:var(--realtime); border:1px solid rgba(34,197,94,0.3); }
-
-/* ✅ עיצוב חדש: זמן אמת ישן (Stale) - כתום */
 .time-chip.stale { background:rgba(249,115,22,0.15) !important; color:var(--stale) !important; border:1px solid rgba(249,115,22,0.3) !important; }
 
 .pulse-dot { width:6px; height:6px; background:currentColor; border-radius:50%; animation:pulse 1.5s infinite; }
@@ -141,8 +142,6 @@ window.updateStopName = function(code, name) {
   }
 }
 
-/* ===== NO FLICKER UPDATE LOGIC ===== */
-
 window.updateData = function(stopCode, data) {
   DATA[stopCode] = data;
   if (currentStopCode === String(stopCode)) {
@@ -152,6 +151,10 @@ window.updateData = function(stopCode, data) {
 
 function selectStop(code) {
   currentStopCode = String(code);
+  
+  // ✅ שליחת עדכון לסקריפט הראשי איזו תחנה נבחרה
+  notify("setActiveStop/" + code);
+
   const stopInfo = STOPS.find(s => s.stopCode === currentStopCode);
   
   // Update Buttons
@@ -221,11 +224,9 @@ function updateCardTimes(card, arrivals) {
             const isRt = !!a.realtime;
             const isStale = !!a.stale;
 
-            // ✅ עדכון Class בהתאם לסטטוס (ירוק רגיל או כתום מיושן)
             chip.classList.toggle("realtime", isRt && !isStale);
             chip.classList.toggle("stale", isRt && isStale);
             
-            // נקודה מהבהבת רק אם זה זמן אמת (בין אם תקין ובין אם ישן)
             const dot = chip.querySelector(".pulse-dot");
             const dotDisplay = isRt ? "block" : "none";
             if (dot.style.display !== dotDisplay) dot.style.display = dotDisplay;
@@ -279,3 +280,4 @@ ensureStructure();
 </body>
 </html>`;
 };
+}
