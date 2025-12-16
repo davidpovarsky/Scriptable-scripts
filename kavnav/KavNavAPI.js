@@ -6,14 +6,67 @@
 const Config = importModule('KavNavConfig');
 const Helpers = importModule('KavNavHelpers');
 
-// --- Location Logic ---
+/* ===================== CACHE (Summary + Schedule) ===================== */
+
+const _summaryCache = new Map();  // key: stopCode -> { ts, data }
+const _scheduleCache = new Map(); // key: `${stopCode}|${dateStr}` -> { ts, data }
+
+function _isFresh(entry, ttlMs) {
+  if (!entry) return false;
+  return (Date.now() - entry.ts) < ttlMs;
+}
+
+async function _fetchJSON(url) {
+  try {
+    return await new Request(url).loadJSON();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function _getStopSummaryCached(stopCode) {
+  const key = String(stopCode);
+  const entry = _summaryCache.get(key);
+
+  if (_isFresh(entry, Config.SUMMARY_CACHE_TTL_MS)) {
+    return entry.data;
+  }
+
+  const data = await _fetchJSON(`${Config.BASE_URL}/stopSummary?stopCode=${stopCode}`);
+
+  // אם נכשל – נחזיר קאש ישן (עדיף מכלום)
+  if (data == null && entry) return entry.data;
+
+  _summaryCache.set(key, { ts: Date.now(), data });
+  return data;
+}
+
+async function _getStopScheduleCached(stopCode, dateStr) {
+  const key = `${String(stopCode)}|${String(dateStr)}`;
+  const entry = _scheduleCache.get(key);
+
+  if (_isFresh(entry, Config.SCHEDULE_CACHE_TTL_MS)) {
+    return entry.data;
+  }
+
+  const data = await _fetchJSON(`${Config.BASE_URL}/stopSchedule?stopCode=${stopCode}&date=${dateStr}`);
+
+  // אם נכשל – נחזיר קאש ישן (עדיף מכלום)
+  if (data == null && entry) return entry.data;
+
+  _scheduleCache.set(key, { ts: Date.now(), data });
+  return data;
+}
+
+/* ===================== Location Logic ===================== */
+
 module.exports.getLocation = async function() {
   const p = args.shortcutParameter || {};
   const lat = parseFloat(p.lat || p.latitude);
   const lon = parseFloat(p.lon || p.longitude);
-  
+
   if (!isNaN(lat) && !isNaN(lon)) return { lat, lon };
-  
+
   try {
     Location.setAccuracyToHundredMeters();
     const loc = await Location.current();
@@ -23,7 +76,8 @@ module.exports.getLocation = async function() {
   }
 };
 
-// --- Overpass Logic (Stops) ---
+/* ===================== Overpass Logic (Stops) ===================== */
+
 module.exports.findNearbyStops = async function(lat, lon, currentStops = [], limit = Config.MAX_STATIONS, radius = Config.SEARCH_RADIUS) {
   const query = `[out:json][timeout:25];(node[highway=bus_stop](around:${radius},${lat},${lon});node[public_transport=platform](around:${radius},${lat},${lon}););out body;`;
   const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
@@ -31,11 +85,11 @@ module.exports.findNearbyStops = async function(lat, lon, currentStops = [], lim
   try {
     const data = await new Request(url).loadJSON();
     if (!data?.elements) return [];
-    
+
     const existingCodes = new Set(currentStops.map(s => String(s.stopCode)));
 
     return data.elements
-      .filter(el => el.tags && el.tags.ref) 
+      .filter(el => el.tags && el.tags.ref)
       .map(el => ({
         name: el.tags?.name || el.tags?.["name:he"] || "תחנה",
         stopCode: String(el.tags.ref),
@@ -49,15 +103,18 @@ module.exports.findNearbyStops = async function(lat, lon, currentStops = [], lim
   }
 };
 
-// --- KavNav Data Logic ---
+/* ===================== KavNav Data Logic ===================== */
+
 module.exports.getStopData = async function(stopCode) {
   const today = new Date();
   const todayStr = Helpers.formatDate(today);
 
+  // ✅ realtime תמיד נטען מחדש (כל 10 שניות)
+  // ✅ schedule+summary נטענים מחדש רק כשנגמר TTL
   const [summary, schedule, realtime] = await Promise.all([
-    new Request(`${Config.BASE_URL}/stopSummary?stopCode=${stopCode}`).loadJSON().catch(() => null),
-    new Request(`${Config.BASE_URL}/stopSchedule?stopCode=${stopCode}&date=${todayStr}`).loadJSON().catch(() => null),
-    new Request(`${Config.BASE_URL}/realtime?stopCode=${stopCode}`).loadJSON().catch(() => null)
+    _getStopSummaryCached(stopCode),
+    _getStopScheduleCached(stopCode, todayStr),
+    _fetchJSON(`${Config.BASE_URL}/realtime?stopCode=${stopCode}`)
   ]);
 
   let fetchedName = null;
@@ -79,7 +136,7 @@ module.exports.getStopData = async function(stopCode) {
       const eta = new Date(call.eta);
       const minutes = Helpers.getMinutesDiff(eta);
       if (minutes < -5 || minutes > Config.LOOKAHEAD_MINUTES) return;
-      
+
       const tripId = bus.trip.gtfsInfo?.tripId;
       if (tripId) realtimeTrips.add(tripId);
 
