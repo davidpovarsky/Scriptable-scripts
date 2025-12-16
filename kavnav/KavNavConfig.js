@@ -12,8 +12,9 @@ if (typeof window !== 'undefined' && typeof window.IS_SCRIPTABLE === 'undefined'
   window.IS_BROWSER = !window.IS_SCRIPTABLE;
 }
 
-const IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
-const IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
+// שימוש ישיר במשתנים - ללא const!
+var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
+var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
 // ===============================
 // הגדרות כלליות
