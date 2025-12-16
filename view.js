@@ -1,7 +1,33 @@
 // view.js
-// מחזיר HTML שטוען את הקבצים החיצוניים מ-GitHub
+// בונה HTML שטוען את הקבצים המקומיים או מ-GitHub
 
 module.exports.getHtml = function() {
+  // בודק אם אנחנו ב-Scriptable
+  const isScriptable = typeof FileManager !== 'undefined';
+  
+  let cssContent = '';
+  let jsContent = '';
+  
+  if (isScriptable) {
+    // טוען את הקבצים המקומיים
+    try {
+      const fm = FileManager.local();
+      const webDir = fm.joinPath(fm.documentsDirectory(), "web");
+      
+      const cssPath = fm.joinPath(webDir, "style.css");
+      const jsPath = fm.joinPath(webDir, "app.js");
+      
+      if (fm.fileExists(cssPath)) {
+        cssContent = fm.readString(cssPath);
+      }
+      if (fm.fileExists(jsPath)) {
+        jsContent = fm.readString(jsPath);
+      }
+    } catch (e) {
+      console.error("Error loading web files:", e);
+    }
+  }
+  
   return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -16,8 +42,10 @@ module.exports.getHtml = function() {
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-  <!-- CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/style.css">
+  ${isScriptable && cssContent ? 
+    `<style>${cssContent}</style>` : 
+    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/style.css">'
+  }
 </head>
 <body>
   <div id="map">
@@ -35,8 +63,10 @@ module.exports.getHtml = function() {
     window.APP_ENVIRONMENT = 'scriptable';
   </script>
 
-  <!-- JavaScript -->
-  <script src="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/app.js"></script>
+  ${isScriptable && jsContent ? 
+    `<script>${jsContent}</script>` : 
+    '<script src="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/app.js"></script>'
+  }
 </body>
 </html>`;
 };
