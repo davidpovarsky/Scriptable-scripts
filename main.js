@@ -133,7 +133,7 @@ module.exports.run = async function(argsObj) {
     console.error("Failed injecting stops.json:", e);
   }
 
-  // 5. נתוני בסיס
+  // 5. נתוני בסיס  // 5. נתוני בסיס (סטטיים)
   let routesStatic = [];
   try {
     routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
@@ -141,20 +141,56 @@ module.exports.run = async function(argsObj) {
     console.error("Error fetching static routes:", e);
   }
 
+  // אם אין מסלולים כלל - יציאה
   if (!routesStatic.length) {
     if (FROM_NOTIFICATION) await wv.present();
     else await wv.present(true);
     return;
   }
 
-  // 6. רענון זמן אמת
+  // --- שלב 1: שליחת הנתונים הכבדים (מפה ותחנות) פעם אחת בלבד ---
+  // אנו שולחים את זה מיד, לפני שמתחילים את הלולאה של ה-Realtime
+  try {
+    const staticPayload = routesStatic.map(r => ({
+      meta: {
+        routeId: r.routeId,
+        routeCode: r.routeCode,
+        operatorColor: r.operatorColor,
+        headsign: r.headsign,
+        routeNumber: r.routeMeta?.routeNumber,
+        routeDate: r.routeDate
+      },
+      stops: r.routeStops,
+      shapeCoords: r.shapeCoords // המידע הכבד
+    }));
+
+    const jsInit = `window.initStaticData(${JSON.stringify(staticPayload)})`;
+    await wv.evaluateJavaScript(jsInit, false);
+    console.log("Static data sent to WebView.");
+  } catch (e) {
+    console.error("Failed sending static data:", e);
+  }
+
+
+  // 6. רענון זמן אמת (לולאה)
   let keepRefreshing = true;
 
-  async function pushPayloadOnce() {
+  async function pushRealtimeUpdate() {
     try {
-      const payloads = await dataService.fetchRealtimeForRoutes(routesStatic);
-      const js = `window.updateData(${JSON.stringify(payloads)})`;
-      await wv.evaluateJavaScript(js, false);
+      // משיכת נתונים מלאים מהשרת
+      const fullData = await dataService.fetchRealtimeForRoutes(routesStatic);
+      
+      // סינון: אנו רוצים לשלוח ל-WebView רק את האוטובוסים והזמנים
+      // חובה להסיר את ה-stops ואת ה-shapeCoords כדי שהסקריפט לא יקרוס
+      const lightPayload = fullData.map(d => ({
+        routeId: d.meta.routeId, // המפתח המקשר
+        meta: d.meta,            // מכיל lastSnapshot וכו'
+        vehicles: d.vehicles     // מכיל מיקומים ו-onwardCalls (זמנים)
+      }));
+
+      const jsUpdate = `window.updateRealtimeData(${JSON.stringify(lightPayload)})`;
+      await wv.evaluateJavaScript(jsUpdate, false);
+      
     } catch (e) {
       console.error("Error on realtime refresh:", e);
     }
@@ -162,18 +198,22 @@ module.exports.run = async function(argsObj) {
 
   async function refreshLoop() {
     while (keepRefreshing) {
-      await pushPayloadOnce();
+      await pushRealtimeUpdate();
       if (!keepRefreshing) break;
       await utils.sleep(config.REFRESH_INTERVAL_MS);
     }
   }
 
-  await pushPayloadOnce();
+  // התחלת הלולאה
+  // נקרא לזה פעם ראשונה כדי שיהיה מידע מיד
+  await pushRealtimeUpdate();
+  
   const loopPromise = refreshLoop();
 
   if (FROM_NOTIFICATION) await wv.present();
   else await wv.present(true);
 
+  // סיום
   keepRefreshing = false;
   try { await loopPromise; } catch (e) {}
 };
