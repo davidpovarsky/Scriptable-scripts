@@ -1,3 +1,7 @@
+{
+type: uploaded file
+fileName: KavNavMain.js
+fullContent:
 // Variables used by Scriptable.
 // These must be at the very top of the file. Do not edit.
 // icon-color: blue; icon-glyph: magic;
@@ -9,16 +13,17 @@ const UI = importModule('KavNavUI');
 
 /* ===================== STATE ===================== */
 
-// אנחנו שומרים על State דינמי בקובץ הראשי
 let STATE = {
   stops: [],
   currentLoc: null,
   stopLoop: false,
   isDirectMode: false,
   mainLoopRunning: false,
-  // כדי לאפשר שינוי פרמטרים תוך כדי ריצה
   radius: Config.SEARCH_RADIUS,
-  maxStops: Config.MAX_STATIONS
+  maxStops: Config.MAX_STATIONS,
+  
+  // ✅ חדש: שומר את קוד התחנה הפעילה ב-UI
+  activeStopCode: null
 };
 
 /* ===================== CONTROLLER LOGIC ===================== */
@@ -57,15 +62,23 @@ async function main() {
 }
 
 async function handleCommand(cmd, wv) {
+  // ✅ חדש: טיפול בעדכון תחנה פעילה מה-UI
+  if (cmd.startsWith("setActiveStop/")) {
+    const code = cmd.split("/")[1];
+    STATE.activeStopCode = code;
+    // אין צורך לרענן UI, רק לעדכן את ה-STATE לסיבוב הבא של הלולאה
+    return;
+  }
+
   if (cmd === "refreshLocation") {
     STATE.stopLoop = true;
     await Helpers.sleep(500);
     STATE.stopLoop = false;
     STATE.stops = [];
     STATE.isDirectMode = false;
-    // איפוס רדיוס
     STATE.radius = Config.SEARCH_RADIUS;
     STATE.maxStops = Config.MAX_STATIONS;
+    STATE.activeStopCode = null; // איפוס
     
     await wv.evaluateJavaScript(`window.resetUI("מחפש מיקום מחדש...")`);
     initLocationMode(wv);
@@ -97,6 +110,10 @@ async function handleCommand(cmd, wv) {
 async function initDirectMode(wv, codes) {
   const stops = codes.map(c => ({ name: "טוען...", stopCode: c, distance: 0 }));
   STATE.stops = stops;
+  
+  // ✅ עדכון ראשוני של תחנה פעילה (הראשונה ברשימה)
+  if (stops.length > 0) STATE.activeStopCode = stops[0].stopCode;
+
   await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
   updateLoop(wv, stops);
 }
@@ -117,6 +134,10 @@ async function initLocationMode(wv) {
   }
   
   STATE.stops = stops;
+  
+  // ✅ עדכון ראשוני של תחנה פעילה
+  if (stops.length > 0) STATE.activeStopCode = stops[0].stopCode;
+
   await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
   updateLoop(wv, stops);
 }
@@ -134,6 +155,8 @@ async function updateLoop(wv, stopsToUpdate) {
     }
   };
 
+  // ריצה ראשונה: תמיד מנסים להביא מידע לכל התחנות החדשות שנוספו
+  // כדי שלא יופיעו ריקות אם המשתמש יזפזפ מהר
   for (const s of stopsToUpdate) {
     if (STATE.stopLoop) return;
     await fetchAndSend(s.stopCode);
@@ -144,9 +167,11 @@ async function updateLoop(wv, stopsToUpdate) {
 
   while (!STATE.stopLoop) {
     await Helpers.sleep(Config.REFRESH_INTERVAL_MS);
-    for (const s of [...STATE.stops]) {
-      if (STATE.stopLoop) break;
-      await fetchAndSend(s.stopCode);
+    
+    // ✅ שינוי: במקום לרוץ על כל התחנות, רצים רק על התחנה הפעילה!
+    if (STATE.activeStopCode) {
+        if (STATE.stopLoop) break;
+        await fetchAndSend(STATE.activeStopCode);
     }
   }
   STATE.mainLoopRunning = false;
@@ -154,3 +179,4 @@ async function updateLoop(wv, stopsToUpdate) {
 
 await main();
 Script.complete();
+}
