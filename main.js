@@ -1,12 +1,11 @@
 // main.js
-// נקודת הכניסה שמנהלת את הכל
+// נקודת הכניסה שמנהלת את הכל - Scriptable בלבד
 
 const config = importModule('config');
 const utils = importModule('utils');
 const dataService = importModule('data');
 const viewService = importModule('view');
 
-// נשתמש בפונקציה אסינכרונית כדי שנוכל לקרוא לה מבחוץ
 module.exports.run = async function(argsObj) {
 
   const FROM_NOTIFICATION = !!(argsObj && argsObj.notification);
@@ -109,7 +108,7 @@ module.exports.run = async function(argsObj) {
   const html = viewService.getHtml();
   await wv.loadHTML(html);
 
-  // העברת מיקום המשתמש (אם קיים) ל-HTML – הכפתור 📍 ישתמש בזה
+  // העברת מיקום המשתמש (אם קיים) ל-HTML
   if (userLat != null && userLon != null) {
     try {
       const jsUserLoc = `window.setUserLocation && window.setUserLocation(${userLat}, ${userLon});`;
@@ -133,7 +132,7 @@ module.exports.run = async function(argsObj) {
     console.error("Failed injecting stops.json:", e);
   }
 
-  // 5. נתוני בסיס  // 5. נתוני בסיס (סטטיים)
+  // 5. נתוני בסיס (סטטיים)
   let routesStatic = [];
   try {
     routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
@@ -148,8 +147,7 @@ module.exports.run = async function(argsObj) {
     return;
   }
 
-  // --- שלב 1: שליחת הנתונים הכבדים (מפה ותחנות) פעם אחת בלבד ---
-  // אנו שולחים את זה מיד, לפני שמתחילים את הלולאה של ה-Realtime
+  // --- שליחת הנתונים הכבדים (מפה ותחנות) פעם אחת בלבד ---
   try {
     const staticPayload = routesStatic.map(r => ({
       meta: {
@@ -161,7 +159,7 @@ module.exports.run = async function(argsObj) {
         routeDate: r.routeDate
       },
       stops: r.routeStops,
-      shapeCoords: r.shapeCoords // המידע הכבד
+      shapeCoords: r.shapeCoords
     }));
 
     const jsInit = `window.initStaticData(${JSON.stringify(staticPayload)})`;
@@ -171,21 +169,17 @@ module.exports.run = async function(argsObj) {
     console.error("Failed sending static data:", e);
   }
 
-
   // 6. רענון זמן אמת (לולאה)
   let keepRefreshing = true;
 
   async function pushRealtimeUpdate() {
     try {
-      // משיכת נתונים מלאים מהשרת
       const fullData = await dataService.fetchRealtimeForRoutes(routesStatic);
       
-      // סינון: אנו רוצים לשלוח ל-WebView רק את האוטובוסים והזמנים
-      // חובה להסיר את ה-stops ואת ה-shapeCoords כדי שהסקריפט לא יקרוס
       const lightPayload = fullData.map(d => ({
-        routeId: d.meta.routeId, // המפתח המקשר
-        meta: d.meta,            // מכיל lastSnapshot וכו'
-        vehicles: d.vehicles     // מכיל מיקומים ו-onwardCalls (זמנים)
+        routeId: d.meta.routeId,
+        meta: d.meta,
+        vehicles: d.vehicles
       }));
 
       const jsUpdate = `window.updateRealtimeData(${JSON.stringify(lightPayload)})`;
@@ -205,9 +199,7 @@ module.exports.run = async function(argsObj) {
   }
 
   // התחלת הלולאה
-  // נקרא לזה פעם ראשונה כדי שיהיה מידע מיד
   await pushRealtimeUpdate();
-  
   const loopPromise = refreshLoop();
 
   if (FROM_NOTIFICATION) await wv.present();
