@@ -261,8 +261,136 @@ module.exports.fetchStaticRoutes = async function(routesConfig, routeDate) {
 };
 
 
-// ===== זמן אמת למסלולים =====
+// ===================================================================
+// 🆕 פונקציה חדשה: קבלת זמן אמת מתחנות (במקום מקווים)
+// ===================================================================
 
+/**
+ * מקבל נתוני זמן אמת לפי תחנות קרובות, מסנן רק אוטובוסים רלוונטיים לקווים שלנו
+ * @param {Array} routesStatic - מערך של מסלולים סטטיים (מ-fetchStaticRoutes)
+ * @param {Array} nearestStops - מערך של תחנות קרובות (מ-findNearestStops)
+ * @returns {Array} - מערך של payloads לכל קו עם vehicles מעודכנים
+ */
+module.exports.fetchRealtimeForRoutesFromStops = async function(routesStatic, nearestStops) {
+  
+  // 🔹 שלב 1: בניית מפה של routeId ← routeStatic
+  const routeMap = new Map();
+  routesStatic.forEach(r => {
+    routeMap.set(String(r.routeId), r);
+  });
+
+  // 🔹 שלב 2: איסוף כל הרכבים מהתחנות הקרובות
+  const allVehicles = [];
+  
+  for (const stop of nearestStops) {
+    const stopCode = stop.stopCode;
+    if (!stopCode) continue;
+
+    try {
+      const url = `${config.API_BASE}/realtime?stopCode=${encodeURIComponent(stopCode)}`;
+      const realtimeData = await utils.fetchJson(url);
+      
+      const vehicles = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
+      
+      // מוסיף את lastSnapshot לכל רכב (לצורך הצגה בכרטיס)
+      const lastSnapshot = realtimeData.lastSnapshot || realtimeData.lastVehicleReport || new Date().toISOString();
+      
+      vehicles.forEach(v => {
+        if (v && v.trip && v.trip.routeId != null) {
+          v._lastSnapshot = lastSnapshot; // נשמור בשדה זמני
+          allVehicles.push(v);
+        }
+      });
+
+    } catch (e) {
+      console.error(`Error fetching realtime for stop ${stopCode}: ${e}`);
+    }
+  }
+
+  // 🔹 שלב 3: סינון ופילוח לפי routeId
+  const vehiclesByRoute = new Map();
+
+  allVehicles.forEach(v => {
+    const routeId = String(v.trip.routeId);
+    
+    // רק רכבים של הקווים שלנו
+    if (!routeMap.has(routeId)) return;
+    
+    if (!vehiclesByRoute.has(routeId)) {
+      vehiclesByRoute.set(routeId, []);
+    }
+    vehiclesByRoute.get(routeId).push(v);
+  });
+
+  // 🔹 שלב 4: בניית payloads לכל קו
+  const allPayloads = [];
+
+  routesStatic.forEach(r => {
+    const routeId = String(r.routeId);
+    const vehicles = vehiclesByRoute.get(routeId) || [];
+    
+    // המרת vehicles לפורמט slim (כמו בפונקציה הישנה)
+    const slimVehicles = vehicles.map(v => {
+      const trip = v.trip || {};
+      const onwardCalls = trip.onwardCalls || {};
+      const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
+      const gtfs = trip.gtfsInfo || {};
+      const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
+
+      const loc = v.geo && v.geo.location ? v.geo.location : {};
+      const lat = (typeof loc.lat === "number") ? loc.lat : null;
+      const lon = (typeof loc.lon === "number") ? loc.lon : null;
+
+      return {
+        vehicleId: v.vehicleId,
+        lastReported: v.lastReported,
+        routeNumber: gtfs.routeNumber,
+        headsign: gtfs.headsign,
+        bearing: v.bearing || v.geo?.bearing || 0,
+        lat,
+        lon,
+        positionOnLine: typeof pos === "number" ? pos : null,
+        onwardCalls: calls.map(c => ({
+          stopCode: c.stopCode,
+          eta: c.eta
+        }))
+      };
+    });
+
+    // שימוש ב-lastSnapshot מהרכב הראשון (אם יש)
+    const lastSnapshot = vehicles.length > 0 ? vehicles[0]._lastSnapshot : new Date().toISOString();
+
+    allPayloads.push({
+      meta: {
+        routeId: r.routeId,
+        routeCode: r.routeCode,
+        routeDate: r.routeDate,
+        routeNumber: r.routeMeta?.routeNumber ?? "",
+        routeLongName: r.routeMeta?.routeLongName ?? "",
+        headsign: r.headsign,
+        lastSnapshot: lastSnapshot,
+        lastVehicleReport: lastSnapshot, // לצורך תאימות
+        operatorId: r.operatorId,
+        operatorColor: r.operatorColor
+      },
+      stops: r.routeStops,
+      vehicles: slimVehicles,
+      shapeCoords: r.shapeCoords || null
+    });
+  });
+
+  return allPayloads;
+};
+
+
+// ===================================================================
+// 🔄 הפונקציה הישנה נשארת (לשימוש עתידי)
+// ===================================================================
+
+/**
+ * ⚠️ פונקציה ישנה - לא בשימוש כרגע, אבל נשמרת לעתיד
+ * מקבלת זמן אמת לפי routeCode (בקשה נפרדת לכל קו)
+ */
 module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
   const allPayloads = [];
 
@@ -273,40 +401,40 @@ module.exports.fetchRealtimeForRoutes = async function(routesStatic) {
 
       const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
 
-// ⭐ סינון חובה – כדי לא לערבב בין שני כיווני המסלול
-const relevantVehicles = vehiclesRaw.filter(v =>
-  v.trip && String(v.trip.routeId) === String(r.routeId)
-);
+      // ⭐ סינון חובה – כדי לא לערבב בין שני כיווני המסלול
+      const relevantVehicles = vehiclesRaw.filter(v =>
+        v.trip && String(v.trip.routeId) === String(r.routeId)
+      );
 
-// ⭐ אם משום־מה אין התאמות – נשמור על fallback שלא יפיל את המערכת
-const filtered = relevantVehicles.length ? relevantVehicles : vehiclesRaw;
+      // ⭐ אם משום־מה אין התאמות – נשמור על fallback שלא יפיל את המערכת
+      const filtered = relevantVehicles.length ? relevantVehicles : vehiclesRaw;
 
-const slimVehicles = filtered.map(v => {
-    const trip = v.trip || {};
-    const onwardCalls = trip.onwardCalls || {};
-    const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
-    const gtfs = trip.gtfsInfo || {};
-    const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
+      const slimVehicles = filtered.map(v => {
+        const trip = v.trip || {};
+        const onwardCalls = trip.onwardCalls || {};
+        const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
+        const gtfs = trip.gtfsInfo || {};
+        const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
 
-    const loc = v.geo && v.geo.location ? v.geo.location : {};
-    const lat = (typeof loc.lat === "number") ? loc.lat : null;
-    const lon = (typeof loc.lon === "number") ? loc.lon : null;
+        const loc = v.geo && v.geo.location ? v.geo.location : {};
+        const lat = (typeof loc.lat === "number") ? loc.lat : null;
+        const lon = (typeof loc.lon === "number") ? loc.lon : null;
 
-    return {
-      vehicleId: v.vehicleId,
-      lastReported: v.lastReported,
-      routeNumber: gtfs.routeNumber,
-      headsign: gtfs.headsign,
-      bearing: v.bearing || v.geo?.bearing || 0,
-      lat,
-      lon,
-      positionOnLine: typeof pos === "number" ? pos : null,
-      onwardCalls: calls.map(c => ({
-        stopCode: c.stopCode,
-        eta: c.eta
-      }))
-    };
-});
+        return {
+          vehicleId: v.vehicleId,
+          lastReported: v.lastReported,
+          routeNumber: gtfs.routeNumber,
+          headsign: gtfs.headsign,
+          bearing: v.bearing || v.geo?.bearing || 0,
+          lat,
+          lon,
+          positionOnLine: typeof pos === "number" ? pos : null,
+          onwardCalls: calls.map(c => ({
+            stopCode: c.stopCode,
+            eta: c.eta
+          }))
+        };
+      });
 
       allPayloads.push({
         meta: {
