@@ -3,6 +3,7 @@
 let STOPS = [];
 let DATA = {};
 let currentStopCode = null;
+let searchTimeout = null;
 
 function notify(cmd) { 
   if (typeof window.handleCommand === 'function') {
@@ -29,6 +30,97 @@ function ensureStructure() {
             </div>
         `;
     }
+}
+
+// ========== חיפוש ==========
+let touchStartY = 0;
+let touchEndY = 0;
+
+function initSearch() {
+  const searchOverlay = document.getElementById('search-overlay');
+  const searchContainer = document.getElementById('search-container');
+  const searchInput = document.getElementById('search-input');
+  const searchResults = document.getElementById('search-results');
+  
+  // זיהוי תנועת גלילה כלפי מעלה
+  document.addEventListener('touchstart', (e) => {
+    touchStartY = e.touches[0].clientY;
+  });
+  
+  document.addEventListener('touchend', (e) => {
+    touchEndY = e.changedTouches[0].clientY;
+    const swipeDistance = touchStartY - touchEndY;
+    
+    // אם גללו כלפי מעלה לפחות 100 פיקסלים
+    if (swipeDistance > 100) {
+      showSearch();
+    }
+  });
+  
+  // סגירת חיפוש בלחיצה על overlay
+  searchOverlay.addEventListener('click', hideSearch);
+  
+  // חיפוש תוך כדי הקלדה
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    const query = e.target.value.trim();
+    
+    if (query.length === 0) {
+      searchResults.classList.remove('visible');
+      return;
+    }
+    
+    searchTimeout = setTimeout(() => {
+      performSearch(query);
+    }, 300);
+  });
+  
+  // מניעת סגירה בלחיצה על החיפוש עצמו
+  searchContainer.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+function showSearch() {
+  document.getElementById('search-overlay').classList.add('visible');
+  document.getElementById('search-container').classList.add('visible');
+  document.getElementById('search-input').focus();
+}
+
+function hideSearch() {
+  document.getElementById('search-overlay').classList.remove('visible');
+  document.getElementById('search-container').classList.remove('visible');
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').classList.remove('visible');
+}
+
+async function performSearch(query) {
+  notify("search/" + encodeURIComponent(query));
+}
+
+window.displaySearchResults = function(results) {
+  const searchResults = document.getElementById('search-results');
+  
+  if (!results || results.length === 0) {
+    searchResults.innerHTML = '<div style="padding:20px; text-align:center; color:#6b7280;">לא נמצאו תוצאות</div>';
+    searchResults.classList.add('visible');
+    return;
+  }
+  
+  searchResults.innerHTML = results.map(stop => `
+    <div class="search-result-item" onclick="selectSearchResult('${stop.stopCode}', ${stop.lat}, ${stop.lon})">
+      <div class="search-result-name">${stop.stopName}</div>
+      <div class="search-result-code">קוד: ${stop.stopCode} | מזהה: ${stop.stopId}</div>
+      <div class="search-result-desc">${stop.stopDesc}</div>
+    </div>
+  `).join('');
+  
+  searchResults.classList.add('visible');
+};
+
+function selectSearchResult(stopCode, lat, lon) {
+  hideSearch();
+  notify("selectSearchStop/" + stopCode + "/" + lat + "/" + lon);
 }
 
 window.resetUI = function(msg) {
@@ -210,3 +302,4 @@ function syncUI(data) {
 }
 
 ensureStructure();
+initSearch();
