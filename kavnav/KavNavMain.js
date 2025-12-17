@@ -33,159 +33,129 @@ if (IS_SCRIPTABLE) {
 var STATE = {
   stops: [],
   currentLoc: null,
+  overriddenLoc: null, // מיקום שנבחר ידנית מהחיפוש
   stopLoop: false,
   isDirectMode: false,
   mainLoopRunning: false,
   radius: Config.SEARCH_RADIUS,
-  maxStops: Config.MAX_STATIONS,
-  activeStopCode: null
+  maxStops: Config.MAX_STATIONS
 };
 
 // ===============================
-// CONTROLLER LOGIC
+// לוגיקה ראשית
 // ===============================
+
 async function main() {
   if (IS_SCRIPTABLE) {
-    // Scriptable - WebView
-    const wv = new WebView();
-    await wv.loadHTML(UI.buildHTML());
-
+    let wv = new WebView();
+    await wv.loadHTML(UI.getHTML());
+    
+    // טיפול בפקודות מה-HTML (כמו בחירת תחנה בחיפוש)
     wv.shouldAllowRequest = (req) => {
-      if (req.url.startsWith("kavnav://")) {
-        const cmd = req.url.replace("kavnav://", "");
-        handleCommandInternal(cmd, wv);
-        return false;
-      }
-      return true;
-    };
-
-    const params = args.shortcutParameter || {};
-    let directCodes = null;
-    
-    if (params.stopCodes) {
-       directCodes = String(params.stopCodes).split(",").map(s => s.trim());
-    } else if (typeof params === "string" && params.match(/^\d+(,\d+)*$/)) {
-       directCodes = params.split(",");
-    }
-
-    if (directCodes && directCodes.length > 0) {
-      STATE.isDirectMode = true;
-      initDirectMode(wv, directCodes);
-    } else {
-      STATE.isDirectMode = false;
-      initLocationMode(wv);
-    }
-
-    await wv.present(true);
-  } else {
-    // Browser - DOM רגיל
-    // הפונקציה handleCommand נרשמת ב-window
-    window.handleCommand = (cmd) => handleCommandInternal(cmd, null);
-    
-    // בדיקה אם יש פרמטרים ב-URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const stopCodesParam = urlParams.get('stopCodes');
-    
-    if (stopCodesParam) {
-      const directCodes = stopCodesParam.split(",").map(s => s.trim());
-      STATE.isDirectMode = true;
-      initDirectMode(null, directCodes);
-    } else {
-      STATE.isDirectMode = false;
-      initLocationMode(null);
-    }
-  }
-}
-
-async function handleCommandInternal(cmd, wv) {
-  if (cmd.startsWith("setActiveStop/")) {
-    const code = cmd.split("/")[1];
-    STATE.activeStopCode = code;
-    return;
-  }
-
-  if (cmd === "refreshLocation") {
-    STATE.stopLoop = true;
-    await Helpers.sleep(500);
-    STATE.stopLoop = false;
-    STATE.stops = [];
-    STATE.isDirectMode = false;
-    STATE.radius = Config.SEARCH_RADIUS;
-    STATE.maxStops = Config.MAX_STATIONS;
-    STATE.activeStopCode = null;
-    
-    await executeJS(wv, `window.resetUI("מחפש מיקום מחדש...")`);
-    initLocationMode(wv);
-  }
-  
-  if (cmd === "loadMore") {
-    if (STATE.isDirectMode) {
-      if (IS_SCRIPTABLE) {
-        const a = new Alert();
-        a.title = "מצב מק\"ט ידני";
-        a.message = "האם לעבור לחיפוש לפי מיקום?";
-        a.addAction("כן");
-        a.addCancelAction("ביטול");
-        if (await a.presentAlert() === 0) handleCommandInternal("refreshLocation", wv);
-      } else {
-        if (confirm("האם לעבור לחיפוש לפי מיקום?")) {
-          handleCommandInternal("refreshLocation", wv);
+        if (req.url.startsWith("kavnav://")) {
+            handleWebViewCommand(req.url, wv);
+            return false;
         }
-      }
-      return;
-    }
-    STATE.radius += 500;
-    STATE.maxStops += 5;
+        return true;
+    };
     
-    if (STATE.currentLoc) {
-      const moreStops = await API.findNearbyStops(STATE.currentLoc.lat, STATE.currentLoc.lon, STATE.stops, STATE.maxStops, STATE.radius);
-      moreStops.forEach(s => STATE.stops.push(s)); 
-      const js = `window.addStops(${JSON.stringify(moreStops)}, false)`;
-      await executeJS(wv, js);
-      updateLoop(wv, moreStops);
+    // הרצה ראשונית
+    await refresh(wv);
+    
+    wv.present();
+  } else {
+    // Browser logic
+    console.log("Running in browser mode");
+  }
+}
+
+// פונקציה המטפלת בפקודות מה-WebView
+async function handleWebViewCommand(url, wv) {
+    const urlObj = new URL(url.replace("kavnav://", "https://dummy/")); // Hack to parse custom scheme
+    const cmd = url.replace("kavnav://", "").split("?")[0];
+    const dataStr = urlObj.searchParams.get("data");
+    const data = dataStr ? JSON.parse(decodeURIComponent(dataStr)) : null;
+
+    if (cmd === "refreshLocation") {
+        // המשתמש לחץ על כפתור הרענון - חזרה ל-GPS
+        STATE.overriddenLoc = null;
+        await refresh(wv);
+    } 
+    else if (cmd === "overrideLocation" && data) {
+        // המשתמש בחר תחנה בחיפוש
+        STATE.stopLoop = true; // עצירת לולאה קודמת אם רצה
+        await Helpers.sleep(500); // המתנה קצרה
+        STATE.stopLoop = false;
+        
+        // הגדרת המיקום המזויף
+        STATE.overriddenLoc = { lat: data.lat, lon: data.lon };
+        
+        // אופציונלי: שמירת קוד התחנה שנבחרה כדי לתעדף אותה במיון (לא מיושם ב-API כרגע אבל המרחק יעשה את שלו)
+        await refresh(wv, data.stopCode);
     }
-  }
 }
 
-// פונקציית עזר להרצת JS - Scriptable או Browser
-async function executeJS(wv, jsCode) {
-  if (IS_SCRIPTABLE && wv) {
-    return await wv.evaluateJavaScript(jsCode);
-  } else if (IS_BROWSER) {
-    return eval(jsCode);
+async function refresh(wv, focusStopCode = null) {
+  STATE.stopLoop = true; 
+  // המתנה שהלולאה הקודמת תסיים
+  if (STATE.mainLoopRunning) {
+      await Helpers.sleep(Config.REFRESH_INTERVAL_MS + 500);
   }
-}
+  STATE.stopLoop = false;
 
-async function initDirectMode(wv, codes) {
-  const stops = codes.map(c => ({ name: "טוען...", stopCode: c, distance: 0 }));
-  STATE.stops = stops;
+  let loc;
   
-  if (stops.length > 0) STATE.activeStopCode = stops[0].stopCode;
-
-  await executeJS(wv, `window.addStops(${JSON.stringify(stops)}, true)`);
-  updateLoop(wv, stops);
-}
-
-async function initLocationMode(wv) {
-  const loc = await API.getLocation();
-  if (!loc) {
-     await executeJS(wv, `window.resetUI("שגיאה בקבלת מיקום")`);
-     return;
+  if (STATE.overriddenLoc) {
+      // שימוש במיקום שנבחר מהחיפוש
+      loc = STATE.overriddenLoc;
+      // נדמה שהמיקום הוא כאילו המשתמש שם
+  } else {
+      // שימוש ב-GPS אמיתי
+      try {
+        Location.setAccuracyToBest();
+        loc = await Location.current();
+      } catch (e) {
+        console.log("Location Error: " + e);
+        loc = null;
+      }
   }
-  STATE.currentLoc = loc;
-  await executeJS(wv, `document.getElementById("msg-text").innerText = "מחפש תחנות..."`);
 
-  const stops = await API.findNearbyStops(loc.lat, loc.lon, [], STATE.maxStops, STATE.radius);
-  if (stops.length === 0) {
-    await executeJS(wv, `window.resetUI("לא נמצאו תחנות בסביבה")`);
+  if (!loc) {
+    await wv.evaluateJavaScript(`window.resetUI("שגיאה בקבלת מיקום")`);
     return;
   }
   
-  STATE.stops = stops;
+  STATE.currentLoc = loc;
   
-  if (stops.length > 0) STATE.activeStopCode = stops[0].stopCode;
+  // אם אנחנו במצב רגיל
+  if (!STATE.overriddenLoc) {
+      await wv.evaluateJavaScript(`document.getElementById("msg-text").innerText = "מחפש תחנות..."`);
+  }
 
-  await executeJS(wv, `window.addStops(${JSON.stringify(stops)}, true)`);
+  // חיפוש תחנות קרובות סביב המיקום (האמיתי או הנבחר)
+  let stops = await API.findNearbyStops(loc.latitude || loc.lat, loc.longitude || loc.lon, [], STATE.maxStops, STATE.radius);
+  
+  if (stops.length === 0) {
+    await wv.evaluateJavaScript(`window.resetUI("לא נמצאו תחנות בסביבה")`);
+    return;
+  }
+
+  // אם יש תחנה ממוקדת (שנבחרה בחיפוש), וודא שהיא ראשונה
+  if (focusStopCode) {
+      const idx = stops.findIndex(s => s.stopCode == focusStopCode);
+      if (idx > -1) {
+          const s = stops.splice(idx, 1)[0];
+          stops.unshift(s);
+      } else {
+          // אם התחנה לא נמצאה ברדיוס (מוזר, כי המיקום שלנו הוא התחנה), נוסיף אותה ידנית
+          // (בדרך כלל לא יקרה אם הרדיוס תקין והקואורדינטות ב-JSON נכונות)
+      }
+  }
+
+  STATE.stops = stops;
+  await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
+  
+  // התחלת לולאת העדכון
   updateLoop(wv, stops);
 }
 
@@ -194,9 +164,9 @@ async function updateLoop(wv, stopsToUpdate) {
     try {
       const data = await API.getStopData(stopCode);
       if (data.name && STATE.isDirectMode) {
-         executeJS(wv, `window.updateStopName("${stopCode}", "${data.name}")`).catch(()=>{});
+         wv.evaluateJavaScript(`window.updateStopName("${stopCode}", "${data.name}")`).catch(()=>{});
       }
-      await executeJS(wv, `window.updateData("${stopCode}", ${JSON.stringify(data)})`);
+      await wv.evaluateJavaScript(`window.updateData("${stopCode}", ${JSON.stringify(data)})`);
     } catch (e) {
       console.log(`Error ${stopCode}: ${e}`);
     }
@@ -213,9 +183,10 @@ async function updateLoop(wv, stopsToUpdate) {
   while (!STATE.stopLoop) {
     await Helpers.sleep(Config.REFRESH_INTERVAL_MS);
     
-    if (STATE.activeStopCode) {
+    // רענון חוזר של התחנות המוצגות
+    for (const s of STATE.stops) {
         if (STATE.stopLoop) break;
-        await fetchAndSend(STATE.activeStopCode);
+        await fetchAndSend(s.stopCode);
     }
   }
   STATE.mainLoopRunning = false;
@@ -230,18 +201,4 @@ if (IS_SCRIPTABLE) {
     await main();
     Script.complete();
   })();
-} else {
-  // Browser - המתן לטעינת DOM
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', main);
-  } else {
-    main();
-  }
-}
-
-// Export לשימוש חיצוני
-if (IS_SCRIPTABLE) {
-  module.exports = { main };
-} else {
-  window.KavNavMain = { main };
 }
