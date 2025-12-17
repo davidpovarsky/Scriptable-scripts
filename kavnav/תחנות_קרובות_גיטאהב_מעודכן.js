@@ -33,11 +33,8 @@ function hoursSince(d) {
 }
 
 async function maybeMigrateTxtToJs(fileJsPath) {
-  // אם בטעות שמרת בעבר כ־.txt (כמו שציינת), ננסה "להציל":
-  // KavNavConfig.txt -> KavNavConfig.js
   const fileTxtPath = fileJsPath.replace(/\.js$/i, ".txt");
   if (!fm.fileExists(fileJsPath) && fm.fileExists(fileTxtPath)) {
-    // ודא זמין מקומית (iCloud)
     await fm.downloadFileFromiCloud(fileTxtPath);
     const content = fm.readString(fileTxtPath);
     fm.writeString(fileJsPath, content);
@@ -66,18 +63,13 @@ async function ensureKavNavModules() {
 
   for (const fileName of MODULE_FILES) {
     const localPath = fm.joinPath(localDir, fileName);
-
-    // קודם "הצלת txt" אם קיים
     await maybeMigrateTxtToJs(localPath);
 
-    // אם צריך עדכון – הורד מה־GitHub
     if (await shouldUpdate(localPath)) {
       const url = REPO_RAW_BASE + fileName;
       try {
         await downloadToFile(url, localPath);
-        // console.log("✅ Updated: " + fileName);
       } catch (e) {
-        // אם כבר יש קובץ מקומי ישן – נעדיף להמשיך איתו ולא להפיל הכל
         if (!fm.fileExists(localPath)) throw e;
         console.log("⚠️ Failed to update " + fileName + " using cached local copy. Error: " + e);
       }
@@ -98,16 +90,15 @@ const Search = importModule("kavnav/KavNavSearch");
 
 /* ===================== STATE ===================== */
 
-// אנחנו שומרים על State דינמי בקובץ הראשי
 let STATE = {
   stops: [],
   currentLoc: null,
   stopLoop: false,
   isDirectMode: false,
   mainLoopRunning: false,
-  // כדי לאפשר שינוי פרמטרים תוך כדי ריצה
   radius: Config.SEARCH_RADIUS,
   maxStops: Config.MAX_STATIONS,
+  activeStopCode: null,
   isSearchMode: false,
   searchSelectedStop: null
 };
@@ -148,6 +139,12 @@ async function main() {
 }
 
 async function handleCommand(cmd, wv) {
+  if (cmd.startsWith("setActiveStop/")) {
+    const code = cmd.split("/")[1];
+    STATE.activeStopCode = code;
+    return;
+  }
+
   if (cmd.startsWith("search/")) {
     const query = decodeURIComponent(cmd.split("/")[1]);
     const results = await Search.searchStops(query);
@@ -184,9 +181,9 @@ async function handleCommand(cmd, wv) {
     STATE.isDirectMode = false;
     STATE.isSearchMode = false;
     STATE.searchSelectedStop = null;
-    // איפוס רדיוס
     STATE.radius = Config.SEARCH_RADIUS;
     STATE.maxStops = Config.MAX_STATIONS;
+    STATE.activeStopCode = null;
 
     await wv.evaluateJavaScript(`window.resetUI("מחפש מיקום מחדש...")`);
     initLocationMode(wv);
@@ -225,6 +222,9 @@ async function handleCommand(cmd, wv) {
 async function initDirectMode(wv, codes) {
   const stops = codes.map(c => ({ name: "טוען...", stopCode: c, distance: 0 }));
   STATE.stops = stops;
+  
+  if (stops.length > 0) STATE.activeStopCode = stops[0].stopCode;
+  
   await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
   updateLoop(wv, stops);
 }
@@ -245,6 +245,9 @@ async function initLocationMode(wv) {
   }
 
   STATE.stops = stops;
+  
+  if (stops.length > 0) STATE.activeStopCode = stops[0].stopCode;
+
   await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
   updateLoop(wv, stops);
 }
@@ -254,13 +257,11 @@ async function initSearchLocationMode(wv, lat, lon, selectedStopCode) {
 
   const stops = await API.findNearbyStops(lat, lon, [], STATE.maxStops, STATE.radius);
   
-  // ודא שהתחנה הנבחרת תהיה ראשונה
   const selectedIndex = stops.findIndex(s => s.stopCode === selectedStopCode);
   if (selectedIndex > 0) {
     const selectedStop = stops.splice(selectedIndex, 1)[0];
     stops.unshift(selectedStop);
   } else if (selectedIndex === -1) {
-    // אם התחנה לא נמצאה בקרבה, הוסף אותה ידנית
     stops.unshift({ name: "טוען...", stopCode: selectedStopCode, distance: 0 });
   }
   
@@ -299,9 +300,10 @@ async function updateLoop(wv, stopsToUpdate) {
 
   while (!STATE.stopLoop) {
     await Helpers.sleep(Config.REFRESH_INTERVAL_MS);
-    for (const s of [...STATE.stops]) {
+    
+    if (STATE.activeStopCode) {
       if (STATE.stopLoop) break;
-      await fetchAndSend(s.stopCode);
+      await fetchAndSend(STATE.activeStopCode);
     }
   }
   STATE.mainLoopRunning = false;
