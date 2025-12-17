@@ -42,9 +42,10 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // נשמור מיקום משתמש כדי להעביר ל-HTML
+  // נשמור מיקום משתמש + תחנות קרובות
   let userLat = null;
   let userLon = null;
+  let nearestStops = []; // 🆕 מערך התחנות הקרובות
 
   // 2. קווים סביבי אוטומטית
   if (!FROM_NOTIFICATION) {
@@ -75,7 +76,7 @@ module.exports.run = async function(argsObj) {
     // אם עדיין אין מיקום — דילוג
     if (userLat != null && userLon != null) {
       try {
-        const nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
+        nearestStops = await dataService.findNearestStops(userLat, userLon, 3); // 🆕 שמירת התחנות
         const stopCodes = nearestStops
           .map((s) => (s && s.stopCode ? String(s.stopCode) : ""))
           .filter(Boolean);
@@ -169,12 +170,28 @@ module.exports.run = async function(argsObj) {
     console.error("Failed sending static data:", e);
   }
 
-  // 6. רענון זמן אמת (לולאה)
+  // ===================================================================
+  // 🆕 6. רענון זמן אמת - כעת מבוסס על תחנות!
+  // ===================================================================
+  
   let keepRefreshing = true;
 
   async function pushRealtimeUpdate() {
     try {
-      const fullData = await dataService.fetchRealtimeForRoutes(routesStatic);
+      // 🔹 במקום לקרוא ל-fetchRealtimeForRoutes (הישנה),
+      //    נקרא ל-fetchRealtimeForRoutesFromStops (החדשה)
+      
+      let fullData;
+      
+      if (nearestStops && nearestStops.length > 0) {
+        // 🆕 יש תחנות קרובות - נשתמש בהן
+        console.log("Fetching realtime from stops:", nearestStops.map(s => s.stopCode).join(', '));
+        fullData = await dataService.fetchRealtimeForRoutesFromStops(routesStatic, nearestStops);
+      } else {
+        // 🔄 fallback: אין תחנות (התראה?) - נשתמש בשיטה הישנה
+        console.log("No stops available, using old method (routeCode)");
+        fullData = await dataService.fetchRealtimeForRoutes(routesStatic);
+      }
       
       const lightPayload = fullData.map(d => ({
         routeId: d.meta.routeId,
