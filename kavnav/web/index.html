@@ -7,6 +7,13 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Overlay וחיפוש -->
+    <div id="search-overlay"></div>
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="חיפוש תחנה לפי מספר או שם..." />
+        <div id="search-results"></div>
+    </div>
+
     <header>
         <button id="refresh-btn" onclick="triggerRefresh()">
             <svg viewBox="0 0 24 24">
@@ -27,6 +34,7 @@
     <!-- טעינת הקבצים המשותפים -->
     <script src="../KavNavConfig.js"></script>
     <script src="../KavNavHelpers.js"></script>
+    <script src="../KavNavSearch.js"></script>
     <script src="../KavNavAPI.js"></script>
     <script src="app.js"></script>
     <script src="../KavNavMain.js"></script>
