@@ -116,13 +116,14 @@ async function searchStops(query) {
 // ===============================
 // Export לפי סביבה
 // ===============================
-var Search = {
-  loadStopsData,
-  searchStops
-};
-
 if (IS_SCRIPTABLE) {
-  module.exports = Search;
+  module.exports = {
+    loadStopsData: loadStopsData,
+    searchStops: searchStops
+  };
 } else {
-  window.KavNavSearch = Search;
+  window.KavNavSearch = {
+    loadStopsData: loadStopsData,
+    searchStops: searchStops
+  };
 }
