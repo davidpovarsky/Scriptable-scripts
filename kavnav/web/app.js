@@ -42,7 +42,8 @@ function initSearch() {
   const searchInput = document.getElementById('search-input');
   const searchResults = document.getElementById('search-results');
   
-  // זיהוי תנועת גלילה כלפי מעלהdocument.addEventListener('touchstart', (e) => {
+  // זיהוי תנועת גלילה כלפי מעלה
+  document.addEventListener('touchstart', (e) => {
   touchStartY = e.touches[0].clientY;
 });
 
