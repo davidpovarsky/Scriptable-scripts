@@ -1,161 +1,278 @@
 // Variables used by Scriptable.
 // These must be at the very top of the file. Do not edit.
-// icon-color: blue; icon-glyph: magic;
+// icon-color: teal; icon-glyph: magic;
 
-// KavNavMain.js - לוגיקה ראשית משותפת ל-Scriptable ודפדפן
+/* ===================== GITHUB BOOTSTRAP (AUTO-DOWNLOAD MODULES) ===================== */
 
-// ===============================
-// זיהוי סביבה וטעינת תלויות
-// ===============================
-var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
-var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
+// 🔧 עדכן רק אם הריפו/סניף/נתיב שונים
+const REPO_RAW_BASE = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/main/kavnav/";
+const LOCAL_SUBFOLDER = "kavnav";
 
-var Config, Helpers, API, UI;
+// אילו מודולים להוריד/לעדכן
+const MODULE_FILES = [
+  "KavNavConfig.js",
+  "KavNavHelpers.js",
+  "KavNavAPI.js",
+  "KavNavUI.js",
+  "KavNavSearch.js"
+];
 
-if (IS_SCRIPTABLE) {
-  Config = importModule('kavnav/KavNavConfig');
-  Helpers = importModule('kavnav/KavNavHelpers');
-  API = importModule('kavnav/KavNavAPI');
-  UI = importModule('kavnav/KavNavUI');
-} else {
-  // בדפדפן - השתמש ישירות מ-window (ללא הגדרה מחדש)
-  if (typeof window.KavNavConfig !== 'undefined') {
-    Config = window.KavNavConfig;
-    Helpers = window.KavNavHelpers;
-    API = window.KavNavAPI;
-    UI = window.KavNavUI;
+// כל כמה זמן לבדוק עדכון (כדי לא להוריד כל ריצה)
+const UPDATE_EVERY_HOURS = 12;
+
+const fm = FileManager.iCloud();
+const docsDir = fm.documentsDirectory();
+const localDir = fm.joinPath(docsDir, LOCAL_SUBFOLDER);
+
+async function ensureDir(path) {
+  if (!fm.fileExists(path)) fm.createDirectory(path, true);
+}
+
+function hoursSince(d) {
+  return (Date.now() - d.getTime()) / (1000 * 60 * 60);
+}
+
+async function maybeMigrateTxtToJs(fileJsPath) {
+  // אם בטעות שמרת בעבר כ־.txt (כמו שציינת), ננסה "להציל":
+  // KavNavConfig.txt -> KavNavConfig.js
+  const fileTxtPath = fileJsPath.replace(/\.js$/i, ".txt");
+  if (!fm.fileExists(fileJsPath) && fm.fileExists(fileTxtPath)) {
+    // ודא זמין מקומית (iCloud)
+    await fm.downloadFileFromiCloud(fileTxtPath);
+    const content = fm.readString(fileTxtPath);
+    fm.writeString(fileJsPath, content);
   }
 }
 
-// ===============================
-// STATE
-// ===============================
-var STATE = {
+async function shouldUpdate(filePath) {
+  if (!fm.fileExists(filePath)) return true;
+  const m = fm.modificationDate(filePath);
+  if (!m) return true;
+  return hoursSince(m) >= UPDATE_EVERY_HOURS;
+}
+
+async function downloadToFile(url, filePath) {
+  const req = new Request(url);
+  req.timeoutInterval = 30;
+  const txt = await req.loadString();
+  if (!txt || txt.trim().length < 10) {
+    throw new Error("Downloaded file looks empty: " + url);
+  }
+  fm.writeString(filePath, txt);
+}
+
+async function ensureKavNavModules() {
+  await ensureDir(localDir);
+
+  for (const fileName of MODULE_FILES) {
+    const localPath = fm.joinPath(localDir, fileName);
+
+    // קודם "הצלת txt" אם קיים
+    await maybeMigrateTxtToJs(localPath);
+
+    // אם צריך עדכון – הורד מה־GitHub
+    if (await shouldUpdate(localPath)) {
+      const url = REPO_RAW_BASE + fileName;
+      try {
+        await downloadToFile(url, localPath);
+        // console.log("✅ Updated: " + fileName);
+      } catch (e) {
+        // אם כבר יש קובץ מקומי ישן – נעדיף להמשיך איתו ולא להפיל הכל
+        if (!fm.fileExists(localPath)) throw e;
+        console.log("⚠️ Failed to update " + fileName + " using cached local copy. Error: " + e);
+      }
+    }
+  }
+}
+
+// חובה לפני importModule
+await ensureKavNavModules();
+
+/* ===================== IMPORTS ===================== */
+
+const Config = importModule("kavnav/KavNavConfig");
+const Helpers = importModule("kavnav/KavNavHelpers");
+const API = importModule("kavnav/KavNavAPI");
+const UI = importModule("kavnav/KavNavUI");
+const Search = importModule("kavnav/KavNavSearch");
+
+/* ===================== STATE ===================== */
+
+// אנחנו שומרים על State דינמי בקובץ הראשי
+let STATE = {
   stops: [],
   currentLoc: null,
-  overriddenLoc: null, // מיקום שנבחר ידנית מהחיפוש
   stopLoop: false,
   isDirectMode: false,
   mainLoopRunning: false,
+  // כדי לאפשר שינוי פרמטרים תוך כדי ריצה
   radius: Config.SEARCH_RADIUS,
-  maxStops: Config.MAX_STATIONS
+  maxStops: Config.MAX_STATIONS,
+  isSearchMode: false,
+  searchSelectedStop: null
 };
 
-// ===============================
-// לוגיקה ראשית
-// ===============================
+/* ===================== CONTROLLER LOGIC ===================== */
 
 async function main() {
-  if (IS_SCRIPTABLE) {
-    let wv = new WebView();
-    await wv.loadHTML(UI.getHTML());
-    
-    // טיפול בפקודות מה-HTML (כמו בחירת תחנה בחיפוש)
-    wv.shouldAllowRequest = (req) => {
-        if (req.url.startsWith("kavnav://")) {
-            handleWebViewCommand(req.url, wv);
-            return false;
-        }
-        return true;
-    };
-    
-    // הרצה ראשונית
-    await refresh(wv);
-    
-    wv.present();
-  } else {
-    // Browser logic
-    console.log("Running in browser mode");
-  }
-}
+  const wv = new WebView();
+  await wv.loadHTML(UI.buildHTML());
 
-// פונקציה המטפלת בפקודות מה-WebView
-async function handleWebViewCommand(url, wv) {
-    const urlObj = new URL(url.replace("kavnav://", "https://dummy/")); // Hack to parse custom scheme
-    const cmd = url.replace("kavnav://", "").split("?")[0];
-    const dataStr = urlObj.searchParams.get("data");
-    const data = dataStr ? JSON.parse(decodeURIComponent(dataStr)) : null;
-
-    if (cmd === "refreshLocation") {
-        // המשתמש לחץ על כפתור הרענון - חזרה ל-GPS
-        STATE.overriddenLoc = null;
-        await refresh(wv);
-    } 
-    else if (cmd === "overrideLocation" && data) {
-        // המשתמש בחר תחנה בחיפוש
-        STATE.stopLoop = true; // עצירת לולאה קודמת אם רצה
-        await Helpers.sleep(500); // המתנה קצרה
-        STATE.stopLoop = false;
-        
-        // הגדרת המיקום המזויף
-        STATE.overriddenLoc = { lat: data.lat, lon: data.lon };
-        
-        // אופציונלי: שמירת קוד התחנה שנבחרה כדי לתעדף אותה במיון (לא מיושם ב-API כרגע אבל המרחק יעשה את שלו)
-        await refresh(wv, data.stopCode);
+  wv.shouldAllowRequest = (req) => {
+    if (req.url.startsWith("kavnav://")) {
+      const cmd = req.url.replace("kavnav://", "");
+      handleCommand(cmd, wv);
+      return false;
     }
+    return true;
+  };
+
+  const params = args.shortcutParameter || {};
+  let directCodes = null;
+
+  if (params.stopCodes) {
+    directCodes = String(params.stopCodes).split(",").map(s => s.trim());
+  } else if (typeof params === "string" && params.match(/^\d+(,\d+)*$/)) {
+    directCodes = params.split(",");
+  }
+
+  if (directCodes && directCodes.length > 0) {
+    STATE.isDirectMode = true;
+    initDirectMode(wv, directCodes);
+  } else {
+    STATE.isDirectMode = false;
+    initLocationMode(wv);
+  }
+
+  await wv.present(true);
 }
 
-async function refresh(wv, focusStopCode = null) {
-  STATE.stopLoop = true; 
-  // המתנה שהלולאה הקודמת תסיים
-  if (STATE.mainLoopRunning) {
-      await Helpers.sleep(Config.REFRESH_INTERVAL_MS + 500);
-  }
-  STATE.stopLoop = false;
-
-  let loc;
-  
-  if (STATE.overriddenLoc) {
-      // שימוש במיקום שנבחר מהחיפוש
-      loc = STATE.overriddenLoc;
-      // נדמה שהמיקום הוא כאילו המשתמש שם
-  } else {
-      // שימוש ב-GPS אמיתי
-      try {
-        Location.setAccuracyToBest();
-        loc = await Location.current();
-      } catch (e) {
-        console.log("Location Error: " + e);
-        loc = null;
-      }
+async function handleCommand(cmd, wv) {
+  if (cmd.startsWith("search/")) {
+    const query = decodeURIComponent(cmd.split("/")[1]);
+    const results = await Search.searchStops(query);
+    await wv.evaluateJavaScript(`window.displaySearchResults(${JSON.stringify(results)})`);
+    return;
   }
 
+  if (cmd.startsWith("selectSearchStop/")) {
+    const parts = cmd.split("/");
+    const stopCode = parts[1];
+    const lat = parseFloat(parts[2]);
+    const lon = parseFloat(parts[3]);
+    
+    STATE.stopLoop = true;
+    await Helpers.sleep(500);
+    STATE.stopLoop = false;
+    STATE.stops = [];
+    STATE.isSearchMode = true;
+    STATE.searchSelectedStop = { stopCode, lat, lon };
+    STATE.radius = Config.SEARCH_RADIUS;
+    STATE.maxStops = Config.MAX_STATIONS;
+    STATE.activeStopCode = null;
+    
+    await wv.evaluateJavaScript(`window.resetUI("טוען תחנות קרובות...")`);
+    initSearchLocationMode(wv, lat, lon, stopCode);
+    return;
+  }
+
+  if (cmd === "refreshLocation") {
+    STATE.stopLoop = true;
+    await Helpers.sleep(500);
+    STATE.stopLoop = false;
+    STATE.stops = [];
+    STATE.isDirectMode = false;
+    STATE.isSearchMode = false;
+    STATE.searchSelectedStop = null;
+    // איפוס רדיוס
+    STATE.radius = Config.SEARCH_RADIUS;
+    STATE.maxStops = Config.MAX_STATIONS;
+
+    await wv.evaluateJavaScript(`window.resetUI("מחפש מיקום מחדש...")`);
+    initLocationMode(wv);
+  }
+
+  if (cmd === "loadMore") {
+    if (STATE.isDirectMode) {
+      const a = new Alert();
+      a.title = "מצב מק\"ט ידני";
+      a.message = "האם לעבור לחיפוש לפי מיקום?";
+      a.addAction("כן");
+      a.addCancelAction("ביטול");
+      if (await a.presentAlert() === 0) handleCommand("refreshLocation", wv);
+      return;
+    }
+    STATE.radius += 500;
+    STATE.maxStops += 5;
+
+    const loc = STATE.isSearchMode ? STATE.searchSelectedStop : STATE.currentLoc;
+    if (loc) {
+      const moreStops = await API.findNearbyStops(
+        loc.lat,
+        loc.lon,
+        STATE.stops,
+        STATE.maxStops,
+        STATE.radius
+      );
+      moreStops.forEach(s => STATE.stops.push(s));
+      const js = `window.addStops(${JSON.stringify(moreStops)}, false)`;
+      await wv.evaluateJavaScript(js);
+      updateLoop(wv, moreStops);
+    }
+  }
+}
+
+async function initDirectMode(wv, codes) {
+  const stops = codes.map(c => ({ name: "טוען...", stopCode: c, distance: 0 }));
+  STATE.stops = stops;
+  await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
+  updateLoop(wv, stops);
+}
+
+async function initLocationMode(wv) {
+  const loc = await API.getLocation();
   if (!loc) {
     await wv.evaluateJavaScript(`window.resetUI("שגיאה בקבלת מיקום")`);
     return;
   }
-  
   STATE.currentLoc = loc;
-  
-  // אם אנחנו במצב רגיל
-  if (!STATE.overriddenLoc) {
-      await wv.evaluateJavaScript(`document.getElementById("msg-text").innerText = "מחפש תחנות..."`);
-  }
+  await wv.evaluateJavaScript(`document.getElementById("msg-text").innerText = "מחפש תחנות..."`);
 
-  // חיפוש תחנות קרובות סביב המיקום (האמיתי או הנבחר)
-  let stops = await API.findNearbyStops(loc.latitude || loc.lat, loc.longitude || loc.lon, [], STATE.maxStops, STATE.radius);
-  
+  const stops = await API.findNearbyStops(loc.lat, loc.lon, [], STATE.maxStops, STATE.radius);
   if (stops.length === 0) {
     await wv.evaluateJavaScript(`window.resetUI("לא נמצאו תחנות בסביבה")`);
     return;
   }
 
-  // אם יש תחנה ממוקדת (שנבחרה בחיפוש), וודא שהיא ראשונה
-  if (focusStopCode) {
-      const idx = stops.findIndex(s => s.stopCode == focusStopCode);
-      if (idx > -1) {
-          const s = stops.splice(idx, 1)[0];
-          stops.unshift(s);
-      } else {
-          // אם התחנה לא נמצאה ברדיוס (מוזר, כי המיקום שלנו הוא התחנה), נוסיף אותה ידנית
-          // (בדרך כלל לא יקרה אם הרדיוס תקין והקואורדינטות ב-JSON נכונות)
-      }
-  }
-
   STATE.stops = stops;
   await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
+  updateLoop(wv, stops);
+}
+
+async function initSearchLocationMode(wv, lat, lon, selectedStopCode) {
+  await wv.evaluateJavaScript(`document.getElementById("msg-text").innerText = "מחפש תחנות קרובות..."`);
+
+  const stops = await API.findNearbyStops(lat, lon, [], STATE.maxStops, STATE.radius);
   
-  // התחלת לולאת העדכון
+  // ודא שהתחנה הנבחרת תהיה ראשונה
+  const selectedIndex = stops.findIndex(s => s.stopCode === selectedStopCode);
+  if (selectedIndex > 0) {
+    const selectedStop = stops.splice(selectedIndex, 1)[0];
+    stops.unshift(selectedStop);
+  } else if (selectedIndex === -1) {
+    // אם התחנה לא נמצאה בקרבה, הוסף אותה ידנית
+    stops.unshift({ name: "טוען...", stopCode: selectedStopCode, distance: 0 });
+  }
+  
+  if (stops.length === 0) {
+    await wv.evaluateJavaScript(`window.resetUI("לא נמצאו תחנות בסביבה")`);
+    return;
+  }
+  
+  STATE.stops = stops;
+  STATE.activeStopCode = selectedStopCode;
+
+  await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
   updateLoop(wv, stops);
 }
 
@@ -163,8 +280,8 @@ async function updateLoop(wv, stopsToUpdate) {
   const fetchAndSend = async (stopCode) => {
     try {
       const data = await API.getStopData(stopCode);
-      if (data.name && STATE.isDirectMode) {
-         wv.evaluateJavaScript(`window.updateStopName("${stopCode}", "${data.name}")`).catch(()=>{});
+      if (data.name && (STATE.isDirectMode || STATE.isSearchMode)) {
+        wv.evaluateJavaScript(`window.updateStopName("${stopCode}", "${data.name}")`).catch(()=>{});
       }
       await wv.evaluateJavaScript(`window.updateData("${stopCode}", ${JSON.stringify(data)})`);
     } catch (e) {
@@ -177,28 +294,18 @@ async function updateLoop(wv, stopsToUpdate) {
     await fetchAndSend(s.stopCode);
   }
 
-  if (STATE.mainLoopRunning) return; 
+  if (STATE.mainLoopRunning) return;
   STATE.mainLoopRunning = true;
 
   while (!STATE.stopLoop) {
     await Helpers.sleep(Config.REFRESH_INTERVAL_MS);
-    
-    // רענון חוזר של התחנות המוצגות
-    for (const s of STATE.stops) {
-        if (STATE.stopLoop) break;
-        await fetchAndSend(s.stopCode);
+    for (const s of [...STATE.stops]) {
+      if (STATE.stopLoop) break;
+      await fetchAndSend(s.stopCode);
     }
   }
   STATE.mainLoopRunning = false;
 }
 
-// ===============================
-// הרצה
-// ===============================
-if (IS_SCRIPTABLE) {
-  // Scriptable - הרץ מיד
-  (async () => {
-    await main();
-    Script.complete();
-  })();
-}
+await main();
+Script.complete();
