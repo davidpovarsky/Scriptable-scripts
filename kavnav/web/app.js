@@ -42,20 +42,19 @@ function initSearch() {
   const searchInput = document.getElementById('search-input');
   const searchResults = document.getElementById('search-results');
   
-  // זיהוי תנועת גלילה כלפי מעלה
-  document.addEventListener('touchstart', (e) => {
-    touchStartY = e.touches[0].clientY;
-  });
-  
-  document.addEventListener('touchend', (e) => {
-    touchEndY = e.changedTouches[0].clientY;
-    const swipeDistance = touchStartY - touchEndY;
-    
-    // אם גללו כלפי מעלה לפחות 100 פיקסלים
-    if (swipeDistance > 100) {
-      showSearch();
-    }
-  });
+  // זיהוי תנועת גלילה כלפי מעלהdocument.addEventListener('touchstart', (e) => {
+  touchStartY = e.touches[0].clientY;
+});
+
+document.addEventListener('touchend', (e) => {
+  touchEndY = e.changedTouches[0].clientY;
+  const swipeDistance = touchEndY - touchStartY;
+
+  // אם עשו סווייפ למטה לפחות 100 פיקסלים
+  if (swipeDistance > 100) {
+    showSearch();
+  }
+});
   
   // סגירת חיפוש בלחיצה על overlay
   searchOverlay.addEventListener('click', hideSearch);
