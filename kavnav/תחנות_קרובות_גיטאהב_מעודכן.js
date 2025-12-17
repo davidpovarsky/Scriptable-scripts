@@ -1,9 +1,6 @@
 // Variables used by Scriptable.
 // These must be at the very top of the file. Do not edit.
 // icon-color: teal; icon-glyph: magic;
-// Variables used by Scriptable.
-// These must be at the very top of the file. Do not edit.
-// icon-color: blue; icon-glyph: magic;
 
 /* ===================== GITHUB BOOTSTRAP (AUTO-DOWNLOAD MODULES) ===================== */
 
@@ -17,6 +14,7 @@ const MODULE_FILES = [
   "KavNavHelpers.js",
   "KavNavAPI.js",
   "KavNavUI.js",
+  "KavNavSearch.js"
 ];
 
 // כל כמה זמן לבדוק עדכון (כדי לא להוריד כל ריצה)
@@ -35,7 +33,7 @@ function hoursSince(d) {
 }
 
 async function maybeMigrateTxtToJs(fileJsPath) {
-  // אם בטעות שמרת בעבר כ־.txt (כמו שציינת), ננסה “להציל”:
+  // אם בטעות שמרת בעבר כ־.txt (כמו שציינת), ננסה "להציל":
   // KavNavConfig.txt -> KavNavConfig.js
   const fileTxtPath = fileJsPath.replace(/\.js$/i, ".txt");
   if (!fm.fileExists(fileJsPath) && fm.fileExists(fileTxtPath)) {
@@ -69,7 +67,7 @@ async function ensureKavNavModules() {
   for (const fileName of MODULE_FILES) {
     const localPath = fm.joinPath(localDir, fileName);
 
-    // קודם “הצלת txt” אם קיים
+    // קודם "הצלת txt" אם קיים
     await maybeMigrateTxtToJs(localPath);
 
     // אם צריך עדכון – הורד מה־GitHub
@@ -96,6 +94,7 @@ const Config = importModule("kavnav/KavNavConfig");
 const Helpers = importModule("kavnav/KavNavHelpers");
 const API = importModule("kavnav/KavNavAPI");
 const UI = importModule("kavnav/KavNavUI");
+const Search = importModule("kavnav/KavNavSearch");
 
 /* ===================== STATE ===================== */
 
@@ -108,7 +107,9 @@ let STATE = {
   mainLoopRunning: false,
   // כדי לאפשר שינוי פרמטרים תוך כדי ריצה
   radius: Config.SEARCH_RADIUS,
-  maxStops: Config.MAX_STATIONS
+  maxStops: Config.MAX_STATIONS,
+  isSearchMode: false,
+  searchSelectedStop: null
 };
 
 /* ===================== CONTROLLER LOGIC ===================== */
@@ -147,12 +148,42 @@ async function main() {
 }
 
 async function handleCommand(cmd, wv) {
+  if (cmd.startsWith("search/")) {
+    const query = decodeURIComponent(cmd.split("/")[1]);
+    const results = await Search.searchStops(query);
+    await wv.evaluateJavaScript(`window.displaySearchResults(${JSON.stringify(results)})`);
+    return;
+  }
+
+  if (cmd.startsWith("selectSearchStop/")) {
+    const parts = cmd.split("/");
+    const stopCode = parts[1];
+    const lat = parseFloat(parts[2]);
+    const lon = parseFloat(parts[3]);
+    
+    STATE.stopLoop = true;
+    await Helpers.sleep(500);
+    STATE.stopLoop = false;
+    STATE.stops = [];
+    STATE.isSearchMode = true;
+    STATE.searchSelectedStop = { stopCode, lat, lon };
+    STATE.radius = Config.SEARCH_RADIUS;
+    STATE.maxStops = Config.MAX_STATIONS;
+    STATE.activeStopCode = null;
+    
+    await wv.evaluateJavaScript(`window.resetUI("טוען תחנות קרובות...")`);
+    initSearchLocationMode(wv, lat, lon, stopCode);
+    return;
+  }
+
   if (cmd === "refreshLocation") {
     STATE.stopLoop = true;
     await Helpers.sleep(500);
     STATE.stopLoop = false;
     STATE.stops = [];
     STATE.isDirectMode = false;
+    STATE.isSearchMode = false;
+    STATE.searchSelectedStop = null;
     // איפוס רדיוס
     STATE.radius = Config.SEARCH_RADIUS;
     STATE.maxStops = Config.MAX_STATIONS;
@@ -174,10 +205,11 @@ async function handleCommand(cmd, wv) {
     STATE.radius += 500;
     STATE.maxStops += 5;
 
-    if (STATE.currentLoc) {
+    const loc = STATE.isSearchMode ? STATE.searchSelectedStop : STATE.currentLoc;
+    if (loc) {
       const moreStops = await API.findNearbyStops(
-        STATE.currentLoc.lat,
-        STATE.currentLoc.lon,
+        loc.lat,
+        loc.lon,
         STATE.stops,
         STATE.maxStops,
         STATE.radius
@@ -217,11 +249,38 @@ async function initLocationMode(wv) {
   updateLoop(wv, stops);
 }
 
+async function initSearchLocationMode(wv, lat, lon, selectedStopCode) {
+  await wv.evaluateJavaScript(`document.getElementById("msg-text").innerText = "מחפש תחנות קרובות..."`);
+
+  const stops = await API.findNearbyStops(lat, lon, [], STATE.maxStops, STATE.radius);
+  
+  // ודא שהתחנה הנבחרת תהיה ראשונה
+  const selectedIndex = stops.findIndex(s => s.stopCode === selectedStopCode);
+  if (selectedIndex > 0) {
+    const selectedStop = stops.splice(selectedIndex, 1)[0];
+    stops.unshift(selectedStop);
+  } else if (selectedIndex === -1) {
+    // אם התחנה לא נמצאה בקרבה, הוסף אותה ידנית
+    stops.unshift({ name: "טוען...", stopCode: selectedStopCode, distance: 0 });
+  }
+  
+  if (stops.length === 0) {
+    await wv.evaluateJavaScript(`window.resetUI("לא נמצאו תחנות בסביבה")`);
+    return;
+  }
+  
+  STATE.stops = stops;
+  STATE.activeStopCode = selectedStopCode;
+
+  await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(stops)}, true)`);
+  updateLoop(wv, stops);
+}
+
 async function updateLoop(wv, stopsToUpdate) {
   const fetchAndSend = async (stopCode) => {
     try {
       const data = await API.getStopData(stopCode);
-      if (data.name && STATE.isDirectMode) {
+      if (data.name && (STATE.isDirectMode || STATE.isSearchMode)) {
         wv.evaluateJavaScript(`window.updateStopName("${stopCode}", "${data.name}")`).catch(()=>{});
       }
       await wv.evaluateJavaScript(`window.updateData("${stopCode}", ${JSON.stringify(data)})`);
