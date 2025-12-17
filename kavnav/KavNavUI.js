@@ -440,14 +440,16 @@ ${htmlBody}
 // ===============================
 // Export לפי סביבה
 // ===============================
-var UI = {
-  buildHTML,
-  CSS_CONTENT,  // מייצא גם את ה-CSS לשימוש נפרד
-  JS_CONTENT    // מייצא גם את ה-JS לשימוש נפרד
-};
-
 if (IS_SCRIPTABLE) {
-  module.exports = UI;
+  module.exports = {
+    buildHTML: buildHTML,
+    CSS_CONTENT: CSS_CONTENT,
+    JS_CONTENT: JS_CONTENT
+  };
 } else {
-  window.KavNavUI = UI;
+  window.KavNavUI = {
+    buildHTML: buildHTML,
+    CSS_CONTENT: CSS_CONTENT,
+    JS_CONTENT: JS_CONTENT
+  };
 }
