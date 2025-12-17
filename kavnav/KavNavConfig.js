@@ -23,27 +23,24 @@ var config = {
   BASE_URL: "https://kavnav.com/api",
   PROXY_URL: "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec?url=",
   
+  // כתובת קובץ התחנות לחיפוש
+  STOPS_FILE_URL: "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/refs/heads/main/data/stops.json",
+
   SEARCH_RADIUS: 500,
   MAX_STATIONS: 5,
   LOOKAHEAD_MINUTES: 60,
   REFRESH_INTERVAL_MS: 10000, // רענון כל 10 שניות (זמן אמת)
-
-  // Cache לזמנים "מתוכננים" ולסיכום תחנה
-  SCHEDULE_CACHE_TTL_MS: 120000, // 2 דקות
-  SUMMARY_CACHE_TTL_MS: 3600000,  // שעה
   
-  // מידע על הסביבה
-  IS_SCRIPTABLE,
-  IS_BROWSER
+  // הגדרות תצוגה
+  SHOW_ZERO_MINUTES: true
 };
 
-// ===============================
-// Export לפי סביבה
-// ===============================
-if (IS_SCRIPTABLE) {
-  // Scriptable - export כמודול
+// ייצוא ב-Scriptable
+if (IS_SCRIPTABLE && typeof module !== 'undefined') {
   module.exports = config;
-} else {
-  // Browser - export כמשתנה גלובלי
+}
+
+// ייצוא בדפדפן
+if (IS_BROWSER) {
   window.KavNavConfig = config;
 }
