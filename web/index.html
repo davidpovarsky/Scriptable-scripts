@@ -1,37 +1,52 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="he\" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>מסלולי קווים</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-
-  <!-- Icons font -->
+  <title>KavNav Unified</title>
+  
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0&icon_names=directions_bus" />
-
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-  <!-- CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <div id="map">
-    <button id="locateMeBtn" title="המיקום שלי">📍</button>
+<body class="mode-dual"> <div id="state-bubble">
+    <div class="mode-btn" onclick="setAppMode('map')" data-mode="map">מפה</div>
+    <div class="mode-btn active" onclick="setAppMode('dual')" data-mode="dual">משולב</div>
+    <div class="mode-btn" onclick="setAppMode('list')" data-mode="list">תחנות</div>
   </div>
 
-  <div id="bottomSheet">
-    <div id="dragHandleArea"><div class="handle-bar"></div></div>
-    <div id="routesContainer"></div>
-    <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • מבוסס KavNav</div>
+  <div id="main-container">
+    <div id="map-section">
+      <div id="map">
+        <button id="locateMeBtn">📍</button>
+      </div>
+      <div id="bottomSheet">
+        <div id="dragHandleArea"><div class="handle-bar"></div></div>
+        <div id="routesContainer"></div>
+      </div>
+    </div>
+
+    <div id="stations-section">
+        <header id="nearby-header">
+            <button id="refresh-btn" onclick="triggerRefresh()">🔄</button>
+            <div id="search-bar-trigger" onclick="toggleSearch(true)">🔍 חיפוש תחנה...</div>
+        </header>
+        <div id="nearby-content">
+            <div id="loader-msg" style="display:none"><div class="spinner"></div></div>
+            <div id="cards-container"></div>
+            <div id="empty-msg">טוען תחנות קרובות...</div>
+        </div>
+    </div>
   </div>
 
-  <!-- הגדרת מצב ריצה -->
-  <script>
-    window.APP_ENVIRONMENT = 'local';
-  </script>
+  <div id="search-overlay" onclick="toggleSearch(false)"></div>
+  <div id="search-container">
+    <input type="text" id="search-input" placeholder="שם תחנה או מספר..." />
+    <div id="search-results"></div>
+  </div>
 
-  <!-- JavaScript -->
+  <script>window.APP_ENVIRONMENT = 'local';</script>
   <script src="app.js"></script>
 </body>
 </html>
