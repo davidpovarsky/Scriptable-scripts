@@ -1,5 +1,5 @@
 // view.js
-// בונה HTML משולב
+// בונה HTML משולב - גרסה מתוקנת
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -9,22 +9,32 @@ module.exports.getHtml = function() {
   
   if (isScriptable) {
     try {
-      const fm = FileManager.local();
-      const webDir = fm.joinPath(fm.documentsDirectory(), "web");
+      const fm = FileManager.iCloud();
+      const docsDir = fm.documentsDirectory();
+      const webDir = fm.joinPath(docsDir, "web");
       
       const cssPath = fm.joinPath(webDir, "style.css");
       const jsPath = fm.joinPath(webDir, "app.js");
       
+      // נסה להוריד מ-iCloud
       if (fm.fileExists(cssPath)) {
+        try { fm.downloadFileFromiCloud(cssPath); } catch(e) {}
         cssContent = fm.readString(cssPath);
       }
+      
       if (fm.fileExists(jsPath)) {
+        try { fm.downloadFileFromiCloud(jsPath); } catch(e) {}
         jsContent = fm.readString(jsPath);
       }
+      
     } catch (e) {
       console.error("Error loading web files:", e);
     }
   }
+  
+  // Fallback אם הקבצים לא נטענו
+  const hasCss = cssContent && cssContent.length > 100;
+  const hasJs = jsContent && jsContent.length > 100;
   
   return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
@@ -40,7 +50,7 @@ module.exports.getHtml = function() {
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-  ${isScriptable && cssContent ? 
+  ${hasCss ? 
     `<style>${cssContent}</style>` : 
     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/style.css">'
   }
@@ -108,7 +118,7 @@ module.exports.getHtml = function() {
     window.APP_ENVIRONMENT = 'scriptable';
   </script>
 
-  ${isScriptable && jsContent ? 
+  ${hasJs ? 
     `<script>${jsContent}</script>` : 
     '<script src="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/app.js"></script>'
   }
