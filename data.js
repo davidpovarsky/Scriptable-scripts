@@ -1,32 +1,7 @@
 // data.js
 // אחראי על כל התקשורת מול השרת ועיבוד הנתונים
-// data.js
 const config = importModule('config');
 const utils = importModule('utils');
-
-// ייבוא המודולים של פרויקט 2 (נמצאים בתיקיית kavnav)
-const KavNavAPI = importModule('kavnav/KavNavAPI');
-
-// פונקציה חדשה שמשלבת נתוני תחנות קרובות
-module.exports.getNearbyData = async function(lat, lon) {
-  try {
-    // 1. חיפוש תחנות קרובות (משתמש ב-KavNavAPI של פרויקט 2)
-    const radius = 500;
-    const stopsUrl = `${config.API_BASE}/stops-near?lat=${lat}&lon=${lon}&radius=${radius}`;
-    const nearbyStops = await utils.fetchJson(stopsUrl);
-    
-    if (!nearbyStops || nearbyStops.length === 0) return null;
-
-    // 2. לוקחים את התחנה הכי קרובה ומביאים לה נתונים בזמן אמת
-    const primaryStop = nearbyStops[0];
-    const stopData = await KavNavAPI.getStopData(primaryStop.stopCode);
-    
-    return stopData;
-  } catch (e) {
-    console.error("Error fetching nearby data: " + e);
-    return null;
-  }
-};
 
 // טעינת תחנות מקומיות
 async function loadLocalStops() {
