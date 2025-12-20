@@ -1,32 +1,13 @@
 // main.js
-// נקודת הכניסה הראשית - מנהלת את שני המודולים
+// נקודת הכניסה שמנהלת את הכל - Scriptable בלבד
 
 const config = importModule('config');
 const utils = importModule('utils');
 const dataService = importModule('data');
 const viewService = importModule('view');
-const stationsAPI = importModule('stations/StationsAPI');
-const stationsSearch = importModule('stations/StationsSearch');
-
-// ===== STATE משותף =====
-let STATE = {
-  // Map state
-  routesStatic: [],
-  nearestStops: [],
-  userLat: null,
-  userLon: null,
-  
-  // Stations state
-  selectedStops: [],
-  activeStopCode: null,
-  isSearchMode: false,
-  
-  // UI state
-  viewMode: config.VIEW_MODES.BOTH, // both/map/stations
-  keepRefreshing: true
-};
 
 module.exports.run = async function(argsObj) {
+
   const FROM_NOTIFICATION = !!(argsObj && argsObj.notification);
   const routeDate = utils.isoDateTodayLocal();
 
@@ -35,10 +16,11 @@ module.exports.run = async function(argsObj) {
     ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
     : [];
 
-  // טיפול בהתראה עם מסלולים
+  // אם הגיעה התראה עם מסלולים → נכבד אותה
   if (argsObj && argsObj.notification && argsObj.notification.userInfo) {
     try {
       const ui = argsObj.notification.userInfo;
+
       if (Array.isArray(ui.routes) && ui.routes.length) {
         ROUTES = ui.routes
           .map((r) => {
@@ -49,50 +31,62 @@ module.exports.run = async function(argsObj) {
           })
           .filter((x) => x && Number.isFinite(x.routeId));
       }
+      else if (Array.isArray(ui.routeIds) && ui.routeIds.length) {
+        ROUTES = ui.routeIds
+          .map((id) => Number(id))
+          .filter((n) => Number.isFinite(n))
+          .map((n) => ({ routeId: n }));
+      }
     } catch (e) {
-      console.error("Failed reading routes from notification:", e);
+      console.error("Failed reading routes from notification.userInfo:", e);
     }
   }
 
-  // 2. קבלת מיקום
+  // נשמור מיקום משתמש + תחנות קרובות
+  let userLat = null;
+  let userLon = null;
+  let nearestStops = []; // 🆕 מערך התחנות הקרובות
+
+  // 2. קווים סביבי אוטומטית
   if (!FROM_NOTIFICATION) {
+
+    // ניסיון מהמכשיר
     try {
       Location.setAccuracyToBest();
       const loc = await Location.current();
+
       if (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number") {
-        STATE.userLat = loc.latitude;
-        STATE.userLon = loc.longitude;
-        console.log("Using device location:", STATE.userLat, STATE.userLon);
+        userLat = loc.latitude;
+        userLon = loc.longitude;
+        console.log("Using device location:", userLat, userLon);
       }
     } catch (e) {
       console.error("Device location failed:", e);
     }
 
-    // Fallback
-    if (STATE.userLat === null || STATE.userLon === null) {
+    // fallback לשרת
+    if (userLat === null || userLon === null) {
       console.log("Using fallback location…");
       const fallback = await utils.loadFallbackLocation();
-      STATE.userLat = fallback.lat;
-      STATE.userLon = fallback.lon;
+      userLat = fallback.lat;
+      userLon = fallback.lon;
       console.log("Server location:", fallback);
     }
 
-    // חיפוש תחנות קרובות
-    if (STATE.userLat != null && STATE.userLon != null) {
+    // אם עדיין אין מיקום — דילוג
+    if (userLat != null && userLon != null) {
       try {
-        STATE.nearestStops = await stationsAPI.findNearbyStops(STATE.userLat, STATE.userLon, [], 3, 500);
-        console.log("Nearest stops:", JSON.stringify(STATE.nearestStops));
+        nearestStops = await dataService.findNearestStops(userLat, userLon, 3); // 🆕 שמירת התחנות
+        const stopCodes = nearestStops
+          .map((s) => (s && s.stopCode ? String(s.stopCode) : ""))
+          .filter(Boolean);
 
-        // בחירת התחנות הקרובות למעקב
-        STATE.selectedStops = STATE.nearestStops.slice(0, 3);
-        if (STATE.selectedStops.length > 0) {
-          STATE.activeStopCode = STATE.selectedStops[0].stopCode;
-        }
+        console.log("Nearest stops:", JSON.stringify(nearestStops));
 
-        // בדיקת קווים פעילים
-        const stopCodes = STATE.nearestStops.map(s => s.stopCode).filter(Boolean);
         if (stopCodes.length) {
           const activeRoutes = await dataService.fetchActiveRoutesForStops(stopCodes);
+          console.log("Active routes near user:", JSON.stringify(activeRoutes));
+
           if (Array.isArray(activeRoutes) && activeRoutes.length) {
             ROUTES = activeRoutes;
           }
@@ -103,7 +97,7 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // ברירת מחדל אם אין מסלולים
+  // אם עדיין אין מסלולים — ברירת מחדל
   if (!Array.isArray(ROUTES) || !ROUTES.length) {
     ROUTES = Array.isArray(config.DEFAULT_ROUTES)
       ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
@@ -115,27 +109,17 @@ module.exports.run = async function(argsObj) {
   const html = viewService.getHtml();
   await wv.loadHTML(html);
 
-  // 4. רישום מטפלי פקודות
-  wv.shouldAllowRequest = (req) => {
-    if (req.url.startsWith("unified://")) {
-      const cmd = req.url.replace("unified://", "");
-      handleCommand(cmd, wv);
-      return false;
-    }
-    return true;
-  };
-
-  // 5. העברת מיקום למפה
-  if (STATE.userLat != null && STATE.userLon != null) {
+  // העברת מיקום המשתמש (אם קיים) ל-HTML
+  if (userLat != null && userLon != null) {
     try {
-      const jsUserLoc = `window.setUserLocation && window.setUserLocation(${STATE.userLat}, ${STATE.userLon});`;
+      const jsUserLoc = `window.setUserLocation && window.setUserLocation(${userLat}, ${userLon});`;
       await wv.evaluateJavaScript(jsUserLoc, false);
     } catch (e) {
-      console.error("Failed injecting user location:", e);
+      console.error("Failed injecting user location into WebView:", e);
     }
   }
 
-  // 6. הזרקת stops.json
+  // 4. הזרקת stops.json
   try {
     const fm = FileManager.iCloud();
     const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
@@ -149,156 +133,74 @@ module.exports.run = async function(argsObj) {
     console.error("Failed injecting stops.json:", e);
   }
 
-  // 7. טעינת נתוני מסלולים
+  // 5. נתוני בסיס (סטטיים)
+  let routesStatic = [];
   try {
-    STATE.routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
+    routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
   } catch (e) {
     console.error("Error fetching static routes:", e);
   }
 
-  // 8. שליחת נתונים סטטיים למפה
-  if (STATE.routesStatic.length) {
-    try {
-      const staticPayload = STATE.routesStatic.map(r => ({
-        meta: {
-          routeId: r.routeId,
-          routeCode: r.routeCode,
-          operatorColor: r.operatorColor,
-          headsign: r.headsign,
-          routeNumber: r.routeMeta?.routeNumber,
-          routeDate: r.routeDate
-        },
-        stops: r.routeStops,
-        shapeCoords: r.shapeCoords
-      }));
-
-      const jsInit = `window.initStaticData(${JSON.stringify(staticPayload)})`;
-      await wv.evaluateJavaScript(jsInit, false);
-      console.log("Static data sent to WebView.");
-    } catch (e) {
-      console.error("Failed sending static data:", e);
-    }
-  }
-
-  // 9. שליחת רשימת תחנות ראשונית
-  if (STATE.selectedStops.length) {
-    try {
-      await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(STATE.selectedStops)}, true)`);
-    } catch (e) {
-      console.error("Failed sending initial stops:", e);
-    }
-  }
-
-  // 10. לולאת רענון
-  startRefreshLoop(wv);
-
-  // הצגת WebView
-  if (FROM_NOTIFICATION) await wv.present();
-  else await wv.present(true);
-};
-
-// ===== מטפל פקודות =====
-async function handleCommand(cmd, wv) {
-  console.log("Command received:", cmd);
-
-  // החלפת מצב תצוגה
-  if (cmd.startsWith("setViewMode/")) {
-    const mode = cmd.split("/")[1];
-    STATE.viewMode = mode;
+  // אם אין מסלולים כלל - יציאה
+  if (!routesStatic.length) {
+    if (FROM_NOTIFICATION) await wv.present();
+    else await wv.present(true);
     return;
   }
 
-  // בחירת תחנה פעילה
-  if (cmd.startsWith("setActiveStop/")) {
-    const code = cmd.split("/")[1];
-    STATE.activeStopCode = code;
-    return;
+  // --- שליחת הנתונים הכבדים (מפה ותחנות) פעם אחת בלבד ---
+  try {
+    const staticPayload = routesStatic.map(r => ({
+      meta: {
+        routeId: r.routeId,
+        routeCode: r.routeCode,
+        operatorColor: r.operatorColor,
+        headsign: r.headsign,
+        routeNumber: r.routeMeta?.routeNumber,
+        routeDate: r.routeDate
+      },
+      stops: r.routeStops,
+      shapeCoords: r.shapeCoords
+    }));
+
+    const jsInit = `window.initStaticData(${JSON.stringify(staticPayload)})`;
+    await wv.evaluateJavaScript(jsInit, false);
+    console.log("Static data sent to WebView.");
+  } catch (e) {
+    console.error("Failed sending static data:", e);
   }
 
-  // חיפוש תחנה
-  if (cmd.startsWith("search/")) {
-    const query = decodeURIComponent(cmd.split("/")[1]);
-    const results = await stationsSearch.searchStops(query);
-    await wv.evaluateJavaScript(`window.displaySearchResults(${JSON.stringify(results)})`);
-    return;
-  }
-
-  // בחירת תחנה מחיפוש
-  if (cmd.startsWith("selectSearchStop/")) {
-    const parts = cmd.split("/");
-    const stopCode = parts[1];
-    const lat = parseFloat(parts[2]);
-    const lon = parseFloat(parts[3]);
-    
-    STATE.isSearchMode = true;
-    STATE.activeStopCode = stopCode;
-    
-    // הוספת התחנה לרשימה אם לא קיימת
-    if (!STATE.selectedStops.find(s => s.stopCode === stopCode)) {
-      STATE.selectedStops.unshift({ stopCode, lat, lon, name: "טוען...", distance: 0 });
-      await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(STATE.selectedStops)}, true)`);
-    }
-    
-    return;
-  }
-
-  // הדגשת קו במפה (מלחיצה בממשק התחנות)
-  if (cmd.startsWith("highlightRoute/")) {
-    const routeId = cmd.split("/")[1];
-    await wv.evaluateJavaScript(`window.highlightRoute(${routeId})`);
-    return;
-  }
-
-  // הדגשת תחנה במפה
-  if (cmd.startsWith("highlightStop/")) {
-    const stopCode = cmd.split("/")[1];
-    await wv.evaluateJavaScript(`window.highlightStop("${stopCode}")`);
-    return;
-  }
-
-  // טעינת תחנות נוספות
-  if (cmd === "loadMore") {
-    if (STATE.userLat && STATE.userLon) {
-      const moreStops = await stationsAPI.findNearbyStops(
-        STATE.userLat, 
-        STATE.userLon, 
-        STATE.selectedStops, 
-        5, 
-        1000
-      );
-      
-      moreStops.forEach(s => STATE.selectedStops.push(s));
-      await wv.evaluateJavaScript(`window.addStops(${JSON.stringify(moreStops)}, false)`);
-    }
-  }
-}
-
-// ===== לולאת רענון =====
-async function startRefreshLoop(wv) {
+  // ===================================================================
+  // 🆕 6. רענון זמן אמת - כעת מבוסס על תחנות!
+  // ===================================================================
   
+  let keepRefreshing = true;
+
   async function pushRealtimeUpdate() {
     try {
-      // רענון מפה
-      if (STATE.routesStatic.length && STATE.nearestStops.length) {
-        const fullData = await dataService.fetchRealtimeForRoutesFromStops(
-          STATE.routesStatic, 
-          STATE.nearestStops
-        );
-        
-        const lightPayload = fullData.map(d => ({
-          routeId: d.meta.routeId,
-          meta: d.meta,
-          vehicles: d.vehicles
-        }));
-
-        await wv.evaluateJavaScript(`window.updateRealtimeData(${JSON.stringify(lightPayload)})`);
+      // 🔹 במקום לקרוא ל-fetchRealtimeForRoutes (הישנה),
+      //    נקרא ל-fetchRealtimeForRoutesFromStops (החדשה)
+      
+      let fullData;
+      
+      if (nearestStops && nearestStops.length > 0) {
+        // 🆕 יש תחנות קרובות - נשתמש בהן
+        console.log("Fetching realtime from stops:", nearestStops.map(s => s.stopCode).join(', '));
+        fullData = await dataService.fetchRealtimeForRoutesFromStops(routesStatic, nearestStops);
+      } else {
+        // 🔄 fallback: אין תחנות (התראה?) - נשתמש בשיטה הישנה
+        console.log("No stops available, using old method (routeCode)");
+        fullData = await dataService.fetchRealtimeForRoutes(routesStatic);
       }
+      
+      const lightPayload = fullData.map(d => ({
+        routeId: d.meta.routeId,
+        meta: d.meta,
+        vehicles: d.vehicles
+      }));
 
-      // רענון תחנה פעילה
-      if (STATE.activeStopCode) {
-        const data = await stationsAPI.getStopData(STATE.activeStopCode);
-        await wv.evaluateJavaScript(`window.updateStationData("${STATE.activeStopCode}", ${JSON.stringify(data)})`);
-      }
+      const jsUpdate = `window.updateRealtimeData(${JSON.stringify(lightPayload)})`;
+      await wv.evaluateJavaScript(jsUpdate, false);
       
     } catch (e) {
       console.error("Error on realtime refresh:", e);
@@ -306,25 +208,21 @@ async function startRefreshLoop(wv) {
   }
 
   async function refreshLoop() {
-    while (STATE.keepRefreshing) {
+    while (keepRefreshing) {
       await pushRealtimeUpdate();
-      if (!STATE.keepRefreshing) break;
+      if (!keepRefreshing) break;
       await utils.sleep(config.REFRESH_INTERVAL_MS);
     }
   }
 
-  // רענון ראשוני
+  // התחלת הלולאה
   await pushRealtimeUpdate();
-  
-  // התחלת לולאה
   const loopPromise = refreshLoop();
 
-  // המתנה לסגירת WebView
-  try { 
-    await loopPromise; 
-  } catch (e) {
-    console.error("Loop error:", e);
-  }
-  
-  STATE.keepRefreshing = false;
-}
+  if (FROM_NOTIFICATION) await wv.present();
+  else await wv.present(true);
+
+  // סיום
+  keepRefreshing = false;
+  try { await loopPromise; } catch (e) {}
+};
