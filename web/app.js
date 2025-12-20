@@ -1,5 +1,92 @@
 // app.js
 // תומך גם ב-Scriptable WebView וגם בדפדפן רגיל
+// app.js
+
+// --- ניהול מצבי תצוגה ---
+function setAppMode(mode) {
+    document.body.className = 'mode-' + mode;
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    setTimeout(() => mapInstance.invalidateSize(), 400); // עדכון המפה לאחר שינוי גודל
+}
+
+// --- אינטראקציה: לחיצה על קו ברשימה ---
+window.highlightRouteOnMap = function(routeNumber) {
+    let found = false;
+    staticDataStore.forEach((data, routeId) => {
+        if (data.routeNumber === String(routeNumber)) {
+            const view = routeViews.get(routeId);
+            if (view && view.lineLayer) {
+                // אנימציית הבהוב
+                const layer = view.lineLayer;
+                layer.getElement().classList.add('pulse-route');
+                mapInstance.fitBounds(layer.getBounds(), { padding: [50, 50] });
+                
+                setTimeout(() => {
+                    layer.getElement().classList.remove('pulse-route');
+                }, 3000);
+                found = true;
+            }
+        }
+    });
+    if (!found) console.log("Route " + routeNumber + " not currently on map");
+};
+
+// --- אינטראקציה: לחיצה על תחנה ברשימה ---
+window.focusStopOnMap = function(stopCode) {
+    // מחפש את התחנה בכל המסלולים המוצגים
+    let targetLatLng = null;
+    staticDataStore.forEach((data) => {
+        const stop = data.stops.find(s => s.stopCode === String(stopCode));
+        if (stop) targetLatLng = [stop.lat, stop.lon];
+    });
+
+    if (targetLatLng) {
+        mapInstance.setView(targetLatLng, 18);
+        // יצירת אפקט הבהוב זמני
+        const ping = L.circleMarker(targetLatLng, { radius: 10, color: '#1976d2' }).addTo(mapInstance);
+        ping.getElement().classList.add('stop-highlight');
+        setTimeout(() => ping.remove(), 2000);
+    }
+};
+
+// --- שילוב פונקציות מפרויקט 2 ---
+function createLineCard(group) {
+    const card = document.createElement("div");
+    card.className = "line-card";
+    // לחיצה על הכרטיס מפעילה את ההבהוב במפה
+    card.onclick = () => window.highlightRouteOnMap(group.line);
+    
+    card.innerHTML = `
+        <div class="card-header">
+            <span class="line-num">${group.line}</span>
+            <span class="headsign">${group.headsign}</span>
+        </div>
+        <div class="times-row">${group.arrivals.map(a => `<div class="time-chip ${a.realtime?'realtime':''}">${a.minutes} דק'</div>`).join('')}</div>
+    `;
+    return card;
+}
+
+// פונקציה שנקראת מ-Scriptable לעדכון תחנות קרובות
+window.updateNearbyStations = function(data) {
+    const container = document.getElementById('cards-container');
+    const emptyMsg = document.getElementById('empty-msg');
+    
+    if (!data || data.length === 0) {
+        emptyMsg.innerText = "לא נמצאו תחנות בסביבה";
+        return;
+    }
+    
+    emptyMsg.style.display = 'none';
+    container.innerHTML = '';
+    
+    data.groups.forEach(group => {
+        container.appendChild(createLineCard(group));
+    });
+};
+
+// ... (שאר הקוד הקיים של app.js מפרויקט 1 - Leaflet init וכו')
 
 let mapInstance = null;
 let busLayerGroup = null;
