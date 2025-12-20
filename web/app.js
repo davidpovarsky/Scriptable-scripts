@@ -1,704 +1,749 @@
-// app.js
-// תומך גם ב-Scriptable WebView וגם בדפדפן רגיל
-// app.js
+// web/app.js - לוגיקה משולבת לדפדפן
 
-// --- ניהול מצבי תצוגה ---
-// app.js - Unified Logic
-
+// ===== STATE =====
 let mapInstance = null;
 let busLayerGroup = null;
 let userLocationMarker = null;
-let routeViews = new Map();
 let staticDataStore = new Map();
+let routeViews = new Map();
+let mapDidInitialFit = false;
 
-// --- 1. אתחול ומצבי תצוגה ---
+// Stations state
+let STOPS = [];
+let DATA = {};
+let currentStopCode = null;
+let searchTimeout = null;
 
-function setAppMode(mode) {
-    document.body.className = 'mode-' + mode;
-    document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
-    });
-    if (mapInstance) setTimeout(() => mapInstance.invalidateSize(), 400);
+// ===== HELPERS =====
+function notify(cmd) {
+  window.location = "unified://" + cmd;
 }
 
-window.onload = () => {
-    initMap();
-    initSearch();
-    if (window.APP_ENVIRONMENT === 'local') {
-        triggerRefresh(); // בדפדפן - התחל טעינה מיד
-    }
-};
-
-function initMap() {
-    mapInstance = L.map('map', { zoomControl: false, attributionControl: false }).setView([32.0853, 34.7818], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(mapInstance);
-    busLayerGroup = L.layerGroup().addTo(mapInstance);
-}
-
-// --- 2. פונקציות ה-UI שחסרו (Refresh & Search) ---
-
-async function triggerRefresh() {
-    const loader = document.getElementById('loader-msg');
-    const emptyMsg = document.getElementById('empty-msg');
-    if (loader) loader.style.display = 'block';
-    
-    try {
-        let lat, lon;
-        if (window.APP_ENVIRONMENT === 'local') {
-            const pos = await getUserLocation();
-            lat = pos.lat; lon = pos.lon;
-            window.setUserLocation(lat, lon);
-        } else {
-            // ב-Scriptable המיקום מוזרק מבחוץ, אבל נקרא לו ליתר ביטחון
-            return; 
-        }
-
-        // טעינת תחנות קרובות (שימוש ב-API של פרויקט 2)
-        const radius = 500;
-        const url = `https://kavnav.com/api/stops-near?lat=${lat}&lon=${lon}&radius=${radius}`;
-        const response = await fetch(
-            window.APP_ENVIRONMENT === 'local' 
-            ? "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec?url=" + encodeURIComponent(url)
-            : url
-        );
-        const stops = await response.json();
-        
-        if (stops && stops.length > 0) {
-            // לוקחים את התחנה הראשונה ומציגים אותה
-            const stopData = await window.KavNavAPI.getStopData(stops[0].stopCode);
-            window.updateNearbyStations(stopData);
-        } else {
-            if (emptyMsg) emptyMsg.innerText = "לא נמצאו תחנות בסביבה";
-        }
-    } catch (e) {
-        console.error("Refresh error:", e);
-    } finally {
-        if (loader) loader.style.display = 'none';
-    }
-}
-
-function toggleSearch(show) {
-    document.getElementById('search-overlay').style.display = show ? 'block' : 'none';
-    document.getElementById('search-container').style.display = show ? 'block' : 'none';
-    if (show) document.getElementById('search-input').focus();
-}
-
-async function handleSearch(query) {
-    if (query.length < 2) return;
-    const results = await window.KavNavSearch.searchStops(query);
-    const container = document.getElementById('search-results');
-    container.innerHTML = results.slice(0, 10).map(s => `
-        <div class="search-item" onclick="selectSearchStop('${s.stopCode}')">
-            <span class="s-name">${s.stopName}</span>
-            <span class="s-code">${s.stopCode}</span>
-        </div>
-    `).join('');
-}
-
-async function selectSearchStop(code) {
-    toggleSearch(false);
-    const stopData = await window.KavNavAPI.getStopData(code);
-    window.updateNearbyStations(stopData);
-    // אם יש מיקום לתחנה - נתמקד בה
-    if (stopData.lat) window.focusStopOnMap(code);
-}
-
-// --- 3. אינטראקציה מפה-רשימה ---
-
-window.updateNearbyStations = function(data) {
-    const container = document.getElementById('cards-container');
-    const emptyMsg = document.getElementById('empty-msg');
-    if (!data || !data.groups) return;
-
-    emptyMsg.style.display = 'none';
-    container.innerHTML = '';
-    
-    data.groups.forEach(group => {
-        const card = document.createElement("div");
-        card.className = "line-card";
-        card.onclick = () => window.highlightRouteOnMap(group.line);
-        
-        card.innerHTML = `
-            <div class="card-header">
-                <span class="line-num">${group.line}</span>
-                <span class="headsign">${group.headsign}</span>
-            </div>
-            <div class="times-row">
-                ${group.arrivals.map(a => `
-                    <div class="time-chip ${a.realtime?'realtime':''}" onclick="event.stopPropagation(); window.focusStopOnMap('${data.stopCode}')">
-                        ${a.minutes} דק'
-                    </div>
-                `).join('')}
-            </div>
-        `;
-        container.appendChild(card);
-    });
-};
-
-window.highlightRouteOnMap = function(lineNum) {
-    let found = false;
-    // מחפשים את המסלול ב-staticDataStore של פרויקט 1
-    staticDataStore.forEach((data, routeId) => {
-        if (String(data.routeNumber) === String(lineNum)) {
-            const view = routeViews.get(routeId);
-            if (view && view.lineLayer) {
-                const layer = view.lineLayer;
-                layer.setStyle({ color: '#ffeb3b', weight: 10, opacity: 1 });
-                mapInstance.fitBounds(layer.getBounds(), { padding: [50, 50] });
-                
-                setTimeout(() => {
-                    layer.setStyle({ color: data.color || '#1976d2', weight: 5, opacity: 0.6 });
-                }, 3000);
-                found = true;
-            }
-        }
-    });
-    if (!found) console.log("Line " + lineNum + " not visible on map");
-};
-
-window.focusStopOnMap = function(stopCode) {
-    // ננסה למצוא קואורדינטות של התחנה
-    // בגרסה זו נחפש במידע הסטטי שנטען למפה
-    let coords = null;
-    staticDataStore.forEach(data => {
-        const s = data.stops.find(st => String(st.stopCode) === String(stopCode));
-        if (s) coords = [s.lat, s.lon];
-    });
-
-    if (coords) {
-        mapInstance.setView(coords, 17);
-        const marker = L.circleMarker(coords, { radius: 15, color: '#ffeb3b', fillOpacity: 0.8 }).addTo(mapInstance);
-        setTimeout(() => marker.remove(), 2000);
-    }
-};
-
-// --- פונקציות עזר קיימות (מיקום וכו') ---
-async function getUserLocation() {
-    return new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-            p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
-            e => reject(e)
-        );
-    });
-}
-
-window.setUserLocation = function(lat, lon) {
-    if (userLocationMarker) userLocationMarker.remove();
-    userLocationMarker = L.circleMarker([lat, lon], { radius: 8, color: "#1976d2", fillColor: "#2196f3", fillOpacity: 0.6 }).addTo(mapInstance);
-};
-
-function centerOnUser() {
-    if (userLocationMarker) mapInstance.setView(userLocationMarker.getLatLng(), 16);
-}
-// --- אתחול ---
-document.addEventListener('DOMContentLoaded', async function() {
-    initBottomSheet();
-    
-    // יצירת מפה ראשונית
-    mapInstance = L.map("map", { zoomControl: false }).setView([32.08, 34.78], 13);
-    L.control.zoom({ position: 'topright' }).addTo(mapInstance);
-    L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: ""
-    }).addTo(mapInstance);
-    
-    busLayerGroup = L.layerGroup().addTo(mapInstance);
-    busLayerGroup.setZIndex(1000);
-
-    const locateBtn = document.getElementById('locateMeBtn');
-    if (locateBtn) {
-        locateBtn.addEventListener('click', async () => {
-            if (IS_LOCAL) {
-                // דפדפן - נבקש מיקום מהמשתמש
-                try {
-                    locateBtn.textContent = '⏳';
-                    const location = await getUserLocation();
-                    if (location) {
-                        window.setUserLocation(location.latitude, location.longitude);
-                        centerOnUser();
-                    }
-                } catch (e) {
-                    alert("לא ניתן לקבל מיקום: " + e.message);
-                } finally {
-                    locateBtn.textContent = '📍';
-                }
-            } else {
-                // Scriptable - המיקום כבר זמין
-                centerOnUser();
-            }
-        });
-    }
-
-    // אם זה Local, נטען נתונים ידנית
-    if (IS_LOCAL) {
-        await initLocalMode();
-    }
+// ===== MODE SWITCHING =====
+document.addEventListener('DOMContentLoaded', function() {
+  initMap();
+  initStations();
+  initModeSwitcher();
+  initBottomSheet();
 });
 
-// אתחול במצב Local
-async function initLocalMode() {
-    try {
-        // 1. קבלת מיקום משתמש
-        let userLat = null, userLon = null;
-        try {
-            const location = await getUserLocation();
-            if (location) {
-                userLat = location.latitude;
-                userLon = location.longitude;
-                window.setUserLocation(userLat, userLon);
-            }
-        } catch (e) {
-            console.log("Location failed, using fallback:", e);
-        }
-
-        // 2. טעינת תחנות קרובות או ברירת מחדל
-        const DEFAULT_ROUTES = [
-            { routeId: 30794 },
-            { routeId: 18086 }
-        ];
-        
-        let ROUTES = DEFAULT_ROUTES;
-        const API_BASE = "https://kavnav.com/api";
-        const routeDate = new Date().toISOString().split('T')[0];
-
-        // 3. טעינת נתונים סטטיים
-        const routesStatic = [];
-        for (const cfg of ROUTES) {
-            try {
-                const url = `${API_BASE}/route?routeId=${cfg.routeId}&date=${routeDate}`;
-                const routeData = await fetchJson(url);
-                
-                const routeIdStr = String(cfg.routeId);
-                let routeMeta = null;
-                if (Array.isArray(routeData.routes)) {
-                    routeMeta = routeData.routes.find(r => String(r.routeId) === routeIdStr) || routeData.routes[0];
-                }
-
-                const routeChanges = (routeData.routeChanges && routeData.routeChanges[routeIdStr]) || [];
-                const currentChange = routeChanges.find(c => c.isCurrent) || routeChanges[0];
-                
-                if (!currentChange) continue;
-
-                const routeObj = {
-                    routeId: cfg.routeId,
-                    routeDate,
-                    routeMeta,
-                    routeCode: routeMeta?.code,
-                    headsign: currentChange.headsign || routeMeta?.routeLongName || "",
-                    routeStops: (currentChange.stoptimes || []).map(st => ({
-                        stopId: String(st.stopId || ""),
-                        stopSequence: st.stopSequence,
-                        stopCode: st.stopCode || null,
-                        stopName: st.stopName || "(ללא שם)",
-                        lat: st.lat || null,
-                        lon: st.lon || null
-                    })).sort((a, b) => (a.stopSequence || 0) - (b.stopSequence || 0)),
-                    operatorColor: "#1976d2",
-                    shapeId: currentChange.shapeId,
-                    shapeCoords: null
-                };
-
-                // טעינת shape
-                if (routeObj.shapeId) {
-                    try {
-                        const shapeUrl = `${API_BASE}/shapes?shapeIds=${routeObj.shapeId}`;
-                        const shapesData = await fetchJson(shapeUrl);
-                        const coords = shapesData[routeObj.shapeId] || Object.values(shapesData)[0];
-                        if (coords && Array.isArray(coords)) {
-                            routeObj.shapeCoords = coords;
-                        }
-                    } catch (e) {
-                        console.error("Shape fetch error:", e);
-                    }
-                }
-
-                routesStatic.push(routeObj);
-            } catch (e) {
-                console.error(`Error fetching route ${cfg.routeId}:`, e);
-            }
-        }
-
-        // 4. הצגת נתונים סטטיים
-        const staticPayload = routesStatic.map(r => ({
-            meta: {
-                routeId: r.routeId,
-                routeCode: r.routeCode,
-                operatorColor: r.operatorColor,
-                headsign: r.headsign,
-                routeNumber: r.routeMeta?.routeNumber,
-                routeDate: r.routeDate
-            },
-            stops: r.routeStops,
-            shapeCoords: r.shapeCoords
-        }));
-
-        window.initStaticData(staticPayload);
-
-        // 5. התחלת רענון זמן אמת
-        startRealtimeLoop(routesStatic, API_BASE);
-
-    } catch (e) {
-        console.error("Local mode init error:", e);
-    }
+function initModeSwitcher() {
+  const container = document.getElementById('unified-container');
+  const buttons = document.querySelectorAll('.mode-btn');
+  
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      
+      // עדכון UI
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      // החלפת class
+      container.className = `mode-${mode}`;
+      
+      // התאמת מפה
+      if (mapInstance && (mode === 'map' || mode === 'both')) {
+        setTimeout(() => mapInstance.invalidateSize(), 100);
+      }
+      
+      // עדכון backend
+      notify(`setViewMode/${mode}`);
+    });
+  });
+  
+  // מסכים קטנים - הצגת שני כפתורים בלבד
+  if (window.innerWidth <= 768) {
+    const bothBtn = document.querySelector('[data-mode="both"]');
+    if (bothBtn) bothBtn.style.display = 'none';
+  }
 }
 
-// לולאת רענון זמן אמת (ל-Local)
-async function startRealtimeLoop(routesStatic, API_BASE) {
-    async function update() {
-        try {
-            const allPayloads = [];
+// ===== MAP LOGIC =====
+function initMap() {
+  mapInstance = L.map("map", { zoomControl: false }).setView([32.08, 34.78], 13);
+  L.control.zoom({ position: 'topright' }).addTo(mapInstance);
+  L.tileLayer("https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: ""
+  }).addTo(mapInstance);
+  
+  busLayerGroup = L.layerGroup().addTo(mapInstance);
+  busLayerGroup.setZIndex(1000);
 
-            for (const r of routesStatic) {
-                try {
-                    const realtimeUrl = `${API_BASE}/realtime?routeCode=${encodeURIComponent(r.routeCode)}`;
-                    const realtimeData = await fetchJson(realtimeUrl);
-
-                    const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
-                    const relevantVehicles = vehiclesRaw.filter(v =>
-                        v.trip && String(v.trip.routeId) === String(r.routeId)
-                    );
-
-                    const slimVehicles = relevantVehicles.map(v => {
-                        const trip = v.trip || {};
-                        const onwardCalls = trip.onwardCalls || {};
-                        const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
-                        const gtfs = trip.gtfsInfo || {};
-                        const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
-                        const loc = v.geo && v.geo.location ? v.geo.location : {};
-
-                        return {
-                            vehicleId: v.vehicleId,
-                            lastReported: v.lastReported,
-                            routeNumber: gtfs.routeNumber,
-                            headsign: gtfs.headsign,
-                            bearing: v.bearing || v.geo?.bearing || 0,
-                            lat: (typeof loc.lat === "number") ? loc.lat : null,
-                            lon: (typeof loc.lon === "number") ? loc.lon : null,
-                            positionOnLine: typeof pos === "number" ? pos : null,
-                            onwardCalls: calls.map(c => ({
-                                stopCode: c.stopCode,
-                                eta: c.eta
-                            }))
-                        };
-                    });
-
-                    allPayloads.push({
-                        routeId: r.routeId,
-                        meta: {
-                            routeId: r.routeId,
-                            routeCode: r.routeCode,
-                            lastSnapshot: realtimeData.lastSnapshot
-                        },
-                        vehicles: slimVehicles
-                    });
-
-                } catch (e) {
-                    console.error("RT Error:", e);
-                }
-            }
-
-            window.updateRealtimeData(allPayloads);
-
-        } catch (e) {
-            console.error("Realtime update error:", e);
-        }
-    }
-
-    // רענון ראשוני
-    await update();
-
-    // רענון כל 10 שניות
-    setInterval(update, 10000);
+  const locateBtn = document.getElementById('locateMeBtn');
+  if (locateBtn) {
+    locateBtn.addEventListener('click', centerOnUser);
+  }
 }
 
-// --- 1. טעינת נתונים סטטיים (נקרא פעם אחת בלבד) ---
 window.initStaticData = function(payloads) {
-    if (!Array.isArray(payloads)) return;
+  if (!Array.isArray(payloads)) return;
+  
+  const allLatLngs = [];
+
+  payloads.forEach(p => {
+    const routeId = String(p.meta.routeId);
+    staticDataStore.set(routeId, p);
     
-    const allLatLngs = [];
-
-    payloads.forEach(p => {
-        const routeId = String(p.meta.routeId);
-        staticDataStore.set(routeId, p);
-        
-        const baseColor = p.meta.operatorColor || "#1976d2";
-        const color = getVariedColor(baseColor, routeId);
-        
-        // 1. ציור קו המסלול
-        if (p.shapeCoords && p.shapeCoords.length) {
-            const latLngs = p.shapeCoords.map(c => [c[1], c[0]]);
-            L.polyline(latLngs, { weight: 4, opacity: 0.8, color: color }).addTo(mapInstance);
-            latLngs.forEach(ll => allLatLngs.push(ll));
-        }
-
-        // 2. ציור תחנות
-        if (p.stops) {
-            p.stops.forEach(s => {
-                if (s.lat && s.lon) {
-                    L.circleMarker([s.lat, s.lon], { 
-                        radius: 3, weight: 1, color: "#666", 
-                        fillColor: "#fff", fillOpacity: 1 
-                    })
-                    .bindTooltip(s.stopName, { direction: "top", offset: [0, -4] })
-                    .addTo(mapInstance);
-                }
-            });
-        }
-
-        // 3. בניית כרטיס HTML
-        createRouteCard(routeId, p.meta, p.stops, color);
-    });
-
-    // התמקדות ראשונית
-    if (allLatLngs.length && !mapDidInitialFit) {
-        mapInstance.fitBounds(allLatLngs, { padding: [30, 30] });
-        mapDidInitialFit = true;
+    const baseColor = p.meta.operatorColor || "#1976d2";
+    const color = getVariedColor(baseColor, routeId);
+    
+    // צייר קו מסלול
+    if (p.shapeCoords && p.shapeCoords.length) {
+      const latLngs = p.shapeCoords.map(c => [c[1], c[0]]);
+      const polyline = L.polyline(latLngs, { 
+        weight: 4, 
+        opacity: 0.8, 
+        color: color,
+        className: `route-line route-${routeId}`
+      }).addTo(mapInstance);
+      
+      polyline._routeId = routeId; // שמירת ID
+      
+      latLngs.forEach(ll => allLatLngs.push(ll));
     }
+
+    // צייר תחנות
+    if (p.stops) {
+      p.stops.forEach(s => {
+        if (s.lat && s.lon) {
+          const marker = L.circleMarker([s.lat, s.lon], { 
+            radius: 3, weight: 1, color: "#666", 
+            fillColor: "#fff", fillOpacity: 1,
+            className: `stop-marker stop-${s.stopCode}`
+          })
+          .bindTooltip(s.stopName, { direction: "top", offset: [0, -4] })
+          .addTo(mapInstance);
+          
+          marker._stopCode = s.stopCode;
+        }
+      });
+    }
+
+    // בנה כרטיס HTML
+    createRouteCard(routeId, p.meta, p.stops, color);
+  });
+
+  // התמקדות ראשונית
+  if (allLatLngs.length && !mapDidInitialFit) {
+    mapInstance.fitBounds(allLatLngs, { padding: [30, 30] });
+    mapDidInitialFit = true;
+  }
 };
 
-// --- 2. עדכון זמן אמת ---
 window.updateRealtimeData = function(updates) {
-    if (!busLayerGroup) return;
-    busLayerGroup.clearLayers();
+  if (!busLayerGroup) return;
+  busLayerGroup.clearLayers();
 
-    updates.forEach(u => {
-        const routeId = String(u.routeId);
-        const staticData = staticDataStore.get(routeId);
-        if (!staticData) return;
+  updates.forEach(u => {
+    const routeId = String(u.routeId);
+    const staticData = staticDataStore.get(routeId);
+    if (!staticData) return;
 
-        const color = getVariedColor(staticData.meta.operatorColor || "#1976d2", routeId);
-        updateCardData(routeId, u, staticData.stops, color);
+    const color = getVariedColor(staticData.meta.operatorColor || "#1976d2", routeId);
+    updateCardData(routeId, u, staticData.stops, color);
 
-        if (u.vehicles && u.vehicles.length) {
-            drawBuses(u.vehicles, color, staticData.shapeCoords);
-        }
-    });
+    if (u.vehicles && u.vehicles.length) {
+      drawBuses(u.vehicles, color, staticData.shapeCoords, routeId);
+    }
+  });
 };
 
-function drawBuses(vehicles, color, shapeCoords) {
-    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[1], c[0]]) : [];
+function drawBuses(vehicles, color, shapeCoords, routeId) {
+  const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[1], c[0]]) : [];
 
-    vehicles.forEach(v => {
-        let lat = v.lat;
-        let lon = v.lon;
+  vehicles.forEach(v => {
+    let lat = v.lat;
+    let lon = v.lon;
 
-        if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
-            const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-            const point = shapeLatLngs[idx];
-            if (point) { lat = point[0]; lon = point[1]; }
-        }
+    if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
+      const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+      const point = shapeLatLngs[idx];
+      if (point) { lat = point[0]; lon = point[1]; }
+    }
 
-        if (lat && lon) {
-            const bearing = v.bearing || 0;
-            const iconHtml = `
-              <div class="bus-marker-container">
-                  <div class="bus-direction-arrow" style="transform: rotate(${bearing}deg);">
-                     <svg viewBox="0 0 24 24" width="24" height="24" fill="${color}" stroke="white" stroke-width="2">
-                        <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
-                     </svg>
-                  </div>
-                  <div class="main-bus-icon" style="background:${color};">
-                      <span class="material-symbols-outlined">directions_bus</span>
-                  </div>
-                  ${v.routeNumber ? `<div class="route-badge" style="color:${color}; border-color:${color};">${v.routeNumber}</div>` : ''}
-              </div>`;
-            
-            L.marker([lat, lon], {
-                icon: L.divIcon({ html: iconHtml, className: "", iconSize: [34, 34], iconAnchor: [17, 17] }),
-                zIndexOffset: 1000
-            }).addTo(busLayerGroup);
-        }
-    });
+    if (lat && lon) {
+      const bearing = v.bearing || 0;
+      const iconHtml = `
+        <div class="bus-marker-container" data-route-id="${routeId}">
+            <div class="bus-direction-arrow" style="transform: rotate(${bearing}deg);">
+               <svg viewBox="0 0 24 24" width="24" height="24" fill="${color}" stroke="white" stroke-width="2">
+                  <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" />
+               </svg>
+            </div>
+            <div class="main-bus-icon" style="background:${color};">
+                <span class="material-symbols-outlined">directions_bus</span>
+            </div>
+            ${v.routeNumber ? `<div class="route-badge" style="color:${color}; border-color:${color};">${v.routeNumber}</div>` : ''}
+        </div>`;
+      
+      L.marker([lat, lon], {
+        icon: L.divIcon({ html: iconHtml, className: "", iconSize: [34, 34], iconAnchor: [17, 17] }),
+        zIndexOffset: 1000
+      }).addTo(busLayerGroup);
+    }
+  });
 }
 
 function createRouteCard(routeId, meta, stops, color) {
-    const container = document.getElementById("routesContainer");
-    const card = document.createElement("div"); 
-    card.className = "route-card";
+  const container = document.getElementById("routesContainer");
+  const card = document.createElement("div"); 
+  card.className = "route-card";
+  card.dataset.routeId = routeId;
+  
+  const header = document.createElement("header");
+  header.style.background = color;
+  header.innerHTML = `
+      <div class="line-main">
+          <div>
+              <span class="route-number">${meta.routeNumber || meta.routeCode}</span>
+              <span class="headsign">${meta.headsign}</span>
+          </div>
+          <div style="font-size:12px; opacity:0.9">קו ${meta.routeCode}</div>
+      </div>
+      <div class="sub">
+          <span>${meta.routeDate || ""}</span>
+          <span class="last-update-text">ממתין לעדכון...</span>
+      </div>
+  `;
+  
+  const stopsList = document.createElement("div"); 
+  stopsList.className = "stops-list";
+  const rowsContainer = document.createElement("div"); 
+  rowsContainer.className = "stops-rows";
+  
+  stops.forEach((stop, idx) => {
+    const row = document.createElement("div"); 
+    row.className = "stop-row";
+    row.dataset.stopCode = stop.stopCode;
     
-    const header = document.createElement("header");
-    header.style.background = color;
-    header.innerHTML = `
-        <div class="line-main">
-            <div>
-                <span class="route-number">${meta.routeNumber || meta.routeCode}</span>
-                <span class="headsign">${meta.headsign}</span>
-            </div>
-            <div style="font-size:12px; opacity:0.9">קו ${meta.routeCode}</div>
-        </div>
-        <div class="sub">
-            <span>${meta.routeDate || ""}</span>
-            <span class="last-update-text">ממתין לעדכון...</span>
-        </div>
+    const isFirst = idx === 0 ? " first" : "";
+    const isLast = idx === stops.length - 1 ? " last" : "";
+    const timelineHtml = `
+        <div class="timeline-line line-top"></div>
+        <div class="timeline-circle" style="border-color:${color}"></div>
+        <div class="timeline-line line-bottom"></div>
     `;
     
-    const stopsList = document.createElement("div"); 
-    stopsList.className = "stops-list";
-    const rowsContainer = document.createElement("div"); 
-    rowsContainer.className = "stops-rows";
+    const timeline = document.createElement("div");
+    timeline.className = "timeline" + isFirst + isLast;
+    timeline.innerHTML = timelineHtml;
     
-    stops.forEach((stop, idx) => {
-        const row = document.createElement("div"); 
-        row.className = "stop-row";
-        
-        const isFirst = idx === 0 ? " first" : "";
-        const isLast = idx === stops.length - 1 ? " last" : "";
-        const timelineHtml = `
-            <div class="timeline-line line-top"></div>
-            <div class="timeline-circle" style="border-color:${color}"></div>
-            <div class="timeline-line line-bottom"></div>
-        `;
-        
-        const timeline = document.createElement("div");
-        timeline.className = "timeline" + isFirst + isLast;
-        timeline.innerHTML = timelineHtml;
-        
-        const main = document.createElement("div");
-        main.className = "stop-main";
-        main.innerHTML = `
-            <div class="stop-name">
-                <span class="seq-num" style="color:${color}">${idx+1}.</span>
-                <span>${stop.stopName}</span>
-            </div>
-            <div class="stop-code">${stop.stopCode || ""}</div>
-            <div class="stop-buses" id="buses-${routeId}-${stop.stopCode}"></div>
-        `;
-        
-        row.append(timeline, main);
-        rowsContainer.appendChild(row);
-    });
+    const main = document.createElement("div");
+    main.className = "stop-main";
+    main.innerHTML = `
+        <div class="stop-name">
+            <span class="seq-num" style="color:${color}">${idx+1}.</span>
+            <span>${stop.stopName}</span>
+        </div>
+        <div class="stop-code">${stop.stopCode || ""}</div>
+        <div class="stop-buses" id="buses-${routeId}-${stop.stopCode}"></div>
+    `;
+    
+    row.append(timeline, main);
+    rowsContainer.appendChild(row);
+  });
 
-    stopsList.appendChild(rowsContainer);
-    card.append(header, stopsList);
-    container.appendChild(card);
-    
-    routeViews.set(routeId, { 
-        lastUpdateSpan: header.querySelector(".last-update-text"),
-        stopsList: stopsList,
-        rowsContainer: rowsContainer
-    });
+  stopsList.appendChild(rowsContainer);
+  card.append(header, stopsList);
+  container.appendChild(card);
+  
+  routeViews.set(routeId, { 
+    lastUpdateSpan: header.querySelector(".last-update-text"),
+    stopsList: stopsList,
+    rowsContainer: rowsContainer,
+    card: card
+  });
 }
 
 function updateCardData(routeId, updateData, stops, color) {
-    const view = routeViews.get(routeId);
-    if (!view) return;
+  const view = routeViews.get(routeId);
+  if (!view) return;
 
-    const meta = updateData.meta || {};
-    const snap = meta.lastSnapshot || meta.lastVehicleReport || new Date().toISOString();
-    const timeStr = snap.split("T")[1]?.split(".")[0] || snap;
-    view.lastUpdateSpan.textContent = "עדכון: " + timeStr;
+  const meta = updateData.meta || {};
+  const snap = meta.lastSnapshot || meta.lastVehicleReport || new Date().toISOString();
+  const timeStr = snap.split("T")[1]?.split(".")[0] || snap;
+  view.lastUpdateSpan.textContent = "עדכון: " + timeStr;
 
-    const busesByStop = new Map();
-    const now = new Date();
+  const busesByStop = new Map();
+  const now = new Date();
+  
+  (updateData.vehicles || []).forEach(v => {
+    if (!v.onwardCalls) return;
+    v.onwardCalls.forEach(c => {
+      if (!c.stopCode || !c.eta) return;
+      const minutes = Math.round((new Date(c.eta) - now) / 60000);
+      if (minutes < -1) return;
+      
+      const sc = String(c.stopCode);
+      if (!busesByStop.has(sc)) busesByStop.set(sc, []);
+      busesByStop.get(sc).push(minutes);
+    });
+  });
+
+  stops.forEach(stop => {
+    const container = document.getElementById(`buses-${routeId}-${stop.stopCode}`);
+    if (!container) return;
     
-    (updateData.vehicles || []).forEach(v => {
-        if (!v.onwardCalls) return;
-        v.onwardCalls.forEach(c => {
-            if (!c.stopCode || !c.eta) return;
-            const minutes = Math.round((new Date(c.eta) - now) / 60000);
-            if (minutes < -1) return;
-            
-            const sc = String(c.stopCode);
-            if (!busesByStop.has(sc)) busesByStop.set(sc, []);
-            busesByStop.get(sc).push(minutes);
-        });
-    });
+    const times = busesByStop.get(String(stop.stopCode));
+    if (times && times.length) {
+      times.sort((a,b) => a-b);
+      container.innerHTML = times.slice(0, 3).map(m => {
+        let cls = "bus-late";
+        let txt = m + " דק'";
+        if (m <= 0) { txt = "כעת"; cls = "bus-soon"; }
+        else if (m <= 5) cls = "bus-soon";
+        else if (m <= 10) cls = "bus-mid";
+        else if (m <= 20) cls = "bus-far";
+        return `<div class="bus-chip ${cls}">${txt}</div>`;
+      }).join("");
+    } else {
+      container.innerHTML = "";
+    }
+  });
 
-    stops.forEach(stop => {
-        const container = document.getElementById(`buses-${routeId}-${stop.stopCode}`);
-        if (!container) return;
-        
-        const times = busesByStop.get(String(stop.stopCode));
-        if (times && times.length) {
-            times.sort((a,b) => a-b);
-            container.innerHTML = times.slice(0, 3).map(m => {
-                let cls = "bus-late";
-                let txt = m + " דק׳";
-                if (m <= 0) { txt = "כעת"; cls = "bus-soon"; }
-                else if (m <= 5) cls = "bus-soon";
-                else if (m <= 10) cls = "bus-mid";
-                else if (m <= 20) cls = "bus-far";
-                return `<div class="bus-chip ${cls}">${txt}</div>`;
-            }).join("");
-        } else {
-            container.innerHTML = "";
-        }
-    });
+  view.stopsList.querySelectorAll(".bus-icon-timeline").forEach(e => e.remove());
+  
+  const listHeight = view.rowsContainer.offsetHeight;
+  if (listHeight < 50) return;
 
-    view.stopsList.querySelectorAll(".bus-icon-timeline").forEach(e => e.remove());
+  (updateData.vehicles || []).forEach(v => {
+    const pos = v.positionOnLine; 
+    if (typeof pos !== "number") return;
     
-    const listHeight = view.rowsContainer.offsetHeight;
-    if (listHeight < 50) return;
+    let top = pos * listHeight;
+    if (top < 10) top = 10;
+    if (top > listHeight - 20) top = listHeight - 20;
 
-    (updateData.vehicles || []).forEach(v => {
-        const pos = v.positionOnLine; 
-        if (typeof pos !== "number") return;
-        
-        let top = pos * listHeight;
-        if (top < 10) top = 10;
-        if (top > listHeight - 20) top = listHeight - 20;
-
-        const icon = document.createElement("div");
-        icon.className = "bus-icon-timeline material-symbols-outlined";
-        icon.textContent = "directions_bus";
-        icon.style.color = color;
-        icon.style.top = top + "px";
-        
-        view.stopsList.appendChild(icon);
-    });
+    const icon = document.createElement("div");
+    icon.className = "bus-icon-timeline material-symbols-outlined";
+    icon.textContent = "directions_bus";
+    icon.style.color = color;
+    icon.style.top = top + "px";
+    
+    view.stopsList.appendChild(icon);
+  });
 }
 
 function getVariedColor(hex, strSalt) {
-    let c = hex.replace('#','');
-    if(c.length===3) c=c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
-    let r=parseInt(c.substring(0,2),16), g=parseInt(c.substring(2,4),16), b=parseInt(c.substring(4,6),16);
-    let hash=0; for(let i=0;i<strSalt.length;i++) hash=strSalt.charCodeAt(i)+((hash<<5)-hash);
-    const v=(hash%60)-30; 
-    const clamp=n=>Math.min(255,Math.max(0,Math.round(n+v)));
-    return "#" + [clamp(r), clamp(g), clamp(b)].map(x=>x.toString(16).padStart(2,'0')).join("");
+  let c = hex.replace('#','');
+  if(c.length===3) c=c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+  let r=parseInt(c.substring(0,2),16), g=parseInt(c.substring(2,4),16), b=parseInt(c.substring(4,6),16);
+  let hash=0; for(let i=0;i<strSalt.length;i++) hash=strSalt.charCodeAt(i)+((hash<<5)-hash);
+  const v=(hash%60)-30; 
+  const clamp=n=>Math.min(255,Math.max(0,Math.round(n+v)));
+  return "#" + [clamp(r), clamp(g), clamp(b)].map(x=>x.toString(16).padStart(2,'0')).join("");
 }
 
 window.setUserLocation = function(lat, lon) {
-    if (!mapInstance) return;
-    if (userLocationMarker) userLocationMarker.remove();
-    userLocationMarker = L.circleMarker([lat, lon], { 
-        radius: 8, color: "#1976d2", 
-        fillColor: "#2196f3", fillOpacity: 0.6 
-    }).addTo(mapInstance);
+  if (!mapInstance) return;
+  if (userLocationMarker) userLocationMarker.remove();
+  userLocationMarker = L.circleMarker([lat, lon], { 
+    radius: 8, color: "#1976d2", 
+    fillColor: "#2196f3", fillOpacity: 0.6 
+  }).addTo(mapInstance);
 };
 
 function centerOnUser() {
-    if (userLocationMarker) {
-        mapInstance.setView(userLocationMarker.getLatLng(), 16);
-    } else {
-        alert("אין מיקום זמין");
-    }
+  if (userLocationMarker) {
+    mapInstance.setView(userLocationMarker.getLatLng(), 16);
+  } else {
+    alert("אין מיקום זמין");
+  }
 }
 
+// ===== HIGHLIGHT FUNCTIONS =====
+window.highlightRoute = function(routeId) {
+  // הדגשת קו במפה - הבהוב
+  const routeLine = document.querySelector(`.route-line.route-${routeId}`);
+  if (routeLine) {
+    routeLine.style.opacity = '0.3';
+    setTimeout(() => routeLine.style.opacity = '1', 200);
+    setTimeout(() => routeLine.style.opacity = '0.3', 400);
+    setTimeout(() => routeLine.style.opacity = '1', 600);
+    setTimeout(() => routeLine.style.opacity = '0.8', 800);
+  }
+  
+  // הדגשת אוטובוסים של הקו
+  const buses = busLayerGroup.getLayers();
+  buses.forEach(marker => {
+    const el = marker.getElement();
+    if (el && el.querySelector(`[data-route-id="${routeId}"]`)) {
+      const icon = el.querySelector('.main-bus-icon');
+      if (icon) {
+        icon.classList.add('highlight');
+        setTimeout(() => icon.classList.remove('highlight'), 3000);
+      }
+    }
+  });
+  
+  // מיקוד במסלול
+  const view = routeViews.get(String(routeId));
+  if (view && view.card) {
+    view.card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+};
+
+window.highlightStop = function(stopCode) {
+  // הדגשת תחנה בכל הקווים
+  const stopMarkers = document.querySelectorAll(`.stop-marker.stop-${stopCode}`);
+  stopMarkers.forEach(marker => {
+    marker.style.radius = '8';
+    setTimeout(() => marker.style.radius = '3', 1600);
+  });
+  
+  // הדגשת תחנה בכרטיסים
+  const stopRows = document.querySelectorAll(`.stop-row[data-stop-code="${stopCode}"]`);
+  stopRows.forEach(row => {
+    const circle = row.querySelector('.timeline-circle');
+    if (circle) {
+      circle.classList.add('highlight');
+      setTimeout(() => circle.classList.remove('highlight'), 1600);
+    }
+  });
+};
+
+// ===== STATIONS LOGIC =====
+function initStations() {
+  ensureStructure();
+  initSearch();
+  
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => notify('refreshLocation'));
+  }
+}
+
+function ensureStructure() {
+  const content = document.getElementById("content");
+  if (!content) return;
+  
+  if (!content.querySelector(".stop-container")) {
+    content.innerHTML = `
+      <div id="loader-msg">
+        <div class="spinner"></div>
+        <div id="msg-text">טוען נתונים...</div>
+      </div>
+      <div class="stop-container" style="display:none">
+        <h2 id="stop-title"></h2>
+        <div id="cards-container"></div>
+        <div id="empty-msg">אין נסיעות קרובות</div>
+      </div>
+    `;
+  }
+}
+
+// Search
+let touchStartY = 0;
+let touchEndY = 0;
+
+function initSearch() {
+  const searchOverlay = document.getElementById('search-overlay');
+  const searchContainer = document.getElementById('search-container');
+  const searchInput = document.getElementById('search-input');
+  const searchResults = document.getElementById('search-results');
+  
+  if (!searchOverlay || !searchContainer || !searchInput) return;
+  
+  // זיהוי תנועת גלילה כלפי מעלה
+  document.addEventListener('touchstart', (e) => {
+    touchStartY = e.touches[0].clientY;
+  });
+
+  document.addEventListener('touchend', (e) => {
+    touchEndY = e.changedTouches[0].clientY;
+    const swipeDistance = touchEndY - touchStartY;
+
+    if (swipeDistance > 100) {
+      showSearch();
+    }
+  });
+  
+  searchOverlay.addEventListener('click', hideSearch);
+  
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    const query = e.target.value.trim();
+    
+    if (query.length === 0) {
+      searchResults.classList.remove('visible');
+      return;
+    }
+    
+    searchTimeout = setTimeout(() => {
+      performSearch(query);
+    }, 300);
+  });
+  
+  searchContainer.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+function showSearch() {
+  document.getElementById('search-overlay').classList.add('visible');
+  document.getElementById('search-container').classList.add('visible');
+  document.getElementById('search-input').focus();
+}
+
+function hideSearch() {
+  document.getElementById('search-overlay').classList.remove('visible');
+  document.getElementById('search-container').classList.remove('visible');
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').classList.remove('visible');
+}
+
+function performSearch(query) {
+  notify("search/" + encodeURIComponent(query));
+}
+
+window.displaySearchResults = function(results) {
+  const searchResults = document.getElementById('search-results');
+  
+  if (!results || results.length === 0) {
+    searchResults.innerHTML = '<div style="padding:20px; text-align:center; color:#6b7280;">לא נמצאו תוצאות</div>';
+    searchResults.classList.add('visible');
+    return;
+  }
+  
+  searchResults.innerHTML = results.map(stop => `
+    <div class="search-result-item" onclick="selectSearchResult('${stop.stopCode}', ${stop.lat}, ${stop.lon})">
+      <div class="search-result-name">${stop.stopName}</div>
+      <div class="search-result-code">קוד: ${stop.stopCode} | מזהה: ${stop.stopId}</div>
+      <div class="search-result-desc">${stop.stopDesc || ''}</div>
+    </div>
+  `).join('');
+  
+  searchResults.classList.add('visible');
+};
+
+function selectSearchResult(stopCode, lat, lon) {
+  hideSearch();
+  notify("selectSearchStop/" + stopCode + "/" + lat + "/" + lon);
+}
+
+window.resetUI = function(msg) {
+  STOPS = []; 
+  DATA = {}; 
+  currentStopCode = null;
+  document.getElementById("scroll-area").innerHTML = "";
+  const loader = document.getElementById("loader-msg");
+  if(loader) {
+    loader.style.display = "flex";
+    document.getElementById("msg-text").textContent = msg || 'טוען...';
+    document.querySelector(".stop-container").style.display = "none";
+  } else {
+    ensureStructure(); 
+  }
+};
+
+window.addStops = function(newStops, selectFirst = false) {
+  ensureStructure();
+  const scrollArea = document.getElementById("scroll-area");
+  const existingPlus = document.getElementById("load-more-btn");
+  if(existingPlus) existingPlus.remove();
+
+  newStops.forEach(s => {
+    if (STOPS.find(x => x.stopCode === s.stopCode)) return;
+    STOPS.push(s);
+    const btn = document.createElement("button");
+    btn.className = "station-btn";
+    btn.dataset.code = s.stopCode;
+    btn.innerHTML = `<span class="btn-name">${s.name}</span><span class="btn-code">${s.stopCode}</span>`;
+    btn.onclick = () => selectStop(s.stopCode);
+    scrollArea.appendChild(btn);
+  });
+
+  const plusBtn = document.createElement("button");
+  plusBtn.id = "load-more-btn";
+  plusBtn.innerHTML = "+";
+  plusBtn.onclick = () => notify('loadMore');
+  scrollArea.appendChild(plusBtn);
+
+  if (selectFirst && STOPS.length > 0) selectStop(STOPS[0].stopCode);
+};
+
+window.updateStopName = function(code, name) {
+  const s = STOPS.find(x => x.stopCode === String(code));
+  if (s) {
+    s.name = name;
+    const btn = document.querySelector(`button[data-code="${code}"] .btn-name`);
+    if (btn) btn.textContent = name;
+    if (currentStopCode === String(code)) {
+       document.getElementById("stop-title").textContent = name;
+    }
+  }
+};
+
+window.updateStationData = function(stopCode, data) {
+  DATA[stopCode] = data;
+  if (currentStopCode === String(stopCode)) {
+    syncUI(data);
+  }
+};
+
+function selectStop(code) {
+  currentStopCode = String(code);
+  
+  notify("setActiveStop/" + code);
+  
+  // הדגש במפה
+  notify("highlightStop/" + code);
+
+  const stopInfo = STOPS.find(s => s.stopCode === currentStopCode);
+  
+  document.querySelectorAll(".station-btn").forEach(b => b.classList.remove("active"));
+  const btn = document.querySelector(`button[data-code="${code}"]`);
+  if (btn) {
+    btn.classList.add("active");
+    btn.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }
+
+  const loader = document.getElementById("loader-msg");
+  if(loader) loader.style.display = "none";
+  const container = document.querySelector(".stop-container");
+  if(container) container.style.display = "block";
+
+  document.getElementById("stop-title").textContent = stopInfo ? stopInfo.name : "תחנה";
+
+  const data = DATA[currentStopCode];
+  syncUI(data);
+}
+
+function generateGroupKey(g) { 
+  return g.line + "||" + g.headsign; 
+}
+
+function formatArrival(minutes){
+  if (minutes <= 0) return "כעת";
+  if (minutes < 60) return minutes + " דק'";
+  const d = new Date(); 
+  d.setMinutes(d.getMinutes() + minutes);
+  return d.toLocaleTimeString("he-IL", {hour:"2-digit", minute:"2-digit"});
+}
+
+function createLineCard(g) {
+  const card = document.createElement("div");
+  card.className = "line-card";
+  card.dataset.key = generateGroupKey(g);
+  card.dataset.routeId = g.routeId;
+  
+  // לחיצה על כרטיס - הדגשה במפה
+  card.onclick = () => {
+    if (g.routeId) {
+      notify("highlightRoute/" + g.routeId);
+    }
+  };
+  
+  let html = `
+    <div class="line-header">
+      <div class="route-num">${g.line}</div>
+      <div class="headsign">${g.headsign}</div>
+    </div>
+    <div class="times-row">`;
+  
+  for(let i=0; i<4; i++) {
+    html += `<div class="time-chip" data-idx="${i}" style="display:none">
+      <div class="pulse-dot"></div>
+      <span class="t-val"></span>
+    </div>`;
+  }
+  html += `</div>`;
+  card.innerHTML = html;
+  updateCardTimes(card, g.arrivals);
+  return card;
+}
+
+function updateCardTimes(card, arrivals) {
+  const chips = card.querySelectorAll(".time-chip");
+  chips.forEach((chip, i) => {
+    const a = arrivals[i];
+    if (!a) {
+      if (chip.style.display !== "none") chip.style.display = "none";
+    } else {
+      if (chip.style.display !== "flex") chip.style.display = "flex";
+      
+      const isRt = !!a.realtime;
+      const isStale = !!a.stale;
+
+      chip.classList.toggle("realtime", isRt && !isStale);
+      chip.classList.toggle("stale", isRt && isStale);
+      
+      const dot = chip.querySelector(".pulse-dot");
+      const dotDisplay = isRt ? "block" : "none";
+      if (dot.style.display !== dotDisplay) dot.style.display = dotDisplay;
+
+      const valSpan = chip.querySelector(".t-val");
+      const newText = formatArrival(a.minutes);
+      if (valSpan.textContent !== newText) valSpan.textContent = newText;
+    }
+  });
+}
+
+function syncUI(data) {
+  const cardsContainer = document.getElementById("cards-container");
+  const emptyMsg = document.getElementById("empty-msg");
+  
+  if (!data || !data.groups || data.groups.length === 0) {
+    cardsContainer.innerHTML = "";
+    emptyMsg.style.display = "block";
+    return;
+  }
+  
+  emptyMsg.style.display = "none";
+  const groups = data.groups;
+  
+  const currentCards = Array.from(cardsContainer.children);
+  const newKeys = new Set(groups.map(generateGroupKey));
+
+  currentCards.forEach(card => {
+    if (!newKeys.has(card.dataset.key)) {
+      card.remove();
+    }
+  });
+
+  groups.forEach(g => {
+    const key = generateGroupKey(g);
+    let card = cardsContainer.querySelector(`.line-card[data-key="${key}"]`);
+
+    if (card) {
+      updateCardTimes(card, g.arrivals);
+      cardsContainer.appendChild(card);
+    } else {
+      card = createLineCard(g);
+      cardsContainer.appendChild(card);
+    }
+  });
+}
+
+// ===== BOTTOM SHEET =====
 function initBottomSheet() {
-    const sheet = document.getElementById('bottomSheet');
-    const handle = document.getElementById('dragHandleArea');
-    let startY = 0, startH = 0;
-    
-    handle.addEventListener('touchstart', e => {
-        startY = e.touches[0].clientY;
-        startH = sheet.offsetHeight;
-        sheet.style.transition = 'none';
-    });
-    
-    document.addEventListener('touchmove', e => {
-        if (!startY) return;
-        const delta = startY - e.touches[0].clientY;
-        let h = startH + delta;
-        h = Math.max(60, Math.min(window.innerHeight * 0.9, h));
-        sheet.style.height = h + "px";
-    });
-    
-    document.addEventListener('touchend', () => {
-        startY = 0;
-        sheet.style.transition = 'height 0.3s ease';
-        const h = sheet.offsetHeight;
-        if (h < 150) sheet.style.height = "60px";
-        else if (h > window.innerHeight * 0.6) sheet.style.height = "85vh";
-        else sheet.style.height = "45vh";
-    });
+  const sheet = document.getElementById('bottomSheet');
+  const handle = document.getElementById('dragHandleArea');
+  if (!sheet || !handle) return;
+  
+  let startY = 0, startH = 0;
+  
+  handle.addEventListener('touchstart', e => {
+    startY = e.touches[0].clientY;
+    startH = sheet.offsetHeight;
+    sheet.style.transition = 'none';
+  });
+  
+  document.addEventListener('touchmove', e => {
+    if (!startY) return;
+    const delta = startY - e.touches[0].clientY;
+    let h = startH + delta;
+    h = Math.max(60, Math.min(window.innerHeight * 0.9, h));
+    sheet.style.height = h + "px";
+  });
+  
+  document.addEventListener('touchend', () => {
+    startY = 0;
+    sheet.style.transition = 'height 0.3s ease';
+    const h = sheet.offsetHeight;
+    if (h < 150) sheet.style.height = "60px";
+    else if (h > window.innerHeight * 0.6) sheet.style.height = "85vh";
+    else sheet.style.height = "45vh";
+  });
 }
