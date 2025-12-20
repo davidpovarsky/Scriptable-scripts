@@ -10,6 +10,32 @@ module.exports.run = async function(argsObj) {
 
   const FROM_NOTIFICATION = !!(argsObj && argsObj.notification);
   const routeDate = utils.isoDateTodayLocal();
+// main.js
+// ... (ייבואים קיימים)
+
+async function pushRealtimeUpdate() {
+    try {
+      const loc = await utils.getLocation(); // פונקציה שמביאה מיקום נוכחי
+      
+      // 1. עדכון פרויקט 1 (מסלולים ומפה)
+      let routesData = await dataService.fetchRealtimeForRoutesFromStops(routesStatic, nearestStops);
+      const mapUpdate = `window.updateRealtimeData(${JSON.stringify(routesData)})`;
+      await wv.evaluateJavaScript(mapUpdate);
+
+      // 2. עדכון פרויקט 2 (תחנות קרובות לרשימה)
+      const nearbyData = await dataService.getNearbyData(loc.lat, loc.lon);
+      if (nearbyData) {
+          const listUpdate = `window.updateNearbyStations(${JSON.stringify(nearbyData)})`;
+          await wv.evaluateJavaScript(listUpdate);
+      }
+      
+      // עדכון מיקום המשתמש על המפה
+      await wv.evaluateJavaScript(`window.setUserLocation(${loc.lat}, ${loc.lon})`);
+
+    } catch (e) {
+      console.error("Refresh Loop Error: " + e);
+    }
+}
 
   // 1. קביעת מסלולים ראשונית
   let ROUTES = Array.isArray(config.DEFAULT_ROUTES)
