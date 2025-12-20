@@ -3,149 +3,193 @@
 // app.js
 
 // --- ניהול מצבי תצוגה ---
+// app.js - Unified Logic
+
+let mapInstance = null;
+let busLayerGroup = null;
+let userLocationMarker = null;
+let routeViews = new Map();
+let staticDataStore = new Map();
+
+// --- 1. אתחול ומצבי תצוגה ---
+
 function setAppMode(mode) {
     document.body.className = 'mode-' + mode;
     document.querySelectorAll('.mode-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
     });
-    setTimeout(() => mapInstance.invalidateSize(), 400); // עדכון המפה לאחר שינוי גודל
+    if (mapInstance) setTimeout(() => mapInstance.invalidateSize(), 400);
 }
 
-// --- אינטראקציה: לחיצה על קו ברשימה ---
-window.highlightRouteOnMap = function(routeNumber) {
+window.onload = () => {
+    initMap();
+    initSearch();
+    if (window.APP_ENVIRONMENT === 'local') {
+        triggerRefresh(); // בדפדפן - התחל טעינה מיד
+    }
+};
+
+function initMap() {
+    mapInstance = L.map('map', { zoomControl: false, attributionControl: false }).setView([32.0853, 34.7818], 13);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(mapInstance);
+    busLayerGroup = L.layerGroup().addTo(mapInstance);
+}
+
+// --- 2. פונקציות ה-UI שחסרו (Refresh & Search) ---
+
+async function triggerRefresh() {
+    const loader = document.getElementById('loader-msg');
+    const emptyMsg = document.getElementById('empty-msg');
+    if (loader) loader.style.display = 'block';
+    
+    try {
+        let lat, lon;
+        if (window.APP_ENVIRONMENT === 'local') {
+            const pos = await getUserLocation();
+            lat = pos.lat; lon = pos.lon;
+            window.setUserLocation(lat, lon);
+        } else {
+            // ב-Scriptable המיקום מוזרק מבחוץ, אבל נקרא לו ליתר ביטחון
+            return; 
+        }
+
+        // טעינת תחנות קרובות (שימוש ב-API של פרויקט 2)
+        const radius = 500;
+        const url = `https://kavnav.com/api/stops-near?lat=${lat}&lon=${lon}&radius=${radius}`;
+        const response = await fetch(
+            window.APP_ENVIRONMENT === 'local' 
+            ? "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec?url=" + encodeURIComponent(url)
+            : url
+        );
+        const stops = await response.json();
+        
+        if (stops && stops.length > 0) {
+            // לוקחים את התחנה הראשונה ומציגים אותה
+            const stopData = await window.KavNavAPI.getStopData(stops[0].stopCode);
+            window.updateNearbyStations(stopData);
+        } else {
+            if (emptyMsg) emptyMsg.innerText = "לא נמצאו תחנות בסביבה";
+        }
+    } catch (e) {
+        console.error("Refresh error:", e);
+    } finally {
+        if (loader) loader.style.display = 'none';
+    }
+}
+
+function toggleSearch(show) {
+    document.getElementById('search-overlay').style.display = show ? 'block' : 'none';
+    document.getElementById('search-container').style.display = show ? 'block' : 'none';
+    if (show) document.getElementById('search-input').focus();
+}
+
+async function handleSearch(query) {
+    if (query.length < 2) return;
+    const results = await window.KavNavSearch.searchStops(query);
+    const container = document.getElementById('search-results');
+    container.innerHTML = results.slice(0, 10).map(s => `
+        <div class="search-item" onclick="selectSearchStop('${s.stopCode}')">
+            <span class="s-name">${s.stopName}</span>
+            <span class="s-code">${s.stopCode}</span>
+        </div>
+    `).join('');
+}
+
+async function selectSearchStop(code) {
+    toggleSearch(false);
+    const stopData = await window.KavNavAPI.getStopData(code);
+    window.updateNearbyStations(stopData);
+    // אם יש מיקום לתחנה - נתמקד בה
+    if (stopData.lat) window.focusStopOnMap(code);
+}
+
+// --- 3. אינטראקציה מפה-רשימה ---
+
+window.updateNearbyStations = function(data) {
+    const container = document.getElementById('cards-container');
+    const emptyMsg = document.getElementById('empty-msg');
+    if (!data || !data.groups) return;
+
+    emptyMsg.style.display = 'none';
+    container.innerHTML = '';
+    
+    data.groups.forEach(group => {
+        const card = document.createElement("div");
+        card.className = "line-card";
+        card.onclick = () => window.highlightRouteOnMap(group.line);
+        
+        card.innerHTML = `
+            <div class="card-header">
+                <span class="line-num">${group.line}</span>
+                <span class="headsign">${group.headsign}</span>
+            </div>
+            <div class="times-row">
+                ${group.arrivals.map(a => `
+                    <div class="time-chip ${a.realtime?'realtime':''}" onclick="event.stopPropagation(); window.focusStopOnMap('${data.stopCode}')">
+                        ${a.minutes} דק'
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        container.appendChild(card);
+    });
+};
+
+window.highlightRouteOnMap = function(lineNum) {
     let found = false;
+    // מחפשים את המסלול ב-staticDataStore של פרויקט 1
     staticDataStore.forEach((data, routeId) => {
-        if (data.routeNumber === String(routeNumber)) {
+        if (String(data.routeNumber) === String(lineNum)) {
             const view = routeViews.get(routeId);
             if (view && view.lineLayer) {
-                // אנימציית הבהוב
                 const layer = view.lineLayer;
-                layer.getElement().classList.add('pulse-route');
+                layer.setStyle({ color: '#ffeb3b', weight: 10, opacity: 1 });
                 mapInstance.fitBounds(layer.getBounds(), { padding: [50, 50] });
                 
                 setTimeout(() => {
-                    layer.getElement().classList.remove('pulse-route');
+                    layer.setStyle({ color: data.color || '#1976d2', weight: 5, opacity: 0.6 });
                 }, 3000);
                 found = true;
             }
         }
     });
-    if (!found) console.log("Route " + routeNumber + " not currently on map");
+    if (!found) console.log("Line " + lineNum + " not visible on map");
 };
 
-// --- אינטראקציה: לחיצה על תחנה ברשימה ---
 window.focusStopOnMap = function(stopCode) {
-    // מחפש את התחנה בכל המסלולים המוצגים
-    let targetLatLng = null;
-    staticDataStore.forEach((data) => {
-        const stop = data.stops.find(s => s.stopCode === String(stopCode));
-        if (stop) targetLatLng = [stop.lat, stop.lon];
+    // ננסה למצוא קואורדינטות של התחנה
+    // בגרסה זו נחפש במידע הסטטי שנטען למפה
+    let coords = null;
+    staticDataStore.forEach(data => {
+        const s = data.stops.find(st => String(st.stopCode) === String(stopCode));
+        if (s) coords = [s.lat, s.lon];
     });
 
-    if (targetLatLng) {
-        mapInstance.setView(targetLatLng, 18);
-        // יצירת אפקט הבהוב זמני
-        const ping = L.circleMarker(targetLatLng, { radius: 10, color: '#1976d2' }).addTo(mapInstance);
-        ping.getElement().classList.add('stop-highlight');
-        setTimeout(() => ping.remove(), 2000);
+    if (coords) {
+        mapInstance.setView(coords, 17);
+        const marker = L.circleMarker(coords, { radius: 15, color: '#ffeb3b', fillOpacity: 0.8 }).addTo(mapInstance);
+        setTimeout(() => marker.remove(), 2000);
     }
 };
 
-// --- שילוב פונקציות מפרויקט 2 ---
-function createLineCard(group) {
-    const card = document.createElement("div");
-    card.className = "line-card";
-    // לחיצה על הכרטיס מפעילה את ההבהוב במפה
-    card.onclick = () => window.highlightRouteOnMap(group.line);
-    
-    card.innerHTML = `
-        <div class="card-header">
-            <span class="line-num">${group.line}</span>
-            <span class="headsign">${group.headsign}</span>
-        </div>
-        <div class="times-row">${group.arrivals.map(a => `<div class="time-chip ${a.realtime?'realtime':''}">${a.minutes} דק'</div>`).join('')}</div>
-    `;
-    return card;
-}
-
-// פונקציה שנקראת מ-Scriptable לעדכון תחנות קרובות
-window.updateNearbyStations = function(data) {
-    const container = document.getElementById('cards-container');
-    const emptyMsg = document.getElementById('empty-msg');
-    
-    if (!data || data.length === 0) {
-        emptyMsg.innerText = "לא נמצאו תחנות בסביבה";
-        return;
-    }
-    
-    emptyMsg.style.display = 'none';
-    container.innerHTML = '';
-    
-    data.groups.forEach(group => {
-        container.appendChild(createLineCard(group));
-    });
-};
-
-// ... (שאר הקוד הקיים של app.js מפרויקט 1 - Leaflet init וכו')
-
-let mapInstance = null;
-let busLayerGroup = null;
-let userLocationMarker = null;
-let staticDataStore = new Map();
-let routeViews = new Map();
-let mapDidInitialFit = false;
-
-// זיהוי סביבת הריצה
-const IS_LOCAL = window.APP_ENVIRONMENT === 'local';
-const PROXY_URL = "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec";
-
-// פונקציית fetch מותאמת לסביבה
-async function fetchJson(url) {
-  try {
-    if (IS_LOCAL) {
-      const proxyUrl = PROXY_URL + "?url=" + encodeURIComponent(url);
-      const response = await fetch(proxyUrl);
-      return await response.json();
-    } else {
-      const response = await fetch(url);
-      return await response.json();
-    }
-  } catch (e) {
-    console.error("Fetch error:", e);
-    throw e;
-  }
-}
-
-// פונקציית מיקום מותאמת לסביבה
+// --- פונקציות עזר קיימות (מיקום וכו') ---
 async function getUserLocation() {
-  if (IS_LOCAL) {
-    // דפדפן רגיל - שימוש ב-Geolocation API
     return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error("Geolocation not supported"));
-        return;
-      }
-      
-      navigator.geolocation.getCurrentPosition(
-        position => {
-          resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          });
-        },
-        error => {
-          console.error("Geolocation error:", error);
-          reject(error);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
+        navigator.geolocation.getCurrentPosition(
+            p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+            e => reject(e)
+        );
     });
-  } else {
-    // Scriptable - המיקום כבר מועבר דרך setUserLocation
-    return null; // לא צריך לעשות כלום
-  }
 }
 
+window.setUserLocation = function(lat, lon) {
+    if (userLocationMarker) userLocationMarker.remove();
+    userLocationMarker = L.circleMarker([lat, lon], { radius: 8, color: "#1976d2", fillColor: "#2196f3", fillOpacity: 0.6 }).addTo(mapInstance);
+};
+
+function centerOnUser() {
+    if (userLocationMarker) mapInstance.setView(userLocationMarker.getLatLng(), 16);
+}
 // --- אתחול ---
 document.addEventListener('DOMContentLoaded', async function() {
     initBottomSheet();
