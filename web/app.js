@@ -8,6 +8,11 @@ let staticDataStore = new Map();
 let routeViews = new Map();
 let mapDidInitialFit = false;
 
+// נתונים עבור פאנל תחנות קרובות
+let nearbyStopsData = [];
+let nearbyStopsRealtimeData = new Map(); // stopCode -> realtime data
+let activeStopBubble = null;
+
 // זיהוי סביבת הריצה
 const IS_LOCAL = window.APP_ENVIRONMENT === 'local';
 const PROXY_URL = "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec";
@@ -32,7 +37,6 @@ async function fetchJson(url) {
 // פונקציית מיקום מותאמת לסביבה
 async function getUserLocation() {
   if (IS_LOCAL) {
-    // דפדפן רגיל - שימוש ב-Geolocation API
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
         reject(new Error("Geolocation not supported"));
@@ -54,14 +58,17 @@ async function getUserLocation() {
       );
     });
   } else {
-    // Scriptable - המיקום כבר מועבר דרך setUserLocation
-    return null; // לא צריך לעשות כלום
+    return null;
   }
 }
 
-// --- אתחול ---
+// ==========================================
+// אתחול
+// ==========================================
+
 document.addEventListener('DOMContentLoaded', async function() {
     initBottomSheet();
+    initModeToggle();
     
     // יצירת מפה ראשונית
     mapInstance = L.map("map", { zoomControl: false }).setView([32.08, 34.78], 13);
@@ -77,13 +84,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (locateBtn) {
         locateBtn.addEventListener('click', async () => {
             if (IS_LOCAL) {
-                // דפדפן - נבקש מיקום מהמשתמש
                 try {
                     locateBtn.textContent = '⏳';
                     const location = await getUserLocation();
                     if (location) {
                         window.setUserLocation(location.latitude, location.longitude);
                         centerOnUser();
+                        // רענון תחנות קרובות
+                        await loadNearbyStops(location.latitude, location.longitude);
                     }
                 } catch (e) {
                     alert("לא ניתן לקבל מיקום: " + e.message);
@@ -91,7 +99,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                     locateBtn.textContent = '📍';
                 }
             } else {
-                // Scriptable - המיקום כבר זמין
                 centerOnUser();
             }
         });
@@ -103,7 +110,288 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 });
 
+// ==========================================
+// טוגל מצבים (מפה בלבד / כפול)
+// ==========================================
+
+function initModeToggle() {
+    const mapOnlyBtn = document.getElementById('mapOnlyBtn');
+    const dualModeBtn = document.getElementById('dualModeBtn');
+    
+    mapOnlyBtn.addEventListener('click', () => {
+        document.body.classList.remove('dual-mode');
+        mapOnlyBtn.classList.add('active');
+        dualModeBtn.classList.remove('active');
+        
+        // רענון המפה כדי להתאים לגודל החדש
+        setTimeout(() => {
+            if (mapInstance) mapInstance.invalidateSize();
+        }, 400);
+    });
+    
+    dualModeBtn.addEventListener('click', () => {
+        document.body.classList.add('dual-mode');
+        dualModeBtn.classList.add('active');
+        mapOnlyBtn.classList.remove('active');
+        
+        // רענון המפה כדי להתאים לגודל החדש
+        setTimeout(() => {
+            if (mapInstance) mapInstance.invalidateSize();
+        }, 400);
+    });
+}
+
+// ==========================================
+// טעינת תחנות קרובות
+// ==========================================
+
+async function loadNearbyStops(lat, lon) {
+    const container = document.getElementById('stopsBubblesContainer');
+    const locationInfo = document.getElementById('locationInfo');
+    
+    container.innerHTML = '<div class="loading-message">מחפש תחנות קרובות...</div>';
+    locationInfo.textContent = `מיקום: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    
+    try {
+        // חישוב מרחק פשוט
+        function distance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // רדיוס כדור הארץ בק"מ
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+        
+        // טעינת stops.json אם זמין
+        let allStops = [];
+        if (window.stopsDataJson) {
+            try {
+                allStops = JSON.parse(window.stopsDataJson);
+            } catch (e) {
+                console.error("Error parsing stops.json:", e);
+            }
+        }
+        
+        // חישוב מרחקים ומציאת 5 הקרובות ביותר
+        const stopsWithDistance = allStops
+            .filter(s => s && s.lat && s.lon && s.stopCode)
+            .map(s => ({
+                ...s,
+                distance: distance(lat, lon, s.lat, s.lon)
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5);
+        
+        nearbyStopsData = stopsWithDistance;
+        
+        if (stopsWithDistance.length === 0) {
+            container.innerHTML = '<div class="no-data-message">לא נמצאו תחנות קרובות</div>';
+            return;
+        }
+        
+        // בניית הבועות
+        renderStopBubbles(stopsWithDistance);
+        
+        // טעינת זמן אמת לתחנות
+        await loadRealtimeForNearbyStops(stopsWithDistance);
+        
+    } catch (e) {
+        console.error("Error loading nearby stops:", e);
+        container.innerHTML = '<div class="no-data-message">שגיאה בטעינת תחנות</div>';
+    }
+}
+
+function renderStopBubbles(stops) {
+    const container = document.getElementById('stopsBubblesContainer');
+    container.innerHTML = '';
+    
+    stops.forEach((stop, index) => {
+        const bubble = document.createElement('div');
+        bubble.className = 'stop-bubble';
+        bubble.dataset.stopCode = stop.stopCode;
+        
+        const distanceText = stop.distance < 1 
+            ? `${Math.round(stop.distance * 1000)}מ׳`
+            : `${stop.distance.toFixed(1)}ק״מ`;
+        
+        bubble.innerHTML = `
+            <div class="stop-bubble-header">
+                <div class="stop-bubble-title">
+                    <div class="stop-bubble-name">
+                        <span class="stop-rank">${index + 1}</span>
+                        <span>${stop.stopName || stop.name || 'תחנה ללא שם'}</span>
+                    </div>
+                    <div class="stop-bubble-code">קוד: ${stop.stopCode}</div>
+                </div>
+                <div class="stop-distance">${distanceText}</div>
+            </div>
+            <div class="stop-routes-preview" id="routes-preview-${stop.stopCode}">
+                <div style="font-size: 12px; color: #999;">טוען קווים...</div>
+            </div>
+            <div class="stop-details">
+                <div class="stop-arrivals" id="arrivals-${stop.stopCode}">
+                    <div style="font-size: 13px; color: #999; text-align: center; padding: 10px;">
+                        טוען זמני הגעה...
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        bubble.addEventListener('click', () => toggleStopBubble(bubble, stop));
+        container.appendChild(bubble);
+    });
+}
+
+function toggleStopBubble(bubble, stop) {
+    // אם זה כבר פתוח - נסגור
+    if (bubble.classList.contains('active')) {
+        bubble.classList.remove('active');
+        activeStopBubble = null;
+        return;
+    }
+    
+    // נסגור את כל האחרים
+    document.querySelectorAll('.stop-bubble.active').forEach(b => {
+        b.classList.remove('active');
+    });
+    
+    // נפתח את זה
+    bubble.classList.add('active');
+    activeStopBubble = bubble;
+    
+    // מרכוז המפה על התחנה
+    if (mapInstance && stop.lat && stop.lon) {
+        mapInstance.setView([stop.lat, stop.lon], 16, { animate: true });
+    }
+}
+
+// ==========================================
+// טעינת זמן אמת לתחנות קרובות
+// ==========================================
+
+async function loadRealtimeForNearbyStops(stops) {
+    for (const stop of stops) {
+        try {
+            const API_BASE = "https://kavnav.com/api";
+            const url = `${API_BASE}/realtime?stopCode=${encodeURIComponent(stop.stopCode)}`;
+            const realtimeData = await fetchJson(url);
+            
+            nearbyStopsRealtimeData.set(stop.stopCode, realtimeData);
+            updateStopBubbleRealtime(stop.stopCode, realtimeData);
+            
+        } catch (e) {
+            console.error(`Error loading realtime for stop ${stop.stopCode}:`, e);
+        }
+    }
+}
+
+function updateStopBubbleRealtime(stopCode, realtimeData) {
+    const routesPreview = document.getElementById(`routes-preview-${stopCode}`);
+    const arrivalsContainer = document.getElementById(`arrivals-${stopCode}`);
+    
+    if (!routesPreview || !arrivalsContainer) return;
+    
+    const vehicles = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
+    
+    if (vehicles.length === 0) {
+        routesPreview.innerHTML = '<div style="font-size: 11px; color: #999;">אין נתוני זמן אמת</div>';
+        arrivalsContainer.innerHTML = '<div style="font-size: 13px; color: #999; text-align: center; padding: 10px;">אין זמני הגעה זמינים</div>';
+        return;
+    }
+    
+    // קיבוץ לפי קו
+    const routesMap = new Map();
+    const now = new Date();
+    
+    vehicles.forEach(v => {
+        if (!v.trip || !v.trip.gtfsInfo) return;
+        
+        const routeNumber = v.trip.gtfsInfo.routeNumber || v.trip.routeCode || '?';
+        const headsign = v.trip.gtfsInfo.headsign || '';
+        const key = `${routeNumber}-${headsign}`;
+        
+        if (!routesMap.has(key)) {
+            routesMap.set(key, {
+                routeNumber,
+                headsign,
+                times: []
+            });
+        }
+        
+        // מציאת זמני הגעה לתחנה הזו
+        const calls = v.trip.onwardCalls?.calls || [];
+        calls.forEach(c => {
+            if (String(c.stopCode) === String(stopCode) && c.eta) {
+                const minutes = Math.round((new Date(c.eta) - now) / 60000);
+                if (minutes >= -1) {
+                    routesMap.get(key).times.push(minutes);
+                }
+            }
+        });
+    });
+    
+    // תצוגת קווים (preview)
+    const uniqueRoutes = Array.from(routesMap.values())
+        .filter(r => r.times.length > 0)
+        .slice(0, 5);
+    
+    if (uniqueRoutes.length === 0) {
+        routesPreview.innerHTML = '<div style="font-size: 11px; color: #999;">אין נתוני זמן אמת</div>';
+        arrivalsContainer.innerHTML = '<div style="font-size: 13px; color: #999; text-align: center; padding: 10px;">אין זמני הגעה זמינים</div>';
+        return;
+    }
+    
+    routesPreview.innerHTML = uniqueRoutes
+        .map(r => `<span class="route-badge-small">${r.routeNumber}</span>`)
+        .join('');
+    
+    // תצוגת זמני הגעה מפורטת
+    arrivalsContainer.innerHTML = '';
+    
+    uniqueRoutes.forEach(route => {
+        route.times.sort((a, b) => a - b);
+        const topTimes = route.times.slice(0, 3);
+        
+        const arrivalItem = document.createElement('div');
+        arrivalItem.className = 'arrival-item';
+        
+        const timesHtml = topTimes.map(m => {
+            let cls = 'late';
+            let txt = m + ' דק׳';
+            
+            if (m <= 0) {
+                txt = 'כעת';
+                cls = 'soon';
+            } else if (m <= 5) {
+                cls = 'soon';
+            } else if (m <= 10) {
+                cls = 'mid';
+            } else if (m <= 20) {
+                cls = 'far';
+            }
+            
+            return `<span class="arrival-time ${cls}">${txt}</span>`;
+        }).join('');
+        
+        arrivalItem.innerHTML = `
+            <div class="arrival-route">
+                <div class="arrival-route-number">${route.routeNumber}</div>
+                <div class="arrival-headsign">${route.headsign}</div>
+            </div>
+            <div class="arrival-times">${timesHtml}</div>
+        `;
+        
+        arrivalsContainer.appendChild(arrivalItem);
+    });
+}
+
+// ==========================================
 // אתחול במצב Local
+// ==========================================
+
 async function initLocalMode() {
     try {
         // 1. קבלת מיקום משתמש
@@ -114,6 +402,9 @@ async function initLocalMode() {
                 userLat = location.latitude;
                 userLon = location.longitude;
                 window.setUserLocation(userLat, userLon);
+                
+                // טעינת תחנות קרובות
+                await loadNearbyStops(userLat, userLon);
             }
         } catch (e) {
             console.log("Location failed, using fallback:", e);
@@ -210,7 +501,10 @@ async function initLocalMode() {
     }
 }
 
+// ==========================================
 // לולאת רענון זמן אמת (ל-Local)
+// ==========================================
+
 async function startRealtimeLoop(routesStatic, API_BASE) {
     async function update() {
         try {
@@ -220,20 +514,22 @@ async function startRealtimeLoop(routesStatic, API_BASE) {
                 try {
                     const realtimeUrl = `${API_BASE}/realtime?routeCode=${encodeURIComponent(r.routeCode)}`;
                     const realtimeData = await fetchJson(realtimeUrl);
-
                     const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
+                    
                     const relevantVehicles = vehiclesRaw.filter(v =>
                         v.trip && String(v.trip.routeId) === String(r.routeId)
                     );
 
-                    const slimVehicles = relevantVehicles.map(v => {
+                    const filtered = relevantVehicles.length ? relevantVehicles : vehiclesRaw;
+
+                    const slimVehicles = filtered.map(v => {
                         const trip = v.trip || {};
                         const onwardCalls = trip.onwardCalls || {};
                         const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
                         const gtfs = trip.gtfsInfo || {};
                         const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
-                        const loc = v.geo && v.geo.location ? v.geo.location : {};
-
+                        const loc = v.geo?.location || {};
+                        
                         return {
                             vehicleId: v.vehicleId,
                             lastReported: v.lastReported,
@@ -255,101 +551,108 @@ async function startRealtimeLoop(routesStatic, API_BASE) {
                         meta: {
                             routeId: r.routeId,
                             routeCode: r.routeCode,
-                            lastSnapshot: realtimeData.lastSnapshot
+                            routeDate: r.routeDate,
+                            routeNumber: r.routeMeta?.routeNumber ?? "",
+                            headsign: r.headsign,
+                            lastSnapshot: realtimeData.lastSnapshot,
+                            operatorColor: r.operatorColor
                         },
                         vehicles: slimVehicles
                     });
 
                 } catch (e) {
-                    console.error("RT Error:", e);
+                    console.error("RT Error: " + e);
                 }
             }
 
             window.updateRealtimeData(allPayloads);
+            
+            // רענון תחנות קרובות
+            if (nearbyStopsData.length > 0) {
+                await loadRealtimeForNearbyStops(nearbyStopsData);
+            }
 
         } catch (e) {
-            console.error("Realtime update error:", e);
+            console.error("Update error:", e);
         }
     }
 
     // רענון ראשוני
     await update();
-
-    // רענון כל 10 שניות
+    
+    // לולאת רענון
     setInterval(update, 10000);
 }
 
-// --- 1. טעינת נתונים סטטיים (נקרא פעם אחת בלבד) ---
+// ==========================================
+// פונקציות נתונים סטטיים
+// ==========================================
+
 window.initStaticData = function(payloads) {
     if (!Array.isArray(payloads)) return;
     
-    const allLatLngs = [];
-
+    const container = document.getElementById("routesContainer");
+    container.innerHTML = "";
+    
+    const allCoords = [];
+    
     payloads.forEach(p => {
-        const routeId = String(p.meta.routeId);
-        staticDataStore.set(routeId, p);
+        const meta = p.meta || {};
+        const stops = p.stops || [];
+        const shape = p.shapeCoords || [];
         
-        const baseColor = p.meta.operatorColor || "#1976d2";
-        const color = getVariedColor(baseColor, routeId);
+        staticDataStore.set(meta.routeId, { 
+            meta, 
+            stops, 
+            shapeLatLngs: shape.map(c => [c[0], c[1]]) 
+        });
         
-        // 1. ציור קו המסלול
-        if (p.shapeCoords && p.shapeCoords.length) {
-            const latLngs = p.shapeCoords.map(c => [c[1], c[0]]);
-            L.polyline(latLngs, { weight: 4, opacity: 0.8, color: color }).addTo(mapInstance);
-            latLngs.forEach(ll => allLatLngs.push(ll));
+        const color = meta.operatorColor || "#1976d2";
+        createRouteCard(meta.routeId, meta, stops, color);
+        
+        if (shape.length) {
+            shape.forEach(c => allCoords.push([c[0], c[1]]));
+            const polyline = L.polyline(shape.map(c => [c[0], c[1]]), {
+                color: color,
+                weight: 4,
+                opacity: 0.7
+            }).addTo(mapInstance);
         }
-
-        // 2. ציור תחנות
-        if (p.stops) {
-            p.stops.forEach(s => {
-                if (s.lat && s.lon) {
-                    L.circleMarker([s.lat, s.lon], { 
-                        radius: 3, weight: 1, color: "#666", 
-                        fillColor: "#fff", fillOpacity: 1 
-                    })
-                    .bindTooltip(s.stopName, { direction: "top", offset: [0, -4] })
-                    .addTo(mapInstance);
-                }
-            });
-        }
-
-        // 3. בניית כרטיס HTML
-        createRouteCard(routeId, p.meta, p.stops, color);
+        
+        stops.forEach(st => {
+            if (st.lat && st.lon) allCoords.push([st.lat, st.lon]);
+        });
     });
-
-    // התמקדות ראשונית
-    if (allLatLngs.length && !mapDidInitialFit) {
-        mapInstance.fitBounds(allLatLngs, { padding: [30, 30] });
+    
+    if (allCoords.length && !mapDidInitialFit) {
+        mapInstance.fitBounds(allCoords, { padding: [50, 50] });
         mapDidInitialFit = true;
     }
 };
 
-// --- 2. עדכון זמן אמת ---
-window.updateRealtimeData = function(updates) {
-    if (!busLayerGroup) return;
+window.updateRealtimeData = function(payloads) {
+    if (!Array.isArray(payloads)) return;
+    
     busLayerGroup.clearLayers();
-
-    updates.forEach(u => {
-        const routeId = String(u.routeId);
-        const staticData = staticDataStore.get(routeId);
-        if (!staticData) return;
-
-        const color = getVariedColor(staticData.meta.operatorColor || "#1976d2", routeId);
-        updateCardData(routeId, u, staticData.stops, color);
-
-        if (u.vehicles && u.vehicles.length) {
-            drawBuses(u.vehicles, color, staticData.shapeCoords);
-        }
+    
+    payloads.forEach(p => {
+        const routeId = p.routeId || p.meta?.routeId;
+        const staticInfo = staticDataStore.get(routeId);
+        if (!staticInfo) return;
+        
+        const color = p.meta?.operatorColor || "#1976d2";
+        updateCardData(routeId, p, staticInfo.stops, color);
+        drawBusesOnMap(p, staticInfo.shapeLatLngs, color);
     });
 };
 
-function drawBuses(vehicles, color, shapeCoords) {
-    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[1], c[0]]) : [];
-
+function drawBusesOnMap(updateData, shapeLatLngs, color) {
+    const vehicles = updateData.vehicles || [];
+    
     vehicles.forEach(v => {
         let lat = v.lat;
         let lon = v.lon;
-
+        
         if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
             const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
             const point = shapeLatLngs[idx];
@@ -516,22 +819,14 @@ function updateCardData(routeId, updateData, stops, color) {
     });
 }
 
-function getVariedColor(hex, strSalt) {
-    let c = hex.replace('#','');
-    if(c.length===3) c=c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
-    let r=parseInt(c.substring(0,2),16), g=parseInt(c.substring(2,4),16), b=parseInt(c.substring(4,6),16);
-    let hash=0; for(let i=0;i<strSalt.length;i++) hash=strSalt.charCodeAt(i)+((hash<<5)-hash);
-    const v=(hash%60)-30; 
-    const clamp=n=>Math.min(255,Math.max(0,Math.round(n+v)));
-    return "#" + [clamp(r), clamp(g), clamp(b)].map(x=>x.toString(16).padStart(2,'0')).join("");
-}
-
 window.setUserLocation = function(lat, lon) {
     if (!mapInstance) return;
     if (userLocationMarker) userLocationMarker.remove();
     userLocationMarker = L.circleMarker([lat, lon], { 
-        radius: 8, color: "#1976d2", 
-        fillColor: "#2196f3", fillOpacity: 0.6 
+        radius: 8, 
+        color: "#1976d2", 
+        fillColor: "#2196f3", 
+        fillOpacity: 0.6 
     }).addTo(mapInstance);
 };
 
