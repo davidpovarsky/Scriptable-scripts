@@ -335,16 +335,21 @@
 
         arrivals.sort((a, b) => a.min - b.min);
         
-        const html = arrivals.slice(0, 5).map(arr => {
-          const timeText = arr.min <= 0 ? 'כעת' : `${arr.min} דק'`;
-          return `
-            <div class="sb-row">
-              <div class="sb-route-badge">${arr.line}</div>
-              <div class="sb-dest">${arr.dest}</div>
-              <div class="sb-eta">${timeText}</div>
-            </div>
-          `;
-        }).join('');
+        const html = topBuses.slice(0, 10).map(item => {
+  const timeText = item.min <= 0 ? 'כעת' : `${item.min} דק'`;
+  const etaTime = item.eta.split('T')[1].substring(0, 5);
+  return `
+    <div class="sb-row">
+      <div style="display:flex; align-items:center; gap:8px; flex:1; overflow:hidden;">
+        <span class="sb-route-badge">${item.line}</span>
+        <span class="sb-dest">${item.dest}</span>
+      </div>
+      <div style="text-align:left;">
+        <div class="sb-eta">${timeText}</div>
+        <div style="font-size:10px; color:#aaa;">${etaTime}</div>
+      </div>
+    </div>`;
+}).join('');
 
         container.innerHTML = html || '<div style="padding:10px; text-align:center; color:#999; font-size:12px;">אין הגעות בזמן הקרוב</div>';
       });
@@ -772,5 +777,202 @@
   };
 
   console.log("📱 KavNav Client Script Loaded");
+// מצב פיתוח local
+async function initLocalMode() {
+  try {
+    // 1. קבלת מיקום משתמש
+    let userLat = null, userLon = null;
+    try {
+      const location = await getUserLocation();
+      if (location) {
+        userLat = location.latitude;
+        userLon = location.longitude;
+        window.setUserLocation(userLat, userLon);
+      }
+    } catch (e) {
+      console.log("Location failed, using fallback:", e);
+    }
 
+    // 2. טעינת תחנות קרובות או ברירת מחדל
+    const DEFAULT_ROUTES = [
+      { routeId: 30794 },
+      { routeId: 18086 }
+    ];
+    
+    let ROUTES = DEFAULT_ROUTES;
+    const API_BASE = "https://kavnav.com/api";
+    const routeDate = new Date().toISOString().split('T')[0];
+
+    // 3. טעינת נתונים סטטיים
+    const routesStatic = [];
+    for (const cfg of ROUTES) {
+      try {
+        const url = `${API_BASE}/route?routeId=${cfg.routeId}&date=${routeDate}`;
+        const routeData = await fetchJson(url);
+        
+        const routeIdStr = String(cfg.routeId);
+        let routeMeta = null;
+        if (Array.isArray(routeData.routes)) {
+          routeMeta = routeData.routes.find(r => String(r.routeId) === routeIdStr) || routeData.routes[0];
+        }
+
+        const routeChanges = (routeData.routeChanges && routeData.routeChanges[routeIdStr]) || [];
+        const currentChange = routeChanges.find(c => c.isCurrent) || routeChanges[0];
+        
+        if (!currentChange) continue;
+
+        const routeObj = {
+          routeId: cfg.routeId,
+          routeDate,
+          routeMeta,
+          routeCode: routeMeta?.code,
+          headsign: currentChange.headsign || routeMeta?.routeLongName || "",
+          routeStops: (currentChange.stoptimes || []).map(st => ({
+            stopId: String(st.stopId || ""),
+            stopSequence: st.stopSequence,
+            stopCode: st.stopCode || null,
+            stopName: st.stopName || "(ללא שם)",
+            lat: st.lat || null,
+            lon: st.lon || null
+          })).sort((a, b) => (a.stopSequence || 0) - (b.stopSequence || 0)),
+          operatorColor: "#1976d2",
+          shapeId: currentChange.shapeId,
+          shapeCoords: null
+        };
+
+        // טעינת shape
+        if (routeObj.shapeId) {
+          try {
+            const shapeUrl = `${API_BASE}/shapes?shapeIds=${routeObj.shapeId}`;
+            const shapesData = await fetchJson(shapeUrl);
+            const coords = shapesData[routeObj.shapeId] || Object.values(shapesData)[0];
+            if (coords && Array.isArray(coords)) {
+              routeObj.shapeCoords = coords;
+            }
+          } catch (e) {
+            console.error("Shape fetch error:", e);
+          }
+        }
+
+        routesStatic.push(routeObj);
+      } catch (e) {
+        console.error(`Error fetching route ${cfg.routeId}:`, e);
+      }
+    }
+
+    // 4. הצגת נתונים סטטיים
+    const staticPayload = routesStatic.map(r => ({
+      meta: {
+        routeId: r.routeId,
+        routeCode: r.routeCode,
+        operatorColor: r.operatorColor,
+        headsign: r.headsign,
+        routeNumber: r.routeMeta?.routeNumber,
+        routeDate: r.routeDate
+      },
+      stops: r.routeStops,
+      shapeCoords: r.shapeCoords
+    }));
+
+    window.initStaticData(staticPayload);
+// ציור נקודות תחנות
+if (p.stops) {
+  p.stops.forEach(s => {
+    if (s.lat && s.lon) {
+      L.circleMarker([s.lat, s.lon], { 
+        radius: 3, 
+        weight: 1, 
+        color: "#666", 
+        fillColor: "#fff", 
+        fillOpacity: 1 
+      })
+      .bindTooltip(s.stopName, { direction: "top", offset: [0, -4] })
+      .addTo(mapManager.getMap());
+    }
+  });
+}
+    // 5. התחלת רענון זמן אמת
+    startRealtimeLoop(routesStatic, API_BASE);
+
+  } catch (e) {
+    console.error("Local mode init error:", e);
+  }
+}
+
+// לולאת רענון זמן אמת (ל-Local)
+async function startRealtimeLoop(routesStatic, API_BASE) {
+  async function update() {
+    try {
+      const allPayloads = [];
+
+      for (const r of routesStatic) {
+        try {
+          const realtimeUrl = `${API_BASE}/realtime?routeCode=${encodeURIComponent(r.routeCode)}`;
+          const realtimeData = await fetchJson(realtimeUrl);
+
+          const vehiclesRaw = Array.isArray(realtimeData.vehicles) ? realtimeData.vehicles : [];
+          const relevantVehicles = vehiclesRaw.filter(v =>
+            v.trip && String(v.trip.routeId) === String(r.routeId)
+          );
+
+          const slimVehicles = relevantVehicles.map(v => {
+            const trip = v.trip || {};
+            const onwardCalls = trip.onwardCalls || {};
+            const calls = Array.isArray(onwardCalls.calls) ? onwardCalls.calls : [];
+            const gtfs = trip.gtfsInfo || {};
+            const pos = v.geo?.positionOnLine?.positionOnLine ?? null;
+            const loc = v.geo && v.geo.location ? v.geo.location : {};
+
+            return {
+              vehicleId: v.vehicleId,
+              lastReported: v.lastReported,
+              routeNumber: gtfs.routeNumber,
+              headsign: gtfs.headsign,
+              bearing: v.bearing || v.geo?.bearing || 0,
+              lat: (typeof loc.lat === "number") ? loc.lat : null,
+              lon: (typeof loc.lon === "number") ? loc.lon : null,
+              positionOnLine: typeof pos === "number" ? pos : null,
+              onwardCalls: calls.map(c => ({
+                stopCode: c.stopCode,
+                eta: c.eta
+              }))
+            };
+          });
+
+          allPayloads.push({
+            routeId: r.routeId,
+            meta: {
+              routeId: r.routeId,
+              routeCode: r.routeCode,
+              lastSnapshot: realtimeData.lastSnapshot
+            },
+            vehicles: slimVehicles
+          });
+
+        } catch (e) {
+          console.error("RT Error:", e);
+        }
+      }
+
+      window.updateRealtimeData(allPayloads);
+
+    } catch (e) {
+      console.error("Realtime update error:", e);
+    }
+  }
+
+  // רענון ראשוני
+  await update();
+
+  // רענון כל 10 שניות
+  setInterval(update, 10000);
+}
+
+// קריאה ל-initLocalMode במצב local
+const IS_LOCAL = window.APP_ENVIRONMENT === 'local';
+if (IS_LOCAL) {
+  document.addEventListener('DOMContentLoaded', async function() {
+    await initLocalMode();
+  });
+}
 })();
