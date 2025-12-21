@@ -1,7 +1,7 @@
 // modules/ui/modeToggle.js
-// אחראי על כפתור המעבר בין מצב דואלי למפה בלבד
+// אחראי על כפתור המעבר בין מצב דואלי למפה בלבד - ללא export
 
-export class ModeToggle {
+class ModeToggle {
   constructor(mapManager) {
     this.mapManager = mapManager;
   }

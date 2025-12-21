@@ -1,7 +1,7 @@
 // modules/routes/routeCard.js
-// אחראי על יצירת ועדכון כרטיסי מסלולים
+// אחראי על יצירת ועדכון כרטיסי מסלולים - ללא export
 
-export class RouteCard {
+class RouteCard {
   constructor(routeId, meta, stops, color) {
     this.routeId = routeId;
     this.meta = meta;
@@ -20,10 +20,7 @@ export class RouteCard {
     const card = document.createElement("div");
     card.className = "route-card";
 
-    // Header
     const header = this._createHeader();
-    
-    // Stops list
     const stopsList = this._createStopsList();
     
     card.append(header, stopsList);
@@ -79,7 +76,6 @@ export class RouteCard {
     const isFirst = idx === 0;
     const isLast = idx === this.stops.length - 1;
     
-    // Timeline
     const timeline = document.createElement("div");
     timeline.className = `timeline${isFirst ? ' first' : ''}${isLast ? ' last' : ''}`;
     timeline.innerHTML = `
@@ -88,7 +84,6 @@ export class RouteCard {
       <div class="timeline-line line-bottom"></div>
     `;
     
-    // Main content
     const main = document.createElement("div");
     main.className = "stop-main";
     main.innerHTML = `
@@ -107,16 +102,12 @@ export class RouteCard {
   update(updateData) {
     if (!this.lastUpdateSpan || !this.stopsList) return;
 
-    // עדכון זמן
     const meta = updateData.meta || {};
     const snap = meta.lastSnapshot || meta.lastVehicleReport || new Date().toISOString();
     const timeStr = snap.split("T")[1]?.split(".")[0] || snap;
     this.lastUpdateSpan.textContent = "עדכון: " + timeStr;
 
-    // עדכון זמני הגעה
     this._updateStopTimes(updateData);
-    
-    // עדכון אייקונים על הגרף
     this._updateTimelineIcons(updateData);
   }
 
@@ -172,7 +163,6 @@ export class RouteCard {
   }
 
   _updateTimelineIcons(updateData) {
-    // מחיקת אייקונים קיימים
     this.stopsList.querySelectorAll(".bus-icon-timeline").forEach(e => e.remove());
     
     const listHeight = this.rowsContainer.offsetHeight;

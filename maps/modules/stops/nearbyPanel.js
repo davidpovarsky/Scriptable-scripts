@@ -1,7 +1,7 @@
 // modules/stops/nearbyPanel.js
-// אחראי על פאנל התחנות הקרובות ועדכון הזמנים
+// אחראי על פאנל התחנות הקרובות ועדכון הזמנים - ללא export
 
-export class NearbyPanel {
+class NearbyPanel {
   constructor() {
     this.stopsData = [];
   }
@@ -65,75 +65,62 @@ export class NearbyPanel {
     }, 300);
   }
 
-updateTimes(updates) {
-  const arrivalsByStop = new Map();
+  updateTimes(updates) {
+    const arrivalsByStop = new Map();
 
-  // איסוף כל הזמנים לפי תחנה
-  updates.forEach(u => {
-    if (!u.vehicles) return;
-    
-    u.vehicles.forEach(v => {
-      if (!v.onwardCalls) return;
+    // איסוף כל הזמנים לפי תחנה
+    updates.forEach(u => {
+      if (!u.vehicles) return;
       
-      v.onwardCalls.forEach(call => {
-        const sc = String(call.stopCode);
-        const stopContainer = document.getElementById(`times-${sc}`);
+      u.vehicles.forEach(v => {
+        if (!v.onwardCalls) return;
         
-        if (stopContainer) {
-          if (!arrivalsByStop.has(sc)) {
-            arrivalsByStop.set(sc, []);
-          }
+        v.onwardCalls.forEach(call => {
+          const sc = String(call.stopCode);
+          const stopContainer = document.getElementById(`times-${sc}`);
           
-          const etaDate = new Date(call.eta);
-          const minutes = Math.round((etaDate - new Date()) / 60000);
-          
-          if (minutes >= -1) {
-            arrivalsByStop.get(sc).push({
-              line: v.routeNumber,
-              dest: v.headsign,
-              min: minutes,
-              eta: call.eta
-            });
+          if (stopContainer) {
+            if (!arrivalsByStop.has(sc)) {
+              arrivalsByStop.set(sc, []);
+            }
+            
+            const etaDate = new Date(call.eta);
+            const minutes = Math.round((etaDate - new Date()) / 60000);
+            
+            if (minutes >= -1) {
+              arrivalsByStop.get(sc).push({
+                line: v.routeNumber,
+                dest: v.headsign,
+                min: minutes,
+                eta: call.eta
+              });
+            }
           }
-        }
+        });
       });
     });
-  });
 
-  // עדכון התצוגה
-  arrivalsByStop.forEach((list, stopCode) => {
-    const container = document.getElementById(`times-${stopCode}`);
-    if (!container) return;
+    // עדכון התצוגה
+    arrivalsByStop.forEach((arrivals, stopCode) => {
+      const container = document.getElementById(`times-${stopCode}`);
+      if (!container) return;
 
-    // מיון לפי זמן
-    list.sort((a, b) => a.min - b.min);
-    const topBuses = list.slice(0, 10); // 🆕 10 במקום 5
-
-    if (topBuses.length === 0) {
-      container.innerHTML = '<div style="text-align:center; font-size:12px; padding:10px;">אין צפי קרוב</div>';
-      return;
-    }
-
-    // 🆕 HTML משופר עם שעה
-    const html = topBuses.map(item => {
-      const timeText = item.min <= 0 ? 'כעת' : `${item.min} דק'`;
-      const etaTime = item.eta.split('T')[1].substring(0, 5); // 🆕 שעה
-      return `
-        <div class="sb-row">
-          <div style="display:flex; align-items:center; gap:8px; flex:1; overflow:hidden;">
-            <span class="sb-route-badge">${item.line}</span>
-            <span class="sb-dest">${item.dest}</span>
-          </div>
-          <div style="text-align:left;">
+      arrivals.sort((a, b) => a.min - b.min);
+      
+      const html = arrivals.slice(0, 5).map(arr => {
+        const timeText = arr.min <= 0 ? 'כעת' : `${arr.min} דק'`;
+        return `
+          <div class="sb-row">
+            <div class="sb-route-badge">${arr.line}</div>
+            <div class="sb-dest">${arr.dest}</div>
             <div class="sb-eta">${timeText}</div>
-            <div style="font-size:10px; color:#aaa;">${etaTime}</div>
           </div>
-        </div>`;
-    }).join('');
+        `;
+      }).join('');
 
-    container.innerHTML = html;
-  });
-}
+      container.innerHTML = html || '<div style="padding:10px; text-align:center; color:#999; font-size:12px;">אין הגעות בזמן הקרוב</div>';
+    });
+  }
 
   getStopsData() {
     return this.stopsData;

@@ -1,7 +1,7 @@
 // modules/routes/bottomSheet.js
-// אחראי על ה-bottom sheet הניתן לגרירה
+// אחראי על ה-bottom sheet הניתן לגרירה - ללא export
 
-export class BottomSheet {
+class BottomSheet {
   constructor() {
     this.startY = 0;
     this.startH = 0;

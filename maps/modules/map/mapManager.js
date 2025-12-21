@@ -1,7 +1,7 @@
 // modules/map/mapManager.js
-// אחראי על אתחול ו��יהול המפה
+// אחראי על אתחול וניהול המפה - ללא export
 
-export class MapManager {
+class MapManager {
   constructor() {
     this.map = null;
     this.busLayerGroup = null;

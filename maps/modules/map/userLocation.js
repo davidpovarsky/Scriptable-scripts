@@ -1,7 +1,7 @@
 // modules/map/userLocation.js
-// אחראי על ניהול מיקום המשתמש וכפתור ה-locate
+// אחראי על ניהול מיקום המשתמש וכפתור ה-locate - ללא export
 
-export class UserLocationManager {
+class UserLocationManager {
   constructor(mapManager) {
     this.mapManager = mapManager;
     this.isLocal = window.APP_ENVIRONMENT === 'local';

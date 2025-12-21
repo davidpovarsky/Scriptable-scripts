@@ -1,7 +1,7 @@
 // modules/map/busMarkers.js
-// אחראי על ציור אייקוני אוטובוסים על המפה
+// אחראי על ציור אייקוני אוטובוסים על המפה - ללא export
 
-export class BusMarkers {
+class BusMarkers {
   constructor(busLayerGroup) {
     this.busLayerGroup = busLayerGroup;
   }
