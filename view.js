@@ -32,7 +32,7 @@ module.exports.getHtml = function() {
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>מסלולי קווים</title>
+  <title>מסלולי קווים - מפה חכמה</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
   <!-- Icons font -->
@@ -48,12 +48,46 @@ module.exports.getHtml = function() {
   }
 </head>
 <body>
+  
+  <!-- בועת מצבים -->
+  <div id="modeToggleContainer">
+    <button class="mode-button" id="mapOnlyBtn">
+      <span>🗺️</span>
+      <span>מפה בלבד</span>
+    </button>
+    <button class="mode-button active" id="dualModeBtn">
+      <span>📍</span>
+      <span>מצב כפול</span>
+    </button>
+  </div>
+
+  <!-- מפה -->
   <div id="map">
     <button id="locateMeBtn" title="המיקום שלי">📍</button>
   </div>
 
+  <!-- פאנל תחנות קרובות -->
+  <div id="nearbyStopsPanel">
+    <div class="panel-header">
+      <h2>
+        <span>🚏</span>
+        <span>תחנות קרובות</span>
+      </h2>
+      <p id="locationInfo">מאתר את המיקום שלך...</p>
+    </div>
+    
+    <div class="panel-content">
+      <div id="stopsBubblesContainer" class="stops-bubbles">
+        <div class="loading-message">טוען תחנות קרובות...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Sheet - מסלולים -->
   <div id="bottomSheet">
-    <div id="dragHandleArea"><div class="handle-bar"></div></div>
+    <div id="dragHandleArea">
+      <div class="handle-bar"></div>
+    </div>
     <div id="routesContainer"></div>
     <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • מבוסס KavNav</div>
   </div>
