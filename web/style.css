@@ -1,169 +1,276 @@
-/* style.css - עם תמיכה בפאנל צדדי */
-
+/
 :root { color-scheme: light dark; }
-body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f4f4; color: #111; direction: rtl; overflow: hidden; touch-action: none; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont...r: #111; direction: rtl; overflow: hidden; touch-action: none; }
 
 /* --- מפה --- */
-#map { 
-  width: 100%; 
-  height: 100vh; 
-  position: absolute; 
-  top: 0; 
-  left: 0; 
-  z-index: 0;
-  transition: width 0.3s ease;
-}
-
-/* כאשר הפאנל הצדדי פתוח */
-body.side-panel-open #map {
-  width: calc(100% - 380px);
-}
-
-@media (max-width: 768px) {
-  body.side-panel-open #map {
-    width: 100%;
-  }
-}
-
-/* --- כפתור Toggle --- */
-.toggle-btn {
-  position: fixed;
-  top: 15px;
-  right: 15px;
-  z-index: 1500;
-  background: #ffffff;
-  border: none;
-  border-radius: 8px;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  transition: background 0.2s, transform 0.2s;
-}
-
-.toggle-btn:active {
-  transform: scale(0.95);
-  background: #f0f0f0;
-}
-
-.toggle-btn .material-symbols-outlined {
-  font-size: 24px;
-  color: #1976d2;
-}
-
-/* --- פאנל צדדי --- */
-.side-panel {
-  position: fixed;
-  top: 0;
-  right: -380px;
-  width: 380px;
-  height: 100vh;
-  background: #ffffff;
-  box-shadow: -2px 0 10px rgba(0,0,0,0.1);
-  z-index: 1400;
-  overflow-y: auto;
-  transition: right 0.3s ease;
-}
-
-.side-panel.open {
-  right: 0;
-}
-
-@media (max-width: 768px) {
-  .side-panel {
-    width: 100%;
-    right: -100%;
-  }
-  
-  .side-panel.open {
-    right: 0;
-  }
-}
-
-#sidePanelContent {
-  padding: 60px 16px 16px 16px;
-}
+#map { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; z-index: 0; }
 
 /* --- כפתור מיקום --- */
-#locateMeBtn { position: absolute; top: 15px; left: 15px; z-index: 500; background: #ffffff; border: none; border-radius: 8px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+#locateMeBtn { position: absolute; top: 15px; left: 15px; z-inde... 20px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 #locateMeBtn:active { transform: scale(0.95); background: #f0f0f0; }
 
 /* --- אייקון אוטובוס --- */
-.bus-marker-container { position: relative; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; }
-.bus-direction-arrow { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: flex-start; z-index: 1; pointer-events: none; }
-.bus-direction-arrow svg { margin-top: -14px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
-.main-bus-icon { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.4); border: 2px solid #fff; box-sizing: border-box; z-index: 10; position: relative; }
-.material-symbols-outlined { font-size: 20px; line-height: 1; }
-.route-badge { position: absolute; top: -6px; right: -6px; background: #fff; border-radius: 99px; height: 18px; min-width: 18px; padding: 0 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid currentColor; box-sizing: border-box; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 20; }
+.bus-marker-container { position: relative; width: 34
 
-/* --- Bottom Sheet --- */
-#bottomSheet { 
-  position: absolute; 
-  bottom: 0; 
-  left: 0; 
-  right: 0; 
-  background: #fff; 
-  z-index: 1000; 
-  border-top-left-radius: 20px; 
-  border-top-right-radius: 20px; 
-  box-shadow: 0 -2px 15px rgba(0,0,0,0.15); 
-  display: flex; 
-  flex-direction: column; 
-  height: 45vh; 
-  min-height: 60px; 
-  max-height: 95vh; 
-  transition: height 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+/* ===========================
+   Layout: Map + Stops Panel
+   =========================== */
+
+#appLayout {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: row;
 }
 
-/* התאמה כאשר הפאנל הצדדי פתוח */
-body.side-panel-open #bottomSheet {
-  right: 380px;
+#mainArea {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
 }
 
-@media (max-width: 768px) {
-  body.side-panel-open #bottomSheet {
+/* override existing map absolute sizing to be inside mainArea */
+#map {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+body.mode-map #stopsPanel { display: none; }
+body.mode-dual #stopsPanel { display: flex; }
+
+body.mode-dual #mainArea {
+  flex: 1;
+}
+
+/* Bubble mode toggle */
+.bubble-btn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  z-index: 500;
+  background: rgba(255,255,255,0.95);
+  color: #111;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bubble-btn .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 20px;
+}
+
+.bubble-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Stops panel */
+#stopsPanel {
+  width: 360px;
+  max-width: 46vw;
+  background: rgba(18, 22, 32, 0.96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-left: 1px solid rgba(255,255,255,0.10);
+  color: #e5e7eb;
+  z-index: 450;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sp-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 12px 12px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.sp-title { flex: 1; min-width: 0; }
+.sp-title-main { font-size: 15px; font-weight: 800; }
+.sp-title-sub { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+
+.sp-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  color: #e5e7eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.sp-icon-btn:active { transform: scale(0.98); }
+.sp-icon-btn .material-symbols-outlined { font-size: 20px; }
+
+.sp-stops-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  scrollbar-width: none;
+}
+.sp-stops-strip::-webkit-scrollbar { display: none; }
+
+.sp-stop-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  color: rgba(229,231,235,0.88);
+  border-radius: 999px;
+  padding: 8px 12px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 70px;
+}
+
+.sp-stop-btn.active {
+  background: rgba(59,130,246,0.25);
+  border-color: rgba(59,130,246,0.45);
+  color: #fff;
+}
+
+.sp-stop-btn .sp-stop-name {
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-stop-btn .sp-stop-code {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.sp-content {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+}
+
+.sp-loader {
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.sp-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(255,255,255,0.12);
+  border-left-color: rgba(59,130,246,0.9);
+  border-radius: 50%;
+  animation: spSpin 1s linear infinite;
+}
+
+@keyframes spSpin { 100% { transform: rotate(360deg); } }
+
+.sp-stop-title {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 800;
+  opacity: 0.95;
+}
+
+.sp-card {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 14px;
+  padding: 12px 12px;
+  margin-bottom: 10px;
+}
+
+.sp-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.sp-route {
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.sp-headsign {
+  font-size: 12px;
+  opacity: 0.8;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-times {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.sp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.95;
+}
+
+.sp-chip.rt { color: #22c55e; border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.12); }
+.sp-chip.stale { color: #f97316; border-color: rgba(249,115,22,0.35); background: rgba(249,115,22,0.12); }
+
+.sp-empty {
+  text-align: center;
+  padding: 16px 0;
+  opacity: 0.65;
+}
+
+/* Small screens: panel overlays from the right */
+@media (max-width: 820px) {
+  #stopsPanel {
+    position: absolute;
+    top: 0;
     right: 0;
+    bottom: 0;
+    width: 86vw;
+    max-width: 420px;
+    box-shadow: -18px 0 30px rgba(0,0,0,0.35);
   }
 }
-
-#dragHandleArea { width: 100%; height: 30px; flex-shrink: 0; display: flex; justify-content: center; align-items: center; cursor: grab; touch-action: none; background: #fff; border-top-left-radius: 20px; border-top-right-radius: 20px; }
-.handle-bar { width: 40px; height: 5px; background-color: #e0e0e0; border-radius: 10px; }
-#routesContainer { flex: 1; display: flex; flex-direction: row; gap: 12px; padding: 10px; padding-top: 0; overflow-x: auto; overflow-y: hidden; box-sizing: border-box; background: #fff; }
-
-/* --- כרטיס מסלול --- */
-.route-card { background: #fff; border-radius: 12px; border: 1px solid #eee; min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; height: 100%; }
-header { background: #1976d2; color: #fff; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-header .line-main { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-header .route-number { font-weight: 700; font-size: 20px; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.25); }
-header .headsign { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: space-between; gap: 10px; }
-
-/* --- רשימת תחנות --- */
-.stops-list { background: #fff; position: relative; overflow-y: auto; overflow-x: hidden; padding: 0; padding-bottom: 20px; flex: 1; }
-.stops-rows { width: 100%; }
-.stop-row { display: flex; flex-direction: row; align-items: stretch; gap: 0; min-height: 50px; }
-.timeline { width: 50px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; position: relative; }
-.timeline-line { width: 4px; background: #e0e0e0; flex: 1; }
-.timeline-circle { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid #1976d2; box-sizing: border-box; z-index: 2; margin: -2px 0; }
-.timeline.first .line-top { visibility: hidden; }
-.timeline.last .line-bottom { visibility: hidden; }
-.stop-main { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 8px 10px 8px 0; border-bottom: 1px solid #f0f0f0; }
-.stop-name { font-size: 14px; font-weight: 600; display: flex; gap: 4px; }
-.seq-num { color: #1976d2; font-weight: 700; min-width: 20px; font-size: 12px; }
-.stop-code { font-size: 11px; color: #777; margin-right: 24px; }
-.stop-buses { margin-top: 6px; margin-right: 24px; display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; }
-
-/* --- תגיות זמן --- */
-.bus-chip { border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold; display: inline-flex; align-items: center; }
-.bus-soon { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
-.bus-mid  { background: #fffde7; color: #f9a825; border: 1px solid #fff9c4; }
-.bus-far  { background: #e1f5fe; color: #0277bd; border: 1px solid #b3e5fc; }
-.bus-late { background: #f5f5f5; color: #757575; border: 1px solid #e0e0e0; }
-
-/* --- אוטובוס על הטיימליין --- */
-.bus-icon-timeline { position: absolute; right: 25px; font-size: 24px; z-index: 50; pointer-events: none; transform: translate3d(50%, -50%, 0); transition: top 0.5s linear; }
-
-.footer-note-global { margin: 4px 0 10px; font-size: 10px; color: #999; text-align: center; }
