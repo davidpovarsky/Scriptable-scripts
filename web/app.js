@@ -55,7 +55,7 @@ async function getUserLocation() {
     });
   } else {
     // Scriptable - המיקום כבר מועבר דרך setUserLocation
-    return null; // לא צריך לעשות כלום
+    return null;
   }
 }
 
@@ -292,14 +292,14 @@ window.initStaticData = function(payloads) {
         const baseColor = p.meta.operatorColor || "#1976d2";
         const color = getVariedColor(baseColor, routeId);
         
-        // 1. ציור קו המסלול
+        // 1. צייר קו המסלול
         if (p.shapeCoords && p.shapeCoords.length) {
             const latLngs = p.shapeCoords.map(c => [c[1], c[0]]);
             L.polyline(latLngs, { weight: 4, opacity: 0.8, color: color }).addTo(mapInstance);
             latLngs.forEach(ll => allLatLngs.push(ll));
         }
 
-        // 2. ציור תחנות
+        // 2. צייר תחנות
         if (p.stops) {
             p.stops.forEach(s => {
                 if (s.lat && s.lon) {
