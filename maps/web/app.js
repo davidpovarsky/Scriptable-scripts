@@ -1,5 +1,5 @@
 // web/app.js
-// נקודת הכניסה הראשית בצד הלקוח - גרסה מתוקנת
+// נקודת הכניסה הראשית - גרסה סופית מתוקנת
 
 // ============================================
 // משתנים גלובליים
@@ -17,10 +17,9 @@ const routeCards = new Map();
 // ============================================
 // אתחול ראשוני
 // ============================================
-document.addEventListener('DOMContentLoaded', async function() {
+const initApp = async function() {
   console.log("🚀 KavNav App Starting...");
 
-  // יצירת מנהלי המערכת
   mapManager = new MapManager();
   mapManager.init('map');
 
@@ -30,21 +29,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   bottomSheet = new BottomSheet();
   modeToggle = new ModeToggle(mapManager);
 
-  // אתחול רכיבי UI
   bottomSheet.init();
   modeToggle.init();
   userLocationManager.setupLocateButton();
 
   console.log("✅ All managers initialized");
-});
+};
 
 // ============================================
 // פונקציות גלובליות לשימוש Scriptable
 // ============================================
 
-/**
- * מקבל נתוני תחנות קרובות ומאתחל את הפאנל
- */
 window.initNearbyStops = function(stops) {
   if (!Array.isArray(stops)) return;
   console.log("📍 Initializing nearby stops:", stops.length);
@@ -54,18 +49,12 @@ window.initNearbyStops = function(stops) {
   }
 };
 
-/**
- * קובע מיקום משתמש על המפה
- */
 window.setUserLocation = function(lat, lon) {
   if (!mapManager) return;
   console.log("👤 Setting user location:", lat, lon);
   mapManager.setUserLocation(lat, lon);
 };
 
-/**
- * מקבל נתונים סטטיים (מסלולים, תחנות, shapes) - קורה פעם אחת
- */
 window.initStaticData = function(payloads) {
   if (!Array.isArray(payloads)) return;
   console.log("📦 Receiving static data:", payloads.length, "routes");
@@ -80,10 +69,8 @@ window.initStaticData = function(payloads) {
       allShapeCoords.push(p.shapeCoords);
     }
 
-    // יצירת כרטיס מסלול
     const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
     
-    // ציור הקו של המסלול על המפה
     if (mapManager && p.shapeCoords && p.shapeCoords.length) {
       mapManager.drawRoutePolyline(p.shapeCoords, color);
     }
@@ -93,7 +80,6 @@ window.initStaticData = function(payloads) {
     routeCards.set(routeId, card);
   });
 
-  // התאמת המפה לכל המסלולים
   if (mapManager && allShapeCoords.length) {
     mapManager.fitBoundsToShapes(allShapeCoords);
   }
@@ -101,14 +87,10 @@ window.initStaticData = function(payloads) {
   console.log("✅ Static data initialized");
 };
 
-/**
- * מעדכן נתוני זמן אמת (רכבים) - קורה כל X שניות
- */
 window.updateRealtimeData = function(updates) {
   if (!Array.isArray(updates)) return;
   console.log("🔄 Updating realtime data:", updates.length, "routes");
 
-  // ניקוי אוטובוסים קודמים
   if (mapManager) {
     mapManager.clearBuses();
   }
@@ -124,19 +106,16 @@ window.updateRealtimeData = function(updates) {
 
     const color = getVariedColor(staticData.meta.operatorColor || "#1976d2", String(routeId));
 
-    // עדכון כרטיס
     const card = routeCards.get(routeId);
     if (card) {
       card.update(u);
     }
 
-    // ציור אוטובוסים על המפה
     if (u.vehicles && u.vehicles.length && busMarkers) {
       busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
     }
   });
 
-  // עדכון הפאנל הצדדי
   if (nearbyPanel) {
     nearbyPanel.updateTimes(updates);
   }
