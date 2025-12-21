@@ -59,6 +59,19 @@
       }
     }
 
+    drawRoutePolyline(shapeCoords, color) {
+      if (!this.map || !shapeCoords || !shapeCoords.length) return;
+      
+      const latLngs = shapeCoords.map(c => [c[1], c[0]]);
+      
+      L.polyline(latLngs, {
+        color: color,
+        weight: 4,
+        opacity: 0.6,
+        smoothFactor: 1
+      }).addTo(this.map);
+    }
+
     fitBoundsToShapes(allShapeCoords) {
       if (!this.map || !allShapeCoords || !allShapeCoords.length) return;
       if (this.didInitialFit) return;
@@ -704,6 +717,12 @@
       }
 
       const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
+      
+      // ציור הקו של המסלול על המפה
+      if (mapManager && p.shapeCoords && p.shapeCoords.length) {
+        mapManager.drawRoutePolyline(p.shapeCoords, color);
+      }
+      
       const card = new RouteCard(routeId, p.meta, p.stops, color);
       card.create();
       routeCards.set(routeId, card);
