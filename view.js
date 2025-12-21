@@ -1,4 +1,6 @@
 // view.js
+// בונה HTML עם תמיכה במצב דואלי (Dual Mode)
+
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
   
@@ -11,6 +13,7 @@ module.exports.getHtml = function() {
       const webDir = fm.joinPath(fm.documentsDirectory(), "web");
       const cssPath = fm.joinPath(webDir, "style.css");
       const jsPath = fm.joinPath(webDir, "app.js");
+      
       if (fm.fileExists(cssPath)) cssContent = fm.readString(cssPath);
       if (fm.fileExists(jsPath)) jsContent = fm.readString(jsPath);
     } catch (e) { console.error(e); }
@@ -45,7 +48,8 @@ module.exports.getHtml = function() {
     <div class="pane-nearby">
       <div class="nearby-header">תחנות קרובות</div>
       <div id="nearbyStopsList" class="nearby-list">
-        </div>
+        <div style="padding:20px; text-align:center; color:#888;">טוען תחנות...</div>
+      </div>
     </div>
 
     <div class="pane-map-wrapper">
