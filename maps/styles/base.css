@@ -1,0 +1,100 @@
+/* styles/base.css */
+/* סגנון בסיסי ומשתנים גלובליים */
+
+:root { 
+  --primary: #1976d2; 
+  --bg-color: #f4f4f4;
+  --card-bg: #ffffff;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg-color);
+  color: #111;
+  direction: rtl;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* --- כפתור מצבים (Toggle) --- */
+#modeToggleContainer {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.mode-toggle {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 4px;
+  border-radius: 99px;
+  display: flex;
+  position: relative;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  pointer-events: auto;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.mode-toggle input {
+  display: none;
+}
+
+.mode-toggle label {
+  z-index: 2;
+  cursor: pointer;
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  transition: color 0.3s;
+}
+
+.mode-toggle input:checked + label {
+  color: var(--primary);
+}
+
+.toggle-bg {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  right: 4px;
+  width: 50%;
+  background: #e3f2fd;
+  border-radius: 99px;
+  z-index: 1;
+  transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* הזזת הרקע לפי הבחירה (מותאם ל-RTL) */
+#modeDual:checked ~ .toggle-bg {
+  transform: translateX(0);
+}
+
+#modeMap:checked ~ .toggle-bg {
+  transform: translateX(-100%) translateX(8px);
+}
+
+/* --- Layout --- */
+.main-split-container {
+  display: flex;
+  flex: 1;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  transition: all 0.4s ease;
+}
+
+.footer-note-global {
+  margin: 4px 0 10px;
+  font-size: 10px;
+  color: #999;
+  text-align: center;
+}

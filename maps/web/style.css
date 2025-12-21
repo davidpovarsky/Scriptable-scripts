@@ -1,0 +1,7 @@
+/* web/style.css */
+/* קובץ CSS מאוחד - מייבא את כל קבצי הסגנון */
+
+@import url('../styles/base.css');
+@import url('../styles/map.css');
+@import url('../styles/stops.css');
+@import url('../styles/routes.css');
