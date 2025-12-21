@@ -2,11 +2,11 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>מסלולי קווים + תחנות קרובות</title>
+  <title>מסלולי קווים</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
   <!-- Icons font -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0&icon_names=directions_bus,view_sidebar" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0&icon_names=directions_bus,swap_horiz,close,refresh" />
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -14,39 +14,59 @@
 
   <!-- CSS -->
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="style_stations.css">
 </head>
-<body>
-  <!-- כפתור Toggle לפאנל הצדדי -->
-  <button id="toggleSidePanel" class="toggle-btn" title="הצג/הסתר תחנות קרובות">
-    <span class="material-symbols-outlined">view_sidebar</span>
-  </button>
+<body class="mode-map" data-mode="map">
+  <div id="appLayout">
 
-  <!-- פאנל צדדי לתחנות קרובות -->
-  <div id="sidePanel" class="side-panel">
-    <div id="sidePanelContent">
-      <div id="loader-msg-stations">
-        <div class="spinner"></div>
-        <div>טוען תחנות קרובות...</div>
+    <!-- ===== Left: Map + bottom sheet (existing app) ===== -->
+    <div id="mainArea">
+      <div id="map">
+        <button id="locateMeBtn" title="המיקום שלי">📍</button>
+
+        <!-- מצב תצוגה (בועה) -->
+        <button id="modeToggle" class="bubble-btn" title="מצב תצוגה">
+          <span class="material-symbols-outlined">swap_horiz</span>
+          <span class="bubble-label">מפה</span>
+        </button>
       </div>
-      <div class="stop-container-stations" style="display:none">
-        <h2 id="stop-title-stations"></h2>
-        <div id="cards-container-stations"></div>
-        <div id="empty-msg-stations">אין נסיעות קרובות</div>
+
+      <div id="bottomSheet">
+        <div id="dragHandleArea"><div class="handle-bar"></div></div>
+        <div id="routesContainer"></div>
+        <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • מבוסס KavNav</div>
       </div>
     </div>
-  </div>
 
-  <!-- מפה ראשית -->
-  <div id="map">
-    <button id="locateMeBtn" title="המיקום שלי">📍</button>
-  </div>
+    <!-- ===== Right: Stops panel (new) ===== -->
+    <aside id="stopsPanel" aria-label="תחנות קרובות">
+      <div class="sp-header">
+        <div class="sp-title">
+          <div class="sp-title-main">תחנות קרובות</div>
+          <div class="sp-title-sub">זמן אמת + מתוכנן</div>
+        </div>
+        <button class="sp-icon-btn" id="spRefreshBtn" title="רענון תחנות">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+        <button class="sp-icon-btn sp-close" id="spCloseBtn" title="סגור">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
 
-  <!-- Bottom Sheet למסלולים -->
-  <div id="bottomSheet">
-    <div id="dragHandleArea"><div class="handle-bar"></div></div>
-    <div id="routesContainer"></div>
-    <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • מבוסס KavNav</div>
+      <div class="sp-stops-strip" id="spStopsStrip"></div>
+
+      <div class="sp-content">
+        <div class="sp-loader" id="spLoader">
+          <div class="sp-spinner"></div>
+          <div id="spMsg">טוען תחנות קרובות…</div>
+        </div>
+
+        <div class="sp-stop-view" id="spStopView" style="display:none">
+          <h2 class="sp-stop-title" id="spStopTitle">תחנה</h2>
+          <div id="spCards"></div>
+          <div class="sp-empty" id="spEmpty" style="display:none">אין נסיעות קרובות</div>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <!-- הגדרת מצב ריצה -->
@@ -54,9 +74,7 @@
     window.APP_ENVIRONMENT = 'local';
   </script>
 
-  <!-- JavaScript -->
+  <!-- JS -->
   <script src="app.js"></script>
-  <script src="app_stations.js"></script>
-  <script src="integration.js"></script>
 </body>
 </html>
