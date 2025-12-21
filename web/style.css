@@ -1,9 +1,7 @@
-/* style.css */
 :root { 
   --primary: #1976d2; 
   --bg-color: #f4f4f4;
   --card-bg: #ffffff;
-  --pane-split: 380px; /* רוחב הפאנל הצידי */
 }
 
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: #111; direction: rtl; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
@@ -14,17 +12,18 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Ro
   display: flex; justify-content: center; z-index: 2000; pointer-events: none;
 }
 .mode-toggle {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   padding: 4px; border-radius: 99px;
   display: flex; position: relative;
   box-shadow: 0 4px 15px rgba(0,0,0,0.15);
   pointer-events: auto;
+  border: 1px solid rgba(0,0,0,0.05);
 }
 .mode-toggle input { display: none; }
 .mode-toggle label {
   z-index: 2; cursor: pointer;
-  padding: 6px 16px; font-size: 13px; font-weight: 600;
+  padding: 8px 20px; font-size: 14px; font-weight: 600;
   color: #666; transition: color 0.3s;
 }
 .mode-toggle input:checked + label { color: var(--primary); }
@@ -33,9 +32,9 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Ro
   background: #e3f2fd; border-radius: 99px; z-index: 1;
   transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
-/* הזזת הרקע לפי הבחירה */
+/* הזזת הרקע לפי הבחירה (מותאם ל-RTL) */
 #modeDual:checked ~ .toggle-bg { transform: translateX(0); } 
-#modeMap:checked ~ .toggle-bg { transform: translateX(-100%) translateX(8px); } /* תיקון קטן ל-RTL */
+#modeMap:checked ~ .toggle-bg { transform: translateX(-100%) translateX(8px); }
 
 /* --- Layout --- */
 .main-split-container {
@@ -59,28 +58,29 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Ro
 }
 
 /* מצב כפול פעיל */
-body.mode-dual .pane-nearby { width: 45%; max-width: 400px; opacity: 1; }
-/* במובייל ניתן יותר מקום */
+body.mode-dual .pane-nearby { width: 40%; max-width: 450px; opacity: 1; }
+/* במובייל */
 @media (max-width: 600px) {
   body.mode-dual .pane-nearby { width: 100%; position: absolute; z-index: 1500; height: 100%; }
+  body.mode-dual #modeToggleContainer { top: auto; bottom: 20px; } /* במובייל המגירה תסתיר את הכפתור אז נוריד אותו או נשאיר */
 }
 
 /* --- עיצוב הפאנל הצדדי (בועות) --- */
 .nearby-header {
-  padding: 16px; font-size: 18px; font-weight: 800; color: #333;
+  padding: 20px; font-size: 20px; font-weight: 800; color: #333;
   background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); z-index: 10;
 }
 .nearby-list {
   flex: 1; overflow-y: auto; padding: 12px;
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 12px;
 }
 
 /* כרטיס תחנה (הבועה) */
 .stop-bubble {
   background: #fff; border-radius: 16px;
-  padding: 12px 16px; cursor: pointer;
+  padding: 14px 16px; cursor: pointer;
   border: 1px solid transparent;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   transition: all 0.2s;
 }
 .stop-bubble:active { transform: scale(0.98); }
@@ -89,10 +89,10 @@ body.mode-dual .pane-nearby { width: 45%; max-width: 400px; opacity: 1; }
   box-shadow: 0 4px 12px rgba(25, 118, 210, 0.15);
 }
 
-.sb-header { display: flex; justify-content: space-between; align-items: center; }
-.sb-name { font-weight: 700; font-size: 15px; color: #222; }
-.sb-meta { font-size: 11px; color: #888; margin-top: 2px; display: flex; gap: 8px; }
-.sb-dist { background: #eee; padding: 2px 6px; border-radius: 4px; }
+.sb-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.sb-name { font-weight: 700; font-size: 16px; color: #222; }
+.sb-meta { font-size: 12px; color: #888; margin-top: 4px; display: flex; gap: 8px; }
+.sb-dist { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;}
 
 /* אזור זמנים בתוך הבועה */
 .sb-times {
@@ -100,18 +100,61 @@ body.mode-dual .pane-nearby { width: 45%; max-width: 400px; opacity: 1; }
   transition: all 0.3s ease;
 }
 .stop-bubble.active .sb-times {
-  margin-top: 10px; max-height: 200px; opacity: 1; 
-  padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.05);
+  margin-top: 12px; max-height: 500px; opacity: 1; 
+  padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.06);
 }
-.sb-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.sb-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px dashed #eee; }
+.sb-row:last-child { border-bottom: none; }
+
 .sb-route-badge { 
-  background: #333; color: #fff; font-weight: bold; font-size: 12px; 
-  padding: 2px 6px; border-radius: 6px; min-width: 30px; text-align: center;
+  background: #333; color: #fff; font-weight: bold; font-size: 13px; 
+  padding: 2px 8px; border-radius: 6px; min-width: 32px; text-align: center;
 }
-.sb-eta { font-weight: 600; color: #1976d2; font-size: 14px; }
-.sb-dest { font-size: 11px; color: #666; margin-right: 8px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.sb-eta { font-weight: 700; color: #1976d2; font-size: 15px; min-width: 40px; text-align: left; }
+.sb-dest { font-size: 13px; color: #555; margin-right: 10px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
 
 /* --- התאמות קיימות --- */
-/* נסתיר את ה-Bottom Sheet במצב דואלי אם רוצים, או נשאיר אותו קטן */
-body.mode-dual #bottomSheet { display: none; } /* נסתיר אותו כדי לא להעמיס */
-#locateMeBtn { top: 60px; } /* נזיז קצת למטה בגלל ה-Toggle */
+#locateMeBtn { top: 70px; } /* נזיז קצת למטה */
+body.mode-dual #bottomSheet { 
+  height: 35vh !important; /* נקטין את הגרף במצב כפול */
+  width: 100%;
+}
+
+/* שאר ה-CSS הקיים (אייקונים של אוטובוס וכו') - להשאיר */
+.bus-marker-container { position: relative; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; }
+.bus-direction-arrow { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: flex-start; z-index: 1; pointer-events: none; }
+.bus-direction-arrow svg { margin-top: -14px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
+.main-bus-icon { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.4); border: 2px solid #fff; box-sizing: border-box; z-index: 10; position: relative; }
+.material-symbols-outlined { font-size: 20px; line-height: 1; }
+.route-badge { position: absolute; top: -6px; right: -6px; background: #fff; border-radius: 99px; height: 18px; min-width: 18px; padding: 0 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid currentColor; box-sizing: border-box; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 20; }
+/* Bottom Sheet בסיסי */
+#bottomSheet { position: absolute; bottom: 0; left: 0; right: 0; background: #fff; z-index: 1000; border-top-left-radius: 20px; border-top-right-radius: 20px; box-shadow: 0 -2px 15px rgba(0,0,0,0.15); display: flex; flex-direction: column; height: 45vh; min-height: 60px; max-height: 95vh; transition: height 0.3s cubic-bezier(0.25, 1, 0.5, 1); }
+#dragHandleArea { width: 100%; height: 30px; flex-shrink: 0; display: flex; justify-content: center; align-items: center; cursor: grab; touch-action: none; background: #fff; border-top-left-radius: 20px; border-top-right-radius: 20px; }
+.handle-bar { width: 40px; height: 5px; background-color: #e0e0e0; border-radius: 10px; }
+#routesContainer { flex: 1; display: flex; flex-direction: row; gap: 12px; padding: 10px; padding-top: 0; overflow-x: auto; overflow-y: hidden; box-sizing: border-box; background: #fff; }
+.route-card { background: #fff; border-radius: 12px; border: 1px solid #eee; min-width: 320px; max-width: 420px; display: flex; flex-direction: column; overflow: hidden; height: 100%; }
+header { background: #1976d2; color: #fff; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+header .line-main { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+header .route-number { font-weight: 700; font-size: 20px; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.25); }
+header .headsign { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header .sub { font-size: 11px; opacity: 0.9; display: flex; justify-content: space-between; gap: 10px; }
+.stops-list { background: #fff; position: relative; overflow-y: auto; overflow-x: hidden; padding: 0; padding-bottom: 20px; flex: 1; }
+.stops-rows { width: 100%; }
+.stop-row { display: flex; flex-direction: row; align-items: stretch; gap: 0; min-height: 50px; }
+.timeline { width: 50px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; position: relative; }
+.timeline-line { width: 4px; background: #e0e0e0; flex: 1; }
+.timeline-circle { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid #1976d2; box-sizing: border-box; z-index: 2; margin: -2px 0; }
+.timeline.first .line-top { visibility: hidden; }
+.timeline.last .line-bottom { visibility: hidden; }
+.stop-main { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 8px 10px 8px 0; border-bottom: 1px solid #f0f0f0; }
+.stop-name { font-size: 14px; font-weight: 600; display: flex; gap: 4px; }
+.seq-num { color: #1976d2; font-weight: 700; min-width: 20px; font-size: 12px; }
+.stop-code { font-size: 11px; color: #777; margin-right: 24px; }
+.stop-buses { margin-top: 6px; margin-right: 24px; display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; }
+.bus-chip { border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold; display: inline-flex; align-items: center; }
+.bus-soon { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+.bus-mid  { background: #fffde7; color: #f9a825; border: 1px solid #fff9c4; }
+.bus-far  { background: #e1f5fe; color: #0277bd; border: 1px solid #b3e5fc; }
+.bus-late { background: #f5f5f5; color: #757575; border: 1px solid #e0e0e0; }
+.bus-icon-timeline { position: absolute; right: 25px; font-size: 24px; z-index: 50; pointer-events: none; transform: translate3d(50%, -50%, 0); transition: top 0.5s linear; }
+.footer-note-global { margin: 4px 0 10px; font-size: 10px; color: #999; text-align: center; }
