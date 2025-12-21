@@ -114,8 +114,40 @@ body.mode-dual .pane-nearby { width: 40%; max-width: 450px; opacity: 1; }
 .sb-dest { font-size: 13px; color: #555; margin-right: 10px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
 
 /* --- התאמות קיימות --- */
-#locateMeBtn { top: 70px; } /* נזיז קצת למטה */
-body.mode-dual #bottomSheet { 
+/* style.css */
+
+/* --- כפתור מיקום --- */
+#locateMeBtn {
+  position: absolute;
+  /* ממוקם נמוך יותר כדי לא להתנגש עם כפתור המצבים */
+  top: 70px; 
+  left: 15px; 
+  z-index: 2500; /* גבוה יותר מהכל */
+  
+  background: #ffffff;
+  border: none;
+  border-radius: 50%; /* שיהיה עגול ויפה */
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  transition: transform 0.2s, background 0.2s;
+}
+
+#locateMeBtn:active {
+  transform: scale(0.90);
+  background: #f0f0f0;
+}
+
+/* במצב כפול, אם הפאנל מסתיר, נוודא שהוא נשאר זמין */
+body.mode-dual #locateMeBtn {
+  left: 15px; /* נשאר בשמאל, המפה זזה */
+}
+
   height: 35vh !important; /* נקטין את הגרף במצב כפול */
   width: 100%;
 }
