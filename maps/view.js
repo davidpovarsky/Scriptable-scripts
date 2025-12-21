@@ -1,5 +1,5 @@
 // view.js
-// בונה HTML עם תמיכה במצב דואלי (Dual Mode) - גרסה מתוקנת
+// בונה HTML עם bundle מלא - תיקון סופי
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -43,56 +43,41 @@ module.exports.getHtml = function() {
         'web/app.js'
       ];
       
+      // התחלת IIFE
       allJs = '(function() {\n';
       allJs += '  "use strict";\n\n';
-      allJs += '  console.log("🔧 Loading KavNav modules...");\n\n';
+      allJs += '  console.log("🔧 KavNav Bundle Loading...");\n\n';
       
-      jsFiles.forEach((file, idx) => {
+      jsFiles.forEach((file) => {
         const path = fm.joinPath(baseDir, file);
         if (fm.fileExists(path)) {
           let code = fm.readString(path);
           
-          // 🔹 ניקוי מוחלט של imports/exports
+          // ניקוי imports/exports
           code = code
-            // הסרת כל שורות import
-            .replace(/^import\s+.*?;?\s*$/gm, '')
+            .replace(/^import\s+.*?from\s+['"][^'"]+['"];?\s*$/gm, '')
             .replace(/^import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"];?\s*$/gm, '')
-            // הסרת export מתחילת שורות
             .replace(/^export\s+(class|function|const|let|var)\s+/gm, '$1 ')
             .replace(/^export\s+default\s+/gm, '')
             .replace(/^export\s+\{[^}]+\};?\s*$/gm, '')
-            // ניקוי שורות ריקות מיותרות
-            .replace(/\n\s*\n\s*\n/g, '\n\n');
+            .replace(/\n{3,}/g, '\n\n');
           
-          // 🔹 טיפול מיוחד ב-app.js
+          // טיפול מיוחד ב-app.js
           if (file === 'web/app.js') {
-            // מציאת הפונקציה initLocalMode והסרתה (לא נחוצה ב-Scriptable)
-            code = code.replace(/\/\/ ={40,}[\s\S]*?if \(IS_LOCAL\)[\s\S]*$/m, '');
-            
-            // החלפת DOMContentLoaded ב-IIFE שרץ מיד
+            // הסרת DOMContentLoaded wrapper
             code = code.replace(
               /document\.addEventListener\(['"]DOMContentLoaded['"],\s*async\s+function\(\)\s*\{/,
-              '(async function initApp() {'
+              '// DOMContentLoaded removed - will be handled at end\nconst initApp = async function() {'
             );
             
-            // סגירת ה-IIFE והרצתה מיידית או אחרי DOM
+            // הסרת הסוגר הסופי של addEventListener
             code = code.replace(
-              /console\.log\(["']📱 KavNav Client Script Loaded["']\);?\s*$/,
-              `
-  console.log("📱 KavNav Client Script Loaded");
-})();
-
-// הרצה מיידית אם DOM מוכן, אחרת המתנה
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initApp);
-} else {
-  console.log("📋 DOM already ready, running immediately");
-  initApp().catch(e => console.error("Init error:", e));
-}`
+              /\}\);[\s\n]*console\.log\(["']📱 KavNav Client Script Loaded["']\);?/,
+              '};\n\nconsole.log("📱 KavNav Client Script Loaded");'
             );
           }
           
-          allJs += `  // ========== ${file} ==========\n`;
+          allJs += `  // ===== ${file} =====\n`;
           allJs += code.split('\n').map(line => '  ' + line).join('\n');
           allJs += '\n\n';
           
@@ -102,13 +87,38 @@ if (document.readyState === 'loading') {
         }
       });
       
-      allJs += '})();\n';
-      allJs += '\nconsole.log("✅ Bundle complete");\n';
+      // סגירת IIFE + קריאה לאתחול
+      allJs += `
+  // ===== Auto-initialization =====
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', async function() {
+      console.log("📋 DOM loaded via event");
+      await initApp();
+    });
+  } else {
+    console.log("📋 DOM already ready");
+    initApp().catch(e => console.error("Init error:", e));
+  }
+  
+})();
+
+console.log("✅ KavNav Bundle Complete");
+`;
       
-      // Debug output
-      const debugPath = fm.joinPath(baseDir, 'debug-bundle.js');
-      fm.writeString(debugPath, allJs);
-      console.log(`📝 Debug: debug-bundle.js (${allJs.length} chars)`);
+      // Debug output - שמירה גם ב-Local וגם ב-iCloud
+      const debugPathLocal = fm.joinPath(baseDir, 'debug-bundle.js');
+      fm.writeString(debugPathLocal, allJs);
+      console.log(`📝 Debug (local): debug-bundle.js (${allJs.length} chars)`);
+      
+      // שמירה נוספת ב-iCloud
+      try {
+        const fmCloud = FileManager.iCloud();
+        const debugPathCloud = fmCloud.joinPath(fmCloud.documentsDirectory(), 'debug-bundle.js');
+        fmCloud.writeString(debugPathCloud, allJs);
+        console.log(`📝 Debug (iCloud): debug-bundle.js saved`);
+      } catch (e) {
+        console.log(`⚠️ iCloud save failed: ${e}`);
+      }
       
     } catch (e) {
       console.error('❌ Bundle error:', e);
