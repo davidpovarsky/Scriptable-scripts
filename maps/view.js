@@ -64,17 +64,8 @@ module.exports.getHtml = function() {
           
           // טיפול מיוחד ב-app.js
           if (file === 'web/app.js') {
-            // הסרת DOMContentLoaded wrapper
-            code = code.replace(
-              /document\.addEventListener\(['"]DOMContentLoaded['"],\s*async\s+function\(\)\s*\{/,
-              '// DOMContentLoaded removed - will be handled at end\nconst initApp = async function() {'
-            );
-            
-            // הסרת הסוגר הסופי של addEventListener
-            code = code.replace(
-              /\}\);[\s\n]*console\.log\(["']📱 KavNav Client Script Loaded["']\);?/,
-              '};\n\nconsole.log("📱 KavNav Client Script Loaded");'
-            );
+            // אין צורך להסיר DOMContentLoaded - זה כבר לא קיים בקובץ החדש
+            // הקובץ כבר מתוקן עם const initApp = async function()
           }
           
           allJs += `  // ===== ${file} =====\n`;
