@@ -1,28 +1,8 @@
 // view.js
-// בונה HTML עם תמיכה במצב דואלי + טעינת מודולים דינמית
+// בונה HTML עם תמיכה במודולים - גרסה מתוקנת!
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
-  
-  // רשימת כל קבצי ה-CSS (בסדר!)
-  const cssFiles = [
-    'styles/base.css',
-    'styles/map.css', 
-    'styles/stops.css',
-    'styles/routes.css'
-  ];
-  
-  // רשימת כל המודולים (בסדר!)
-  const jsModules = [
-    'modules/map/mapManager.js',
-    'modules/map/busMarkers.js',
-    'modules/map/userLocation.js',
-    'modules/stops/nearbyPanel.js',
-    'modules/routes/bottomSheet.js',
-    'modules/routes/routeCard.js',
-    'modules/ui/modeToggle.js',
-    'modules/ui/utils.js'
-  ];
   
   let allCss = '';
   let allJs = '';
@@ -32,50 +12,108 @@ module.exports.getHtml = function() {
       const fm = FileManager.local();
       const baseDir = fm.documentsDirectory();
       
-      // טעינת CSS
+      // ========================================
+      // 1. טעינת CSS (פשוט - מחברים הכל)
+      // ========================================
+      const cssFiles = [
+        'styles/base.css',
+        'styles/map.css',
+        'styles/stops.css',
+        'styles/routes.css'
+      ];
+      
       cssFiles.forEach(file => {
         const path = fm.joinPath(baseDir, file);
         if (fm.fileExists(path)) {
           allCss += fm.readString(path) + '\n\n';
-        } else {
-          console.warn(`CSS not found: ${file}`);
         }
       });
       
-      // טעינת JS Modules
-      jsModules.forEach(file => {
+      // ========================================
+      // 2. טעינת JS - סדר חשוב!
+      // ========================================
+      
+      // המודולים בסדר הנכון (classes קודם)
+      const moduleFiles = [
+        'modules/map/mapManager.js',
+        'modules/map/busMarkers.js',
+        'modules/map/userLocation.js',
+        'modules/stops/nearbyPanel.js',
+        'modules/routes/bottomSheet.js',
+        'modules/routes/routeCard.js',
+        'modules/ui/modeToggle.js',
+        'modules/ui/utils.js'
+      ];
+      
+      // קריאת כל המודולים
+      const modules = {};
+      moduleFiles.forEach(file => {
         const path = fm.joinPath(baseDir, file);
         if (fm.fileExists(path)) {
           let content = fm.readString(path);
           
-          // המרת ES6 modules לקוד רגיל
-          // הסרת export
-          content = content.replace(/export\s+(class|function|const|let|var)/g, '$1');
-          content = content.replace(/export\s+default\s+/g, '');
+          // הסרת export statements
+          content = content.replace(/export\s+class\s+/g, 'class ');
+          content = content.replace(/export\s+function\s+/g, 'function ');
+          content = content.replace(/export\s+const\s+/g, 'const ');
           content = content.replace(/export\s+\{[^}]+\}/g, '');
+          content = content.replace(/export\s+default\s+/g, '');
           
-          // הסרת import (נטפל בזה בהמשך)
+          // הסרת import statements
           content = content.replace(/import\s+.*?from\s+['"].*?['"]\s*;?\s*/g, '');
           
-          allJs += content + '\n\n';
-        } else {
-          console.warn(`Module not found: ${file}`);
+          modules[file] = content;
         }
       });
       
-      // טעינת app.js האחרון
+      // בניית הקוד המאוחד
+      allJs = `
+// ========================================
+// KavNav Modular Bundle
+// Built dynamically by view.js
+// ========================================
+
+(function() {
+  'use strict';
+  
+  // ========================================
+  // Modules
+  // ========================================
+  
+`;
+      
+      // הוספת כל המודולים
+      moduleFiles.forEach(file => {
+        if (modules[file]) {
+          allJs += `  // ${file}\n`;
+          allJs += modules[file] + '\n\n';
+        }
+      });
+      
+      // טעינת app.js (הלוגיקה הראשית)
       const appPath = fm.joinPath(baseDir, 'web/app.js');
       if (fm.fileExists(appPath)) {
         let appContent = fm.readString(appPath);
         
-        // הסרת imports מ-app.js
+        // הסרת כל ה-imports
+        appContent = appContent.replace(/import\s+\{[^}]+\}\s+from\s+['"].*?['"]\s*;?\s*/g, '');
         appContent = appContent.replace(/import\s+.*?from\s+['"].*?['"]\s*;?\s*/g, '');
         
+        allJs += `  // ========================================\n`;
+        allJs += `  // Main App\n`;
+        allJs += `  // ========================================\n\n`;
         allJs += appContent;
       }
       
-    } catch (e) { 
-      console.error('Error loading modules:', e); 
+      allJs += `
+  
+  console.log("📱 KavNav Modular Bundle Loaded");
+  
+})();
+`;
+      
+    } catch (e) {
+      console.error('Error building modular bundle:', e);
     }
   }
   
@@ -127,7 +165,7 @@ module.exports.getHtml = function() {
   </div>
 
   <script>window.APP_ENVIRONMENT = 'scriptable';</script>
-  ${isScriptable && allJs ? `<script>(function(){${allJs}})();</script>` : ''}
+  ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
 </body>
 </html>`;
 };
