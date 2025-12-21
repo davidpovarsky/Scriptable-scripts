@@ -108,6 +108,18 @@ module.exports.run = async function(argsObj) {
   const wv = new WebView();
   const html = viewService.getHtml();
   await wv.loadHTML(html);
+  // --- הוספה חדשה: הזרקת התחנות הקרובות לתצוגה הדואלית ---
+  if (nearestStops && nearestStops.length) {
+    try {
+      // מעבירים את המערך כמו שהוא ל-View כדי ליצור את הבועות
+      const jsStops = `window.initNearbyStops && window.initNearbyStops(${JSON.stringify(nearestStops)});`;
+      await wv.evaluateJavaScript(jsStops, false);
+      console.log("Injected nearby stops to View");
+    } catch (e) {
+      console.error("Failed to inject nearby stops:", e);
+    }
+  }
+  // ---------------------------------------------------------
 
   // העברת מיקום המשתמש (אם קיים) ל-HTML
   if (userLat != null && userLon != null) {
