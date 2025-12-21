@@ -1,106 +1,68 @@
 // view.js
-// בונה HTML שטוען את הקבצים המקומיים או מ-GitHub
-
 module.exports.getHtml = function() {
-  // בודק אם אנחנו ב-Scriptable
   const isScriptable = typeof FileManager !== 'undefined';
   
   let cssContent = '';
   let jsContent = '';
   
   if (isScriptable) {
-    // טוען את הקבצים המקומיים
     try {
       const fm = FileManager.local();
       const webDir = fm.joinPath(fm.documentsDirectory(), "web");
-      
       const cssPath = fm.joinPath(webDir, "style.css");
       const jsPath = fm.joinPath(webDir, "app.js");
-      
-      if (fm.fileExists(cssPath)) {
-        cssContent = fm.readString(cssPath);
-      }
-      if (fm.fileExists(jsPath)) {
-        jsContent = fm.readString(jsPath);
-      }
-    } catch (e) {
-      console.error("Error loading web files:", e);
-    }
+      if (fm.fileExists(cssPath)) cssContent = fm.readString(cssPath);
+      if (fm.fileExists(jsPath)) jsContent = fm.readString(jsPath);
+    } catch (e) { console.error(e); }
   }
   
   return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>מסלולי קווים - מפה חכמה</title>
+  <title>KavNav Dual</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-
-  <!-- Icons font -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0&icon_names=directions_bus" />
-
-  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-  ${isScriptable && cssContent ? 
-    `<style>${cssContent}</style>` : 
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/style.css">'
-  }
+  ${isScriptable && cssContent ? `<style>${cssContent}</style>` : ''}
 </head>
-<body>
-  
-  <!-- בועת מצבים -->
-  <div id="modeToggleContainer">
-    <button class="mode-button" id="mapOnlyBtn">
-      <span>🗺️</span>
-      <span>מפה בלבד</span>
-    </button>
-    <button class="mode-button active" id="dualModeBtn">
-      <span>📍</span>
-      <span>מצב כפול</span>
-    </button>
-  </div>
-
-  <!-- מפה -->
-  <div id="map">
-    <button id="locateMeBtn" title="המיקום שלי">📍</button>
-  </div>
-
-  <!-- פאנל תחנות קרובות -->
-  <div id="nearbyStopsPanel">
-    <div class="panel-header">
-      <h2>
-        <span>🚏</span>
-        <span>תחנות קרובות</span>
-      </h2>
-      <p id="locationInfo">מאתר את המיקום שלך...</p>
+<body class="mode-map-only"> <div id="modeToggleContainer">
+    <div class="mode-toggle">
+      <input type="radio" name="viewMode" id="modeDual" value="dual">
+      <label for="modeDual">תצוגה כפולה</label>
+      
+      <input type="radio" name="viewMode" id="modeMap" value="map" checked>
+      <label for="modeMap">מפה בלבד</label>
+      
+      <div class="toggle-bg"></div>
     </div>
+  </div>
+
+  <div class="main-split-container">
     
-    <div class="panel-content">
-      <div id="stopsBubblesContainer" class="stops-bubbles">
-        <div class="loading-message">טוען תחנות קרובות...</div>
+    <div class="pane-nearby">
+      <div class="nearby-header">תחנות קרובות</div>
+      <div id="nearbyStopsList" class="nearby-list">
+        </div>
+    </div>
+
+    <div class="pane-map-wrapper">
+      <div id="map">
+        <button id="locateMeBtn" title="המיקום שלי">📍</button>
+      </div>
+      <div id="bottomSheet">
+        <div id="dragHandleArea"><div class="handle-bar"></div></div>
+        <div id="routesContainer"></div>
+        <div class="footer-note-global">ETA • KavNav</div>
       </div>
     </div>
+
   </div>
 
-  <!-- Bottom Sheet - מסלולים -->
-  <div id="bottomSheet">
-    <div id="dragHandleArea">
-      <div class="handle-bar"></div>
-    </div>
-    <div id="routesContainer"></div>
-    <div class="footer-note-global">המיקום מוערך ע"י המערכת (ETA) • מבוסס KavNav</div>
-  </div>
-
-  <!-- הגדרת מצב ריצה -->
-  <script>
-    window.APP_ENVIRONMENT = 'scriptable';
-  </script>
-
-  ${isScriptable && jsContent ? 
-    `<script>${jsContent}</script>` : 
-    '<script src="https://cdn.jsdelivr.net/gh/davidpovarsky/Scriptable-scripts@main/web/app.js"></script>'
-  }
+  <script>window.APP_ENVIRONMENT = 'scriptable';</script>
+  ${isScriptable && jsContent ? `<script>${jsContent}</script>` : ''}
 </body>
 </html>`;
 };
