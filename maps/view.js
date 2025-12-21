@@ -1,5 +1,5 @@
 // view.js
-// גרסה מתוקנת - ללא IIFE כדי ש-window functions יהיו נגישים!
+// תיקון: אם DOMContentLoaded כבר קרה, הרץ מיד!
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -24,55 +24,69 @@ module.exports.getHtml = function() {
         }
       });
       
-      // JS - בסדר הנכון, ללא IIFE!
+      // JS
       const jsFiles = [
-        'modules/ui/utils.js',          // 1. getVariedColor, fetchJson
-        'modules/map/mapManager.js',    // 2. MapManager class
-        'modules/map/busMarkers.js',    // 3. BusMarkers class  
-        'modules/map/userLocation.js',  // 4. UserLocationManager class
-        'modules/stops/nearbyPanel.js', // 5. NearbyPanel class
-        'modules/routes/bottomSheet.js',// 6. BottomSheet class
-        'modules/routes/routeCard.js',  // 7. RouteCard class
-        'modules/ui/modeToggle.js',     // 8. ModeToggle class
-        'web/app.js'                    // 9. window.initStaticData, etc
+        'modules/ui/utils.js',
+        'modules/map/mapManager.js',
+        'modules/map/busMarkers.js',
+        'modules/map/userLocation.js',
+        'modules/stops/nearbyPanel.js',
+        'modules/routes/bottomSheet.js',
+        'modules/routes/routeCard.js',
+        'modules/ui/modeToggle.js',
+        'web/app.js'
       ];
       
-      // בניית הקוד - ללא IIFE!
-      allJs = `// KavNav Modular Bundle (No IIFE)\nconsole.log("🔧 Loading KavNav modular bundle...");\n\n`;
+      allJs = `console.log("🔧 Loading KavNav...");\n\n`;
       
       jsFiles.forEach((file, idx) => {
         const path = fm.joinPath(baseDir, file);
         if (fm.fileExists(path)) {
           let code = fm.readString(path);
           
-          // ניקוי imports/exports
+          // ניקוי
           code = code
-            .replace(/export\s+class\s+/g, 'class ')
-            .replace(/export\s+function\s+/g, 'function ')
-            .replace(/export\s+const\s+/g, 'const ')
-            .replace(/export\s+let\s+/g, 'let ')
-            .replace(/export\s+var\s+/g, 'var ')
+            .replace(/export\s+(class|function|const|let|var)\s+/g, '$1 ')
             .replace(/export\s+\{[^}]+\}/g, '')
             .replace(/export\s+default\s+/g, '')
             .replace(/import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"]\s*;?\s*/g, '')
             .replace(/import\s+[^\n]+\n/g, '');
           
-          allJs += `// ===== ${idx + 1}. ${file} =====\n`;
-          allJs += code + '\n\n';
+          // תיקון DOMContentLoaded - אם כבר נטען, הרץ מיד
+          if (file === 'web/app.js') {
+            code = code.replace(
+              /document\.addEventListener\('DOMContentLoaded',\s*async\s+function\(\)\s*\{/,
+              `(function() {
+  const initApp = async function() {`
+            );
+            
+            // סגירת הפונקציה והרצה
+            code = code.replace(
+              /\}\);[\s\n]*$/,
+              `  };
+  
+  // הרץ מיד אם DOM כבר טעון, אחרת חכה
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+  } else {
+    console.log("📋 DOM already loaded, running immediately");
+    initApp();
+  }
+})();`
+            );
+          }
           
-          console.log(`✅ JS: ${file} (${code.length} chars)`);
-        } else {
-          console.error(`❌ Missing: ${file}`);
+          allJs += `// ===== ${file} =====\n${code}\n\n`;
+          console.log(`✅ JS: ${file}`);
         }
       });
       
-      allJs += `console.log("✅ KavNav modular bundle loaded");\n`;
-      allJs += `console.log("🔍 Available window functions:", Object.keys(window).filter(k => k.startsWith('init') || k.startsWith('update') || k.startsWith('set')));\n`;
+      allJs += `console.log("✅ Bundle loaded");\n`;
       
-      // שמירת debug
+      // Debug
       const debugPath = fm.joinPath(baseDir, 'debug-bundle.js');
       fm.writeString(debugPath, allJs);
-      console.log(`📝 Debug saved: debug-bundle.js`);
+      console.log(`📝 Debug: debug-bundle.js`);
       
     } catch (e) {
       console.error('❌ Error:', e);
@@ -83,7 +97,7 @@ module.exports.getHtml = function() {
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>KavNav Modular</title>
+  <title>KavNav</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -121,17 +135,14 @@ module.exports.getHtml = function() {
     </div>
   </div>
 
-  <script>
-    window.APP_ENVIRONMENT = 'scriptable';
-    console.log("🌐 HTML loaded");
-  </script>
+  <script>window.APP_ENVIRONMENT = 'scriptable';</script>
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
   <script>
-    console.log("🎬 All scripts loaded");
-    console.log("📋 window.initStaticData exists?", typeof window.initStaticData);
-    console.log("📋 window.updateRealtimeData exists?", typeof window.updateRealtimeData);
-    console.log("📋 window.initNearbyStops exists?", typeof window.initNearbyStops);
-    console.log("📋 window.setUserLocation exists?", typeof window.setUserLocation);
+    console.log("🎬 Scripts loaded");
+    console.log("window.initStaticData?", typeof window.initStaticData);
+    console.log("window.updateRealtimeData?", typeof window.updateRealtimeData);
+    console.log("window.initNearbyStops?", typeof window.initNearbyStops);
+    console.log("window.setUserLocation?", typeof window.setUserLocation);
   </script>
 </body>
 </html>`;
