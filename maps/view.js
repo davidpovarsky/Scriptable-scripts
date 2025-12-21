@@ -1,5 +1,5 @@
 // view.js
-// תיקון: אם DOMContentLoaded כבר קרה, הרץ מיד!
+// בונה HTML עם תמיכה במצב דואלי (Dual Mode) - גרסה מתוקנת
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -14,8 +14,14 @@ module.exports.getHtml = function() {
       
       console.log("🔧 Building modular bundle...");
       
-      // CSS
-      const cssFiles = ['styles/base.css', 'styles/map.css', 'styles/stops.css', 'styles/routes.css'];
+      // ===== CSS =====
+      const cssFiles = [
+        'styles/base.css', 
+        'styles/map.css', 
+        'styles/stops.css', 
+        'styles/routes.css'
+      ];
+      
       cssFiles.forEach(f => {
         const p = fm.joinPath(baseDir, f);
         if (fm.fileExists(p)) {
@@ -24,7 +30,7 @@ module.exports.getHtml = function() {
         }
       });
       
-      // JS
+      // ===== JS =====
       const jsFiles = [
         'modules/ui/utils.js',
         'modules/map/mapManager.js',
@@ -37,59 +43,75 @@ module.exports.getHtml = function() {
         'web/app.js'
       ];
       
-      allJs = `console.log("🔧 Loading KavNav...");\n\n`;
+      allJs = '(function() {\n';
+      allJs += '  "use strict";\n\n';
+      allJs += '  console.log("🔧 Loading KavNav modules...");\n\n';
       
       jsFiles.forEach((file, idx) => {
         const path = fm.joinPath(baseDir, file);
         if (fm.fileExists(path)) {
           let code = fm.readString(path);
           
-          // ניקוי
+          // 🔹 ניקוי מוחלט של imports/exports
           code = code
-            .replace(/export\s+(class|function|const|let|var)\s+/g, '$1 ')
-            .replace(/export\s+\{[^}]+\}/g, '')
-            .replace(/export\s+default\s+/g, '')
-            .replace(/import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"]\s*;?\s*/g, '')
-            .replace(/import\s+[^\n]+\n/g, '');
+            // הסרת כל שורות import
+            .replace(/^import\s+.*?;?\s*$/gm, '')
+            .replace(/^import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"];?\s*$/gm, '')
+            // הסרת export מתחילת שורות
+            .replace(/^export\s+(class|function|const|let|var)\s+/gm, '$1 ')
+            .replace(/^export\s+default\s+/gm, '')
+            .replace(/^export\s+\{[^}]+\};?\s*$/gm, '')
+            // ניקוי שורות ריקות מיותרות
+            .replace(/\n\s*\n\s*\n/g, '\n\n');
           
-          // תיקון DOMContentLoaded - אם כבר נטען, הרץ מיד
+          // 🔹 טיפול מיוחד ב-app.js
           if (file === 'web/app.js') {
+            // מציאת הפונקציה initLocalMode והסרתה (לא נחוצה ב-Scriptable)
+            code = code.replace(/\/\/ ={40,}[\s\S]*?if \(IS_LOCAL\)[\s\S]*$/m, '');
+            
+            // החלפת DOMContentLoaded ב-IIFE שרץ מיד
             code = code.replace(
-              /document\.addEventListener\('DOMContentLoaded',\s*async\s+function\(\)\s*\{/,
-              `(function() {
-  const initApp = async function() {`
+              /document\.addEventListener\(['"]DOMContentLoaded['"],\s*async\s+function\(\)\s*\{/,
+              '(async function initApp() {'
             );
             
-            // סגירת הפונקציה והרצה
+            // סגירת ה-IIFE והרצתה מיידית או אחרי DOM
             code = code.replace(
-              /\}\);[\s\n]*$/,
-              `  };
-  
-  // הרץ מיד אם DOM כבר טעון, אחרת חכה
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initApp);
-  } else {
-    console.log("📋 DOM already loaded, running immediately");
-    initApp();
-  }
-})();`
+              /console\.log\(["']📱 KavNav Client Script Loaded["']\);?\s*$/,
+              `
+  console.log("📱 KavNav Client Script Loaded");
+})();
+
+// הרצה מיידית אם DOM מוכן, אחרת המתנה
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  console.log("📋 DOM already ready, running immediately");
+  initApp().catch(e => console.error("Init error:", e));
+}`
             );
           }
           
-          allJs += `// ===== ${file} =====\n${code}\n\n`;
+          allJs += `  // ========== ${file} ==========\n`;
+          allJs += code.split('\n').map(line => '  ' + line).join('\n');
+          allJs += '\n\n';
+          
           console.log(`✅ JS: ${file}`);
+        } else {
+          console.log(`⚠️ Missing: ${file}`);
         }
       });
       
-      allJs += `console.log("✅ Bundle loaded");\n`;
+      allJs += '})();\n';
+      allJs += '\nconsole.log("✅ Bundle complete");\n';
       
-      // Debug
+      // Debug output
       const debugPath = fm.joinPath(baseDir, 'debug-bundle.js');
       fm.writeString(debugPath, allJs);
-      console.log(`📝 Debug: debug-bundle.js`);
+      console.log(`📝 Debug: debug-bundle.js (${allJs.length} chars)`);
       
     } catch (e) {
-      console.error('❌ Error:', e);
+      console.error('❌ Bundle error:', e);
     }
   }
   
@@ -119,7 +141,7 @@ module.exports.getHtml = function() {
     <div class="pane-nearby">
       <div class="nearby-header">תחנות קרובות</div>
       <div id="nearbyStopsList" class="nearby-list">
-        <div style="padding:20px; text-align:center; color:#888;">טוען...</div>
+        <div style="padding:20px; text-align:center; color:#888;">טוען תחנות...</div>
       </div>
     </div>
 
@@ -137,13 +159,6 @@ module.exports.getHtml = function() {
 
   <script>window.APP_ENVIRONMENT = 'scriptable';</script>
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
-  <script>
-    console.log("🎬 Scripts loaded");
-    console.log("window.initStaticData?", typeof window.initStaticData);
-    console.log("window.updateRealtimeData?", typeof window.updateRealtimeData);
-    console.log("window.initNearbyStops?", typeof window.initNearbyStops);
-    console.log("window.setUserLocation?", typeof window.setUserLocation);
-  </script>
 </body>
 </html>`;
 };
