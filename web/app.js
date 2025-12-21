@@ -65,20 +65,35 @@ document.addEventListener('DOMContentLoaded', async function() {
     busLayerGroup = L.layerGroup().addTo(mapInstance);
     busLayerGroup.setZIndex(1000);
 
+    // app.js - בתוך ה-Event Listener של DOMContentLoaded
+
     const locateBtn = document.getElementById('locateMeBtn');
     if (locateBtn) {
         locateBtn.addEventListener('click', async () => {
-            if (IS_LOCAL) {
-                try {
-                    locateBtn.textContent = '⏳';
-                    const location = await getUserLocation();
-                    if (location) {
-                        window.setUserLocation(location.latitude, location.longitude);
-                        centerOnUser();
-                    }
-                } catch (e) { alert("שגיאה במיקום"); } finally { locateBtn.textContent = '📍'; }
-            } else {
-                centerOnUser();
+            // חיווי ויזואלי לטעינה
+            const originalIcon = locateBtn.textContent;
+            locateBtn.textContent = '⏳';
+            
+            try {
+                // ננסה לקבל מיקום עדכני (עובד בדפדפן, ולפעמים ב-WebView)
+                const location = await getUserLocation();
+                
+                if (location) {
+                    console.log("Updated location:", location);
+                    window.setUserLocation(location.latitude, location.longitude);
+                    centerOnUser();
+                } else {
+                    // אם לא קיבלנו מיקום חדש, נתמקד בקיים
+                    centerOnUser();
+                }
+            } catch (e) {
+                console.log("Could not refresh location, using last known:", e);
+                centerOnUser(); // Fallback: התמקדות במיקום שהגיע מ-main.js
+            } finally {
+                // החזרת האייקון
+                setTimeout(() => {
+                    locateBtn.textContent = originalIcon;
+                }, 500);
             }
         });
     }
