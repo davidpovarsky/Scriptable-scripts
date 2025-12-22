@@ -1,0 +1,288 @@
+/* styles/stopsPanel.css
+   Stops panel UI (פרויקט 2) - Scoped ל-pane-nearby בלבד
+*/
+
+.pane-nearby {
+  position: relative;
+  overflow: hidden;
+  background: #0b0f14;
+  color: #e8eef7;
+}
+
+/* Root */
+.pane-nearby .kavnav-stops-panel-root {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+/* Header */
+.pane-nearby .kavnav-stops-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(11, 15, 20, 0.95);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.pane-nearby #refresh-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #e8eef7;
+  font-size: 18px;
+}
+
+.pane-nearby #refresh-btn:active {
+  transform: scale(0.98);
+}
+
+.pane-nearby .scroll-area {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.pane-nearby .scroll-area::-webkit-scrollbar {
+  display: none;
+}
+
+/* Stop buttons */
+.pane-nearby .stop-btn {
+  display: grid;
+  grid-template-columns: auto;
+  gap: 2px;
+  min-width: 160px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #e8eef7;
+  text-align: right;
+  cursor: pointer;
+}
+
+.pane-nearby .stop-btn.active {
+  border-color: rgba(80, 160, 255, 0.6);
+  background: rgba(80, 160, 255, 0.12);
+}
+
+.pane-nearby .stop-name {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.1;
+}
+
+.pane-nearby .stop-code {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Content */
+.pane-nearby #content {
+  padding: 12px;
+  overflow: auto;
+  height: calc(100% - 64px);
+}
+
+.pane-nearby .loader-msg,
+.pane-nearby .empty-state {
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  color: rgba(232, 238, 247, 0.85);
+}
+
+/* Stop title */
+.pane-nearby .stop-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.pane-nearby .stop-title-name {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.pane-nearby .stop-title-code {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+/* Line cards */
+.pane-nearby .line-card {
+  margin-bottom: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+.pane-nearby .line-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pane-nearby .line-num {
+  min-width: 48px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font-weight: 900;
+  background: rgba(80, 160, 255, 0.18);
+  border: 1px solid rgba(80, 160, 255, 0.35);
+}
+
+.pane-nearby .line-dest {
+  font-weight: 700;
+  opacity: 0.92;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-nearby .line-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pane-nearby .time-chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  font-weight: 800;
+}
+
+/* Connection status */
+.pane-nearby .connection-status {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 6;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(255, 80, 80, 0.18);
+  border: 1px solid rgba(255, 80, 80, 0.35);
+}
+.pane-nearby .connection-status.hidden {
+  display: none;
+}
+
+/* Search overlay (לא על כל המסך — רק בתוך pane) */
+.pane-nearby .search-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0,0,0,0.45);
+  display: none;
+}
+.pane-nearby .search-overlay.active {
+  display: block;
+}
+
+.pane-nearby .search-container {
+  position: absolute;
+  top: 70px;
+  left: 12px;
+  right: 12px;
+  z-index: 60;
+  display: none;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(11, 15, 20, 0.98);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.pane-nearby .search-container.active {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.pane-nearby #search-input {
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #e8eef7;
+  padding: 0 12px;
+  outline: none;
+}
+
+.pane-nearby #search-btn {
+  width: 44px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #e8eef7;
+  font-size: 18px;
+}
+
+.pane-nearby .search-results {
+  grid-column: 1 / -1;
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+}
+
+.pane-nearby .search-result {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  cursor: pointer;
+}
+.pane-nearby .search-result:last-child {
+  border-bottom: none;
+}
+.pane-nearby .result-name {
+  font-weight: 800;
+}
+.pane-nearby .result-code {
+  opacity: 0.8;
+  font-size: 12px;
+}
+.pane-nearby .no-results {
+  padding: 12px;
+  opacity: 0.85;
+}
+
+/* Toast */
+.pane-nearby .toast {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #fff;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.pane-nearby .toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
