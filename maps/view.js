@@ -3,25 +3,26 @@
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
-  
+
   let allCss = '';
   let allJs = '';
-  
+
   if (isScriptable) {
     try {
       const fm = FileManager.local();
       const baseDir = fm.documentsDirectory();
-      
+
       console.log("🔧 Building modular bundle...");
-      
+
       // ===== CSS =====
       const cssFiles = [
-        'styles/base.css', 
-        'styles/map.css', 
-        'styles/stops.css', 
-        'styles/routes.css'
+        'styles/base.css',
+        'styles/map.css',
+        'styles/stops.css',
+        'styles/routes.css',
+        'styles/stopsPanel.css'
       ];
-      
+
       cssFiles.forEach(f => {
         const p = fm.joinPath(baseDir, f);
         if (fm.fileExists(p)) {
@@ -29,30 +30,33 @@ module.exports.getHtml = function() {
           console.log(`✅ CSS: ${f}`);
         }
       });
-      
+
       // ===== JS =====
       const jsFiles = [
         'modules/ui/utils.js',
         'modules/map/mapManager.js',
         'modules/map/busMarkers.js',
         'modules/map/userLocation.js',
-        'modules/stops/nearbyPanel.js',
+
+        // Stops panel חדש (במקום nearbyPanel)
+        'modules/stops/kavnavStopsPanel.js',
+
         'modules/routes/bottomSheet.js',
         'modules/routes/routeCard.js',
         'modules/ui/modeToggle.js',
         'web/app.js'
       ];
-      
+
       // התחלת IIFE
       allJs = '(function() {\n';
       allJs += '  "use strict";\n\n';
       allJs += '  console.log("🔧 KavNav Bundle Loading...");\n\n';
-      
+
       jsFiles.forEach((file) => {
         const path = fm.joinPath(baseDir, file);
         if (fm.fileExists(path)) {
           let code = fm.readString(path);
-          
+
           // ניקוי imports/exports
           code = code
             .replace(/^import\s+.*?from\s+['"][^'"]+['"];?\s*$/gm, '')
@@ -61,23 +65,17 @@ module.exports.getHtml = function() {
             .replace(/^export\s+default\s+/gm, '')
             .replace(/^export\s+\{[^}]+\};?\s*$/gm, '')
             .replace(/\n{3,}/g, '\n\n');
-          
-          // טיפול מיוחד ב-app.js
-          if (file === 'web/app.js') {
-            // אין צורך להסיר DOMContentLoaded - זה כבר לא קיים בקובץ החדש
-            // הקובץ כבר מתוקן עם const initApp = async function()
-          }
-          
+
           allJs += `  // ===== ${file} =====\n`;
           allJs += code.split('\n').map(line => '  ' + line).join('\n');
           allJs += '\n\n';
-          
+
           console.log(`✅ JS: ${file}`);
         } else {
           console.log(`⚠️ Missing: ${file}`);
         }
       });
-      
+
       // סגירת IIFE + קריאה לאתחול
       allJs += `
   // ===== Auto-initialization =====
@@ -90,17 +88,17 @@ module.exports.getHtml = function() {
     console.log("📋 DOM already ready");
     initApp().catch(e => console.error("Init error:", e));
   }
-  
+
 })();
 
 console.log("✅ KavNav Bundle Complete");
 `;
-      
+
       // Debug output - שמירה גם ב-Local וגם ב-iCloud
       const debugPathLocal = fm.joinPath(baseDir, 'debug-bundle.js');
       fm.writeString(debugPathLocal, allJs);
       console.log(`📝 Debug (local): debug-bundle.js (${allJs.length} chars)`);
-      
+
       // שמירה נוספת ב-iCloud
       try {
         const fmCloud = FileManager.iCloud();
@@ -110,12 +108,12 @@ console.log("✅ KavNav Bundle Complete");
       } catch (e) {
         console.log(`⚠️ iCloud save failed: ${e}`);
       }
-      
+
     } catch (e) {
       console.error('❌ Bundle error:', e);
     }
   }
-  
+
   return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -140,9 +138,24 @@ console.log("✅ KavNav Bundle Complete");
 
   <div class="main-split-container">
     <div class="pane-nearby">
-      <div class="nearby-header">תחנות קרובות</div>
-      <div id="nearbyStopsList" class="nearby-list">
-        <div style="padding:20px; text-align:center; color:#888;">טוען תחנות...</div>
+      <!-- ===== Stops Panel (Project2 UI) ===== -->
+      <div id="stopsPanelRoot" class="kavnav-stops-panel-root">
+        <div id="search-overlay" class="search-overlay"></div>
+
+        <div id="search-container" class="search-container">
+          <input id="search-input" type="text" placeholder="חפש בתחנות הקרובות…" autocomplete="off" />
+          <button id="search-btn" type="button" title="חיפוש">🔍</button>
+          <div id="search-results" class="search-results"></div>
+        </div>
+
+        <div id="connection-status" class="connection-status hidden"></div>
+
+        <header class="kavnav-stops-header">
+          <button id="refresh-btn" type="button" title="רענון">⟳</button>
+          <div id="scroll-area" class="scroll-area"></div>
+        </header>
+
+        <div id="content"></div>
       </div>
     </div>
 
