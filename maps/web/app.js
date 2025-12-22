@@ -7,6 +7,7 @@
 let mapManager = null;
 let busMarkers = null;
 let userLocationManager = null;
+let nearbyPanel = null;
 let bottomSheet = null;
 let modeToggle = null;
 
@@ -24,17 +25,13 @@ const initApp = async function() {
 
   busMarkers = new BusMarkers(mapManager.getBusLayerGroup());
   userLocationManager = new UserLocationManager(mapManager);
+  nearbyPanel = new NearbyPanel();
   bottomSheet = new BottomSheet();
   modeToggle = new ModeToggle(mapManager);
 
   bottomSheet.init();
   modeToggle.init();
   userLocationManager.setupLocateButton();
-
-  // אתחול UI של תחנות (אם המודול נטען)
-  if (window.KavNavStopsPanel && typeof window.KavNavStopsPanel.ensureReady === 'function') {
-    window.KavNavStopsPanel.ensureReady();
-  }
 
   console.log("✅ All managers initialized");
 };
@@ -46,11 +43,9 @@ const initApp = async function() {
 window.initNearbyStops = function(stops) {
   if (!Array.isArray(stops)) return;
   console.log("📍 Initializing nearby stops:", stops.length);
-
-  if (window.KavNavStopsPanel && typeof window.KavNavStopsPanel.addStops === 'function') {
-    window.KavNavStopsPanel.addStops(stops);
-  } else {
-    console.warn("⚠️ KavNavStopsPanel not loaded yet");
+  
+  if (nearbyPanel) {
+    nearbyPanel.init(stops);
   }
 };
 
@@ -75,11 +70,11 @@ window.initStaticData = function(payloads) {
     }
 
     const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
-
+    
     if (mapManager && p.shapeCoords && p.shapeCoords.length) {
       mapManager.drawRoutePolyline(p.shapeCoords, color);
     }
-
+    
     const card = new RouteCard(routeId, p.meta, p.stops, color);
     card.create();
     routeCards.set(routeId, card);
@@ -103,7 +98,7 @@ window.updateRealtimeData = function(updates) {
   updates.forEach(u => {
     const routeId = u.routeId;
     const staticData = staticDataStore.get(routeId);
-
+    
     if (!staticData) {
       console.warn(`No static data for route ${routeId}`);
       return;
@@ -121,9 +116,8 @@ window.updateRealtimeData = function(updates) {
     }
   });
 
-  // ✅ עדכון הפאנל החדש (Project2 UI) מהפיד הקיים
-  if (window.KavNavStopsPanel && typeof window.KavNavStopsPanel.updateFromRealtimePayload === 'function') {
-    window.KavNavStopsPanel.updateFromRealtimePayload(updates);
+  if (nearbyPanel) {
+    nearbyPanel.updateTimes(updates);
   }
 
   console.log("✅ Realtime data updated");
