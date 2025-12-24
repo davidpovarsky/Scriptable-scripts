@@ -1,20 +1,76 @@
 // KavNavSearch.js - מודול חיפוש תחנות
 
+// ===============================
+// זיהוי סביבה וטעינת תלויות
+// ===============================
 var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
 var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
-var Config, Loader;
+var Config;
 
 if (IS_SCRIPTABLE) {
   Config = importModule('kavnav/KavNavConfig');
-  Loader = importModule('kavnav/KavNavLoader');
 } else {
-  if (typeof window.KavNavConfig !== 'undefined') Config = window.KavNavConfig;
-  if (typeof window.KavNavLoader !== 'undefined') Loader = window.KavNavLoader;
+  if (typeof window.KavNavConfig !== 'undefined') {
+    Config = window.KavNavConfig;
+  }
 }
 
 // ===============================
-// לוגיקת חיפוש
+// Cache בזיכרון
+// ===============================
+let stopsData = null;
+let stopsLoadPromise = null;
+
+// ===============================
+// טעינת stops.json
+// Scriptable: דרך KavNavLoader (מרכז את ההורדות)
+// Browser: fetch מה-URL
+// ===============================
+async function loadStopsData() {
+  if (stopsData) return stopsData;
+  if (stopsLoadPromise) return stopsLoadPromise;
+
+  stopsLoadPromise = (async () => {
+    try {
+      const url = Config.STOPS_JSON_URL;
+
+      if (IS_SCRIPTABLE) {
+        // מרכז הכל בלודר
+        try {
+          const Loader = importModule('kavnav/KavNavLoader');
+          const data = await Loader.loadStopsData();
+          stopsData = Array.isArray(data) ? data : [];
+          return stopsData;
+        } catch (e) {
+          console.warn('Loader loadStopsData failed, fallback to direct URL:', e);
+          // fallback: URL
+          const req = new Request(url);
+          req.timeoutInterval = 30;
+          const raw = await req.loadString();
+          stopsData = JSON.parse(raw);
+          return stopsData;
+        }
+      }
+
+      // Browser
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to load stops data');
+      stopsData = await response.json();
+      return stopsData;
+
+    } catch (e) {
+      console.error('Error loading stops data:', e);
+      stopsLoadPromise = null;
+      return [];
+    }
+  })();
+
+  return stopsLoadPromise;
+}
+
+// ===============================
+// פונקציית חיפוש חכמה
 // ===============================
 function normalizeText(text) {
   if (!text) return '';
@@ -30,26 +86,25 @@ function calculateRelevance(stop, searchTerms) {
   let score = 0;
 
   searchTerms.forEach(term => {
+    // התאמה לשם
     if (stopName === term) score += 1000;
     else if (stopName.startsWith(term)) score += 500;
     else if (stopName.includes(term)) score += 100;
 
+    // התאמה לקוד
     if (stopCode === term) score += 800;
     else if (stopCode.startsWith(term)) score += 400;
     else if (stopCode.includes(term)) score += 80;
 
+    // התאמה בתיאור
     if (stopDesc.includes(term)) score += 50;
 
+    // התאמה ב-ID
     if (stopId === term) score += 600;
     else if (stopId.includes(term)) score += 60;
   });
 
   return score;
-}
-
-// הפונקציה כעת פשוטה וקוראת ל-Loader
-async function loadStopsData() {
-  return await Loader.loadStopsData();
 }
 
 async function searchStops(query) {
@@ -72,14 +127,17 @@ async function searchStops(query) {
   return results;
 }
 
+// ===============================
+// Export לפי סביבה
+// ===============================
 if (IS_SCRIPTABLE) {
   module.exports = {
-    loadStopsData,
-    searchStops
+    loadStopsData: loadStopsData,
+    searchStops: searchStops
   };
 } else {
   window.KavNavSearch = {
-    loadStopsData,
-    searchStops
+    loadStopsData: loadStopsData,
+    searchStops: searchStops
   };
 }
