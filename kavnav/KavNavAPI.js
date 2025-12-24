@@ -13,7 +13,6 @@ if (IS_SCRIPTABLE) {
   Helpers = importModule('kavnav/KavNavHelpers');
   Search = importModule('kavnav/KavNavSearch');
 } else {
-  // בדפדפן - השתמש ישירות מ-window (ללא הגדרה מחדש)
   if (typeof window.KavNavConfig !== 'undefined') {
     Config = window.KavNavConfig;
     Helpers = window.KavNavHelpers;
@@ -71,6 +70,7 @@ async function fetchJSON(url) {
     throw e;
   }
 }
+
 // ===============================
 // CACHE
 // ===============================
@@ -112,7 +112,6 @@ async function _getStopScheduleCached(stopCode, dateStr) {
 // ===============================
 async function getLocation() {
   if (IS_SCRIPTABLE) {
-    // Scriptable - נסה לקבל מפרמטרים או מ-GPS
     const p = args.shortcutParameter || {};
     const lat = parseFloat(p.lat || p.latitude);
     const lon = parseFloat(p.lon || p.longitude);
@@ -127,7 +126,6 @@ async function getLocation() {
       return null;
     }
   } else {
-    // Browser - השתמש ב-Geolocation API
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
         resolve(null);
@@ -156,7 +154,7 @@ async function getLocation() {
 }
 
 // ===============================
-// Nearby Stops (stops.json) במקום Overpass
+// ✅ Nearby Stops (stops.json) במקום Overpass
 // ===============================
 async function findNearbyStops(lat, lon, currentStops = [], limit = Config.MAX_STATIONS, radius = Config.SEARCH_RADIUS) {
   try {
@@ -171,7 +169,7 @@ async function findNearbyStops(lat, lon, currentStops = [], limit = Config.MAX_S
     const lim = Number(limit) || 0;
     if (!isFinite(lat0) || !isFinite(lon0) || r <= 0 || lim <= 0) return [];
 
-    // סינון מהיר בקופסת גבולות לפני חישוב מרחק מלא (חשוב לקובץ גדול)
+    // סינון מהיר בקופסת גבולות לפני חישוב מרחק מלא
     const metersPerDegLat = 111320;
     const degLat = r / metersPerDegLat;
     const cosLat = Math.cos(lat0 * Math.PI / 180) || 1e-6;
