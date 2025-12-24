@@ -1,4 +1,5 @@
-// view.js - builds HTML with inlined CSS/JS for Scriptable WebView
+// view.js
+// בונה HTML עם bundle מלא - תיקון סופי
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -11,26 +12,20 @@ module.exports.getHtml = function() {
       const fm = FileManager.local();
       const baseDir = fm.documentsDirectory();
       
-      console.log("🔧 Building modular bundle.....");
+      console.log("🔧 Building modular bundle...");
       
-      // ===== CSS =====
-      const cssFiles = [
-        'styles/base.css',
-        'styles/map.css',
-        'styles/stops.css',
-        'styles/routes.css'
-      ];
-      
+      // CSS
+      const cssFiles = ['styles/base.css', 'styles/map.css', 'styles/stops.css', 'styles/routes.css'];
       cssFiles.forEach(f => {
         const p = fm.joinPath(baseDir, f);
         if (fm.fileExists(p)) allCss += fm.readString(p) + '\n';
-        else console.warn("⚠️ Missing CSS file:", f);
       });
       
-      // ===== JS =====
+      // JS - בסדר הנכון!
       const jsFiles = [
         'modules/ui/utils.js',
         'modules/map/mapManager.js',
+        'modules/map/deck3d.js',
         'modules/map/busMarkers.js',
         'modules/map/userLocation.js',
         'modules/stops/nearbyPanel.js',
@@ -40,96 +35,77 @@ module.exports.getHtml = function() {
         'web/app.js'
       ];
       
-      jsFiles.forEach(file => {
-        const p = fm.joinPath(baseDir, file);
-        if (!fm.fileExists(p)) {
-          console.warn("⚠️ Missing JS file:", file);
-          return;
+      // התחלת IIFE
+      allJs = '(function() {\\n';
+      allJs += '  "use strict";\\n\\n';
+      allJs += '  console.log("🔧 KavNav Bundle Loading...");\\n\\n';
+      
+      jsFiles.forEach((file) => {
+        const path = fm.joinPath(baseDir, file);
+        if (fm.fileExists(path)) {
+          let code = fm.readString(path);
+          allJs += `\\n// ===== ${file} =====\\n`;
+          allJs += code + '\\n';
+        } else {
+          allJs += `\\nconsole.warn("Missing file: ${file}");\\n`;
         }
-        
-        let content = fm.readString(p);
-        
-        // Clean up module.exports / export stuff for browser runtime
-        content = content
-          .replace(/module\\.exports\\s*=\\s*/g, '')
-          .replace(/export\\s+default\\s+/g, '')
-          .replace(/export\\s+/g, '');
-
-        // Ensure web/app.js stays compatible
-        if (file === 'web/app.js') {
-          content = content.replace(/module\\.exports\\./g, 'window.');
-        }
-        
-        allJs += `\\n// ===== ${file} =====\\n` + content + '\\n';
       });
       
-    } catch(e) {
-      console.error("❌ Failed building HTML bundle:", e);
+      allJs += '\\n})();\\n';
+      
+    } catch (e) {
+      console.error("Bundle build failed:", e);
+      allJs = 'console.error("Bundle build failed");';
     }
   }
 
-  return `<!doctype html>
+  return `
+<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>KavNav</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2...Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- deck.gl (for 3D buses) -->
+  <script src="https://unpkg.com/deck.gl@8.9.36/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/mesh-layers@8.9.36/dist.min.js"></script>
+  ${isScriptable && allCss ? `<style>${allCss}
 
-  ${allCss ? `<style>${allCss}</style>` : ''}
-
-  <!-- MapLibre GL (WebGL vector map) -->
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css" />
-  <script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
-
-  <!-- deck.gl (Standalone bundle: MapboxOverlay + layers like ScenegraphLayer) -->
-  <script src="https://unpkg.com/deck.gl@^9.0.0/dist.min.js"></script>
-
-  <style>
-    /* Keep custom UI above map canvases (MapLibre + deck overlay) */
-    #map { position: relative; }
-    #locateMeBtn { position: absolute; z-index: 9999; }
-    /* If you ever use MapLibre popups, ensure they render above deck canvas */
-    .maplibregl-popup { z-index: 10000; }
-  </style>
+  /* deck.gl overlay */
+  #map { position: relative; }
+  #deckOverlay { position:absolute; inset:0; pointer-events:none; z-index:500; }
+  </style>` : ''}
 </head>
-
-<body>
-  <div class="app-root">
-    <div id="modeToggleContainer"></div>
-
-    <div class="pane-stops">
-      <div class="pane-header">תחנות קרובות</div>
-      <div id="nearbyStopsList">
-        <div style="padding:20px; text-align:center; color:#888;">טוען תחנות...</div>
-      </div>
-    </div>
-
-    <div class="pane-map-wrapper">
-      <div id="map">
-        <button id="locateMeBtn" title="המיקום שלי">📍</button>
-      </div>
-      <div id="bottomSheet">
-        <div id="dragHandleArea"><div class="handle-bar"></div></div>
-        <div id="routesContainer"></div>
-        <div class="footer-note-global">ETA • KavNav</div>
-      </div>
+<body class="mode-map-only">
+  <div id="modeToggleContainer">
+    <div class="mode-toggle">
+      <input type="radio" name="viewMode" id="modeDual" value="dual">
+      <label for="modeDual">תצוגה כפולה</label>
+      <input type="radio" name="viewMode" id="modeMap" value="map" checked>
+      <label for="modeMap">מפה בלבד</label>
+      <input type="radio" name="viewMode" id="modeStops" value="stops">
+      <label for="modeStops">תחנות בלבד</label>
     </div>
   </div>
 
- <script>
-  window.APP_ENVIRONMENT = 'scriptable';
+  <div id="appContainer">
+    <div id="mapContainer">
+      <div id="map"></div>
+    </div>
+    <div id="stopsContainer">
+      <div id="nearbyPanel"></div>
+    </div>
+  </div>
 
-  // ✅ מודל 3D של האוטובוס (GLB)
-  window.KAVNAV_BUS_MODEL_URL =
-    "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/deckgl-3d/maps/Bus4glb.glb";
+  <div id="bottomSheet"></div>
 
-  // כיוונון (תתחיל כך, נשנה אחרי צילום מסך אם צריך)
-  window.KAVNAV_BUS_SIZE_SCALE = 30; // תנסה 10–80
-  window.KAVNAV_BUS_SCALE = 1;       // תנסה 0.5–3
-  window.KAVNAV_BUS_YAW_OFFSET = 0;  // אם האוטובוס “מסתכל הצידה”: 90/180/-90
-</script>
-
-  ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
+  <script>
+    ${isScriptable ? allJs : ''}
+  </script>
 </body>
-</html>`;
+</html>
+  `;
 };
