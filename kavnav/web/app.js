@@ -289,7 +289,7 @@ function syncUI(data) {
 
     groups.forEach(g => {
         const key = generateGroupKey(g);
-        let card = cardsContainer.querySelector(`.line-card[data-key="${key}"]`);
+let card = Array.from(cardsContainer.children).find(el => el.dataset && el.dataset.key === key);
 
         if (card) {
             updateCardTimes(card, g.arrivals);
