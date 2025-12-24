@@ -24,9 +24,10 @@ if (IS_SCRIPTABLE) {
 // ===============================
 // פונקציית עזר ל-Fetch עם תמיכה ב-PROXY
 // ===============================
-function fetchJSON(url) {
+async function fetchJSON(url) {
   const finalUrl = Config.PROXY_URL ? Config.PROXY_URL + encodeURIComponent(url) : url;
 
+  // ===== Scriptable =====
   if (IS_SCRIPTABLE) {
     const req = new Request(finalUrl);
     req.headers = {
@@ -34,14 +35,42 @@ function fetchJSON(url) {
       "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1"
     };
     req.timeoutInterval = 15;
-    return req.loadJSON();
-  } else {
-    return fetch(finalUrl, {
-      headers: { "Accept": "application/json" }
-    }).then(r => r.json());
+
+    try {
+      const text = await req.loadString();
+      try {
+        return JSON.parse(text);
+      } catch (parseErr) {
+        console.error("Fetch error: invalid JSON", finalUrl, text.slice(0, 200));
+        throw parseErr;
+      }
+    } catch (e) {
+      console.error("Fetch error:", (e && e.message) ? e.message : e, finalUrl);
+      throw e;
+    }
+  }
+
+  // ===== Browser =====
+  try {
+    const r = await fetch(finalUrl, { headers: { "Accept": "application/json" } });
+    const text = await r.text();
+
+    if (!r.ok) {
+      console.error("Fetch error:", r.status, r.statusText, finalUrl, text.slice(0, 200));
+      throw new Error(`HTTP ${r.status}`);
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (parseErr) {
+      console.error("Fetch error: invalid JSON", finalUrl, text.slice(0, 200));
+      throw parseErr;
+    }
+  } catch (e) {
+    console.error("Fetch error:", (e && e.message) ? e.message : e, finalUrl);
+    throw e;
   }
 }
-
 // ===============================
 // CACHE
 // ===============================
