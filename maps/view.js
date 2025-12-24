@@ -1,5 +1,4 @@
-// view.js
-// בונה HTML עם bundle מלא - תיקון סופי
+// view.js - builds HTML with inlined CSS/JS for Scriptable WebView
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -12,22 +11,20 @@ module.exports.getHtml = function() {
       const fm = FileManager.local();
       const baseDir = fm.documentsDirectory();
       
-      console.log("🔧 Building modular bundle...");
+      console.log("🔧 Building modular bundle.....");
       
       // ===== CSS =====
       const cssFiles = [
-        'styles/base.css', 
-        'styles/map.css', 
-        'styles/stops.css', 
+        'styles/base.css',
+        'styles/map.css',
+        'styles/stops.css',
         'styles/routes.css'
       ];
       
       cssFiles.forEach(f => {
         const p = fm.joinPath(baseDir, f);
-        if (fm.fileExists(p)) {
-          allCss += fm.readString(p) + '\n';
-          console.log(`✅ CSS: ${f}`);
-        }
+        if (fm.fileExists(p)) allCss += fm.readString(p) + '\n';
+        else console.warn("⚠️ Missing CSS file:", f);
       });
       
       // ===== JS =====
@@ -43,105 +40,66 @@ module.exports.getHtml = function() {
         'web/app.js'
       ];
       
-      // התחלת IIFE
-      allJs = '(function() {\n';
-      allJs += '  "use strict";\n\n';
-      allJs += '  console.log("🔧 KavNav Bundle Loading...");\n\n';
-      
-      jsFiles.forEach((file) => {
-        const path = fm.joinPath(baseDir, file);
-        if (fm.fileExists(path)) {
-          let code = fm.readString(path);
-          
-          // ניקוי imports/exports
-          code = code
-            .replace(/^import\s+.*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-            .replace(/^import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"];?\s*$/gm, '')
-            .replace(/^export\s+(class|function|const|let|var)\s+/gm, '$1 ')
-            .replace(/^export\s+default\s+/gm, '')
-            .replace(/^export\s+\{[^}]+\};?\s*$/gm, '')
-            .replace(/\n{3,}/g, '\n\n');
-          
-          // טיפול מיוחד ב-app.js
-          if (file === 'web/app.js') {
-            // אין צורך להסיר DOMContentLoaded - זה כבר לא קיים בקובץ החדש
-            // הקובץ כבר מתוקן עם const initApp = async function()
-          }
-          
-          allJs += `  // ===== ${file} =====\n`;
-          allJs += code.split('\n').map(line => '  ' + line).join('\n');
-          allJs += '\n\n';
-          
-          console.log(`✅ JS: ${file}`);
-        } else {
-          console.log(`⚠️ Missing: ${file}`);
+      jsFiles.forEach(file => {
+        const p = fm.joinPath(baseDir, file);
+        if (!fm.fileExists(p)) {
+          console.warn("⚠️ Missing JS file:", file);
+          return;
         }
+        
+        let content = fm.readString(p);
+        
+        // Clean up module.exports / export stuff for browser runtime
+        content = content
+          .replace(/module\\.exports\\s*=\\s*/g, '')
+          .replace(/export\\s+default\\s+/g, '')
+          .replace(/export\\s+/g, '');
+
+        // Ensure web/app.js stays compatible
+        if (file === 'web/app.js') {
+          content = content.replace(/module\\.exports\\./g, 'window.');
+        }
+        
+        allJs += `\\n// ===== ${file} =====\\n` + content + '\\n';
       });
       
-      // סגירת IIFE + קריאה לאתחול
-      allJs += `
-  // ===== Auto-initialization =====
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', async function() {
-      console.log("📋 DOM loaded via event");
-      await initApp();
-    });
-  } else {
-    console.log("📋 DOM already ready");
-    initApp().catch(e => console.error("Init error:", e));
-  }
-  
-})();
-
-console.log("✅ KavNav Bundle Complete");
-`;
-      
-      // Debug output - שמירה גם ב-Local וגם ב-iCloud
-      const debugPathLocal = fm.joinPath(baseDir, 'debug-bundle.js');
-      fm.writeString(debugPathLocal, allJs);
-      console.log(`📝 Debug (local): debug-bundle.js (${allJs.length} chars)`);
-      
-      // שמירה נוספת ב-iCloud
-      try {
-        const fmCloud = FileManager.iCloud();
-        const debugPathCloud = fmCloud.joinPath(fmCloud.documentsDirectory(), 'debug-bundle.js');
-        fmCloud.writeString(debugPathCloud, allJs);
-        console.log(`📝 Debug (iCloud): debug-bundle.js saved`);
-      } catch (e) {
-        console.log(`⚠️ iCloud save failed: ${e}`);
-      }
-      
-    } catch (e) {
-      console.error('❌ Bundle error:', e);
+    } catch(e) {
+      console.error("❌ Failed building HTML bundle:", e);
     }
   }
-  
-  return `<!DOCTYPE html>
+
+  return `<!doctype html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>KavNav</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  ${isScriptable && allCss ? `<style>${allCss}</style>` : ''}
-</head>
-<body class="mode-map-only">
-  <div id="modeToggleContainer">
-    <div class="mode-toggle">
-      <input type="radio" name="viewMode" id="modeDual" value="dual">
-      <label for="modeDual">תצוגה כפולה</label>
-      <input type="radio" name="viewMode" id="modeMap" value="map" checked>
-      <label for="modeMap">מפה בלבד</label>
-      <div class="toggle-bg"></div>
-    </div>
-  </div>
 
-  <div class="main-split-container">
-    <div class="pane-nearby">
-      <div class="nearby-header">תחנות קרובות</div>
-      <div id="nearbyStopsList" class="nearby-list">
+  ${allCss ? `<style>${allCss}</style>` : ''}
+
+  <!-- MapLibre GL (WebGL vector map) -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
+
+  <!-- deck.gl (Standalone bundle: MapboxOverlay + layers like ScenegraphLayer) -->
+  <script src="https://unpkg.com/deck.gl@^9.0.0/dist.min.js"></script>
+
+  <style>
+    /* Keep custom UI above map canvases (MapLibre + deck overlay) */
+    #map { position: relative; }
+    #locateMeBtn { position: absolute; z-index: 9999; }
+    /* If you ever use MapLibre popups, ensure they render above deck canvas */
+    .maplibregl-popup { z-index: 10000; }
+  </style>
+</head>
+
+<body>
+  <div class="app-root">
+    <div id="modeToggleContainer"></div>
+
+    <div class="pane-stops">
+      <div class="pane-header">תחנות קרובות</div>
+      <div id="nearbyStopsList">
         <div style="padding:20px; text-align:center; color:#888;">טוען תחנות...</div>
       </div>
     </div>
@@ -158,7 +116,16 @@ console.log("✅ KavNav Bundle Complete");
     </div>
   </div>
 
-  <script>window.APP_ENVIRONMENT = 'scriptable';</script>
+  <script>
+    window.APP_ENVIRONMENT = 'scriptable';
+    // Map style (no API key required): OpenFreeMap public style
+    window.KAVNAV_MAP_STYLE_URL = window.KAVNAV_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
+    // 3D model URL (GLB/GLTF). Set this to a real model file you host (e.g. GitHub raw URL)
+    window.KAVNAV_BUS_MODEL_URL = window.KAVNAV_BUS_MODEL_URL || '';
+    // Optional: try to extrude buildings (works only if the style contains building layers)
+    window.KAVNAV_ENABLE_3D_BUILDINGS = (window.KAVNAV_ENABLE_3D_BUILDINGS ?? true);
+  </script>
+
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
 </body>
 </html>`;
