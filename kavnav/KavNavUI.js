@@ -1,31 +1,15 @@
 // KavNavUI.js - בניית HTML חכם לפי סביבה
 
-// ===============================
-// זיהוי סביבה
-// ===============================
 var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
 var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
-// ===============================
-// פונקציות עזר לקריאת קבצים (Scriptable)
-// ===============================
-function readLocalFile(fileName) {
-  if (!IS_SCRIPTABLE) return null;
-  
-  const fm = FileManager.iCloud();
-  const docsDir = fm.documentsDirectory();
-  const webDir = fm.joinPath(docsDir, "kavnav/web");
-  const filePath = fm.joinPath(webDir, fileName);
-  
-  return fm.readString(filePath);
+var Loader;
+if (IS_SCRIPTABLE) {
+  Loader = importModule('kavnav/KavNavLoader');
 }
 
-// ===============================
-// HTML - שונה לפי סביבה
-// ===============================
 function buildHTML() {
   const htmlBody = `
-<!-- Overlay וחיפוש -->
 <div id="search-overlay"></div>
 <div id="search-container">
   <input type="text" id="search-input" placeholder="חיפוש תחנה לפי מספר או שם..." />
@@ -43,9 +27,9 @@ function buildHTML() {
 `;
 
   if (IS_SCRIPTABLE) {
-    // Scriptable - קרא קבצים מקומיים והטמע אותם
-    const cssContent = readLocalFile("style.css");
-    const jsContent = readLocalFile("app.js");
+    // שימוש ב-Loader לקריאת הקבצים
+    const cssContent = Loader.readModuleFile("style.css");
+    const jsContent = Loader.readModuleFile("app.js");
     
     return `
 <!DOCTYPE html>
@@ -61,7 +45,7 @@ ${htmlBody}
 </body>
 </html>`;
   } else {
-    // Browser - קישורים לקבצים חיצוניים
+    // Browser
     return `
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
@@ -73,6 +57,7 @@ ${htmlBody}
 <body>
 ${htmlBody}
 <script src="KavNavConfig.js"></script>
+<script src="KavNavLoader.js"></script>
 <script src="KavNavHelpers.js"></script>
 <script src="KavNavSearch.js"></script>
 <script src="KavNavAPI.js"></script>
@@ -83,15 +68,8 @@ ${htmlBody}
   }
 }
 
-// ===============================
-// Export לפי סביבה
-// ===============================
 if (IS_SCRIPTABLE) {
-  module.exports = {
-    buildHTML: buildHTML
-  };
+  module.exports = { buildHTML };
 } else {
-  window.KavNavUI = {
-    buildHTML: buildHTML
-  };
+  window.KavNavUI = { buildHTML };
 }
