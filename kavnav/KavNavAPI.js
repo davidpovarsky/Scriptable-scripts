@@ -6,47 +6,39 @@
 var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
 var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
-var Config, Helpers;
+var Config, Helpers, Search;
 
 if (IS_SCRIPTABLE) {
   Config = importModule('kavnav/KavNavConfig');
   Helpers = importModule('kavnav/KavNavHelpers');
+  Search = importModule('kavnav/KavNavSearch');
 } else {
   // בדפדפן - השתמש ישירות מ-window (ללא הגדרה מחדש)
   if (typeof window.KavNavConfig !== 'undefined') {
     Config = window.KavNavConfig;
     Helpers = window.KavNavHelpers;
+    Search = window.KavNavSearch;
   }
 }
 
 // ===============================
 // פונקציית עזר ל-Fetch עם תמיכה ב-PROXY
 // ===============================
-function buildUrl(originalUrl) {
-  if (IS_BROWSER) {
-    // בדפדפן - תמיד השתמש ב-PROXY (בגלל CORS)
-    return Config.PROXY_URL + encodeURIComponent(originalUrl);
-  }
-  // Scriptable - URL ישיר
-  return originalUrl;
-}
+function fetchJSON(url) {
+  const finalUrl = Config.PROXY_URL ? Config.PROXY_URL + encodeURIComponent(url) : url;
 
-async function fetchJSON(url) {
-  try {
-    const finalUrl = buildUrl(url);
-    
-    if (IS_SCRIPTABLE) {
-      const req = new Request(finalUrl);
-      req.timeoutInterval = 8;
-      return await req.loadJSON();
-    } else {
-      const response = await fetch(finalUrl);
-      if (!response.ok) return null;
-      return await response.json();
-    }
-  } catch (e) {
-    console.error('Fetch error:', e);
-    return null;
+  if (IS_SCRIPTABLE) {
+    const req = new Request(finalUrl);
+    req.headers = {
+      "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1"
+    };
+    req.timeoutInterval = 15;
+    return req.loadJSON();
+  } else {
+    return fetch(finalUrl, {
+      headers: { "Accept": "application/json" }
+    }).then(r => r.json());
   }
 }
 
@@ -135,30 +127,60 @@ async function getLocation() {
 }
 
 // ===============================
-// Overpass Logic
+// Nearby Stops (stops.json) במקום Overpass
 // ===============================
 async function findNearbyStops(lat, lon, currentStops = [], limit = Config.MAX_STATIONS, radius = Config.SEARCH_RADIUS) {
-  const query = `[out:json][timeout:25];(node[highway=bus_stop](around:${radius},${lat},${lon});node[public_transport=platform](around:${radius},${lat},${lon}););out body;`;
-  const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
-
   try {
-    const data = await fetchJSON(url);
-    if (!data?.elements) return [];
+    const stops = (Search && typeof Search.loadStopsData === 'function') ? await Search.loadStopsData() : [];
+    if (!Array.isArray(stops) || stops.length === 0) return [];
 
     const existingCodes = new Set(currentStops.map(s => String(s.stopCode)));
 
-    return data.elements
-      .filter(el => el.tags && el.tags.ref)
-      .map(el => ({
-        name: el.tags?.name || el.tags?.["name:he"] || "תחנה",
-        stopCode: String(el.tags.ref),
-        distance: Math.round(Helpers.getDistance(lat, lon, el.lat, el.lon))
-      }))
-      .filter(s => !existingCodes.has(s.stopCode))
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, limit);
+    const lat0 = Number(lat);
+    const lon0 = Number(lon);
+    const r = Number(radius) || 0;
+    const lim = Number(limit) || 0;
+    if (!isFinite(lat0) || !isFinite(lon0) || r <= 0 || lim <= 0) return [];
+
+    // סינון מהיר בקופסת גבולות לפני חישוב מרחק מלא (חשוב לקובץ גדול)
+    const metersPerDegLat = 111320;
+    const degLat = r / metersPerDegLat;
+    const cosLat = Math.cos(lat0 * Math.PI / 180) || 1e-6;
+    const degLon = r / (metersPerDegLat * cosLat);
+
+    const out = [];
+
+    for (const st of stops) {
+      if (!st) continue;
+
+      const code = st.stopCode;
+      if (code == null) continue;
+
+      const codeStr = String(code);
+      if (existingCodes.has(codeStr)) continue;
+
+      const sLat = Number(st.lat);
+      const sLon = Number(st.lon);
+      if (!isFinite(sLat) || !isFinite(sLon)) continue;
+
+      // bounding box quick reject
+      if (Math.abs(sLat - lat0) > degLat) continue;
+      if (Math.abs(sLon - lon0) > degLon) continue;
+
+      const dist = Math.round(Helpers.getDistance(lat0, lon0, sLat, sLon));
+      if (dist > r) continue;
+
+      out.push({
+        name: st.stopName || st.name || "תחנה",
+        stopCode: codeStr,
+        distance: dist
+      });
+    }
+
+    out.sort((a, b) => a.distance - b.distance);
+    return out.slice(0, lim);
   } catch (e) {
-    console.error('Overpass error:', e);
+    console.error('Nearby stops (stops.json) error:', e);
     return [];
   }
 }
@@ -200,18 +222,13 @@ async function getStopData(stopCode) {
   const trips = [];
   const realtimeTrips = new Set();
 
-  if (realtime?.vehicles) {
-    realtime.vehicles.forEach(bus => {
-      const call = bus.trip?.onwardCalls?.calls?.find(c => String(c.stopCode) === String(stopCode));
-      if (!call) return;
-      
-      const eta = new Date(call.eta);
-      const minutes = Helpers.getMinutesDiff(eta);
-      
-      if (minutes < -0 || minutes > Config.LOOKAHEAD_MINUTES) return;
+  if (realtime?.buses) {
+    realtime.buses.forEach(bus => {
+      const dep = new Date(bus.expectedArrivalTime || bus.expectedDepartureTime || bus.plannedArrivalTime || bus.plannedDepartureTime);
+      const minutes = Helpers.getMinutesDiff(dep);
+      if (minutes < 0 || minutes > Config.LOOKAHEAD_MINUTES) return;
 
-      const tripId = bus.trip.gtfsInfo?.tripId;
-      if (tripId) realtimeTrips.add(tripId);
+      if (bus.trip?.tripId) realtimeTrips.add(bus.trip.tripId);
 
       trips.push({
         line: bus.trip.gtfsInfo?.routeNumber || routeMap[bus.trip.routeId] || "?",
@@ -228,10 +245,10 @@ async function getStopData(stopCode) {
     list.forEach(s => {
       s.trips?.forEach(t => {
         if (realtimeTrips.has(t.tripId)) return;
-        
+
         const dep = Helpers.parseTimeStr(t.departureTime, today);
         const minutes = Helpers.getMinutesDiff(dep);
-        
+
         if (minutes < 0 || minutes > Config.LOOKAHEAD_MINUTES) return;
         trips.push({
           line: routeMap[t.routeId] || t.routeId,
