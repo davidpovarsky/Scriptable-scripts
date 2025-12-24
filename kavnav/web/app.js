@@ -44,18 +44,18 @@ function initSearch() {
   
   // זיהוי תנועת גלילה כלפי מעלה
   document.addEventListener('touchstart', (e) => {
-  touchStartY = e.touches[0].clientY;
-});
+    touchStartY = e.touches[0].clientY;
+  });
 
-document.addEventListener('touchend', (e) => {
-  touchEndY = e.changedTouches[0].clientY;
-  const swipeDistance = touchEndY - touchStartY;
+  document.addEventListener('touchend', (e) => {
+    touchEndY = e.changedTouches[0].clientY;
+    const swipeDistance = touchEndY - touchStartY;
 
-  // אם עשו סווייפ למטה לפחות 100 פיקסלים
-  if (swipeDistance > 100) {
-    showSearch();
-  }
-});
+    // אם עשו סווייפ למטה לפחות 100 פיקסלים
+    if (swipeDistance > 100) {
+      showSearch();
+    }
+  });
   
   // סגירת חיפוש בלחיצה על overlay
   searchOverlay.addEventListener('click', hideSearch);
@@ -124,7 +124,9 @@ function selectSearchResult(stopCode, lat, lon) {
 }
 
 window.resetUI = function(msg) {
-  STOPS = []; DATA = {}; currentStopCode = null;
+  STOPS = []; 
+  DATA = {}; 
+  currentStopCode = null;
   document.getElementById("scroll-area").innerHTML = "";
   const loader = document.getElementById("loader-msg");
   if(loader) {
@@ -211,7 +213,8 @@ function generateGroupKey(g) { return g.line + "||" + g.headsign; }
 function formatArrival(minutes){
   if (minutes <= 0) return "כעת";
   if (minutes < 60) return minutes + " דק׳";
-  const d = new Date(); d.setMinutes(d.getMinutes() + minutes);
+  const d = new Date(); 
+  d.setMinutes(d.getMinutes() + minutes);
   return d.toLocaleTimeString("he-IL", {hour:"2-digit", minute:"2-digit"});
 }
 
@@ -281,20 +284,25 @@ function syncUI(data) {
     const currentCards = Array.from(cardsContainer.children);
     const newKeys = new Set(groups.map(generateGroupKey));
 
+    // הסרת כרטיסים שלא קיימים יותר
     currentCards.forEach(card => {
         if (!newKeys.has(card.dataset.key)) {
             card.remove();
         }
     });
 
+    // עדכון/יצירת כרטיסים
     groups.forEach(g => {
         const key = generateGroupKey(g);
-let card = Array.from(cardsContainer.children).find(el => el.dataset && el.dataset.key === key);
+        // ✅ תיקון: חיפוש פשוט יותר
+        let card = cardsContainer.querySelector(`.line-card[data-key="${key}"]`);
 
         if (card) {
+            // עדכון כרטיס קיים
             updateCardTimes(card, g.arrivals);
-            cardsContainer.appendChild(card);
+            cardsContainer.appendChild(card); // הזזה לסוף (למיון)
         } else {
+            // יצירת כרטיס חדש
             card = createLineCard(g);
             cardsContainer.appendChild(card);
         }
