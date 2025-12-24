@@ -1,4 +1,4 @@
-// KavNavSearch.js - מודול חיפוש תחנות
+// KavNavSearch.js - מודול חיפוש תחנות (מתוקן)
 
 var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
 var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
@@ -47,7 +47,7 @@ function calculateRelevance(stop, searchTerms) {
   return score;
 }
 
-// הפונקציה כעת פשוטה וקוראת ל-Loader
+// ✅ הפונקציה כעת פשוטה וקוראת ל-Loader
 async function loadStopsData() {
   return await Loader.loadStopsData();
 }
