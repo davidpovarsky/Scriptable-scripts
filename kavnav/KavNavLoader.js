@@ -1,198 +1,204 @@
-// Variables used by Scriptable.
-// These must be at the very top of the file. Do not edit.
-// icon-color: orange; icon-glyph: magic;
+// KavNavLoader.js - מנהל משאבים מרכזי (הורדות, קבצים, Cache)
 
-// KavNavLoader.js - ריכוז כל ההורדות (מודולים + web + data/stops.json) לקובץ אחד
+var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
+var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
-const REPO_RAW_BASE = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/main/kavnav/";
-const LOCAL_SUBFOLDER = "kavnav";
-
-// קבצים של הפרויקט (מודולים + web)
-const MODULE_FILES = [
-  "KavNavConfig.js",
-  "KavNavHelpers.js",
-  "KavNavAPI.js",
-  "KavNavUI.js",
-  "KavNavSearch.js",
-  "web/style.css",
-  "web/app.js"
-];
-
-// כל כמה זמן לבדוק עדכון (0 = תמיד)
-const UPDATE_EVERY_HOURS = 12;
-
-const fm = FileManager.iCloud();
-const docsDir = fm.documentsDirectory();
-const localDir = fm.joinPath(docsDir, LOCAL_SUBFOLDER);
-
-function hoursSince(d) {
-  return (Date.now() - d.getTime()) / (1000 * 60 * 60);
+var Config;
+if (IS_SCRIPTABLE) {
+  // ב-Scriptable אנחנו מייבאים, אבל בזהירות כי ייתכן וזה הריצה הראשונה
+  try { Config = importModule('KavNavConfig'); } catch(e) { console.log("Config not loaded yet in Loader"); }
+} else {
+  if (typeof window.KavNavConfig !== 'undefined') Config = window.KavNavConfig;
 }
 
-async function ensureDir(path) {
-  if (!fm.fileExists(path)) fm.createDirectory(path, true);
+// ===============================
+// משתנים פנימיים ל-Scriptable
+// ===============================
+let fm, docsDir, localDir, repoBase;
+if (IS_SCRIPTABLE) {
+  fm = FileManager.iCloud();
+  docsDir = fm.documentsDirectory();
+  // נתיב בסיס מקומי
+  localDir = fm.joinPath(docsDir, "kavnav");
 }
 
-async function ensureParentDir(filePath) {
-  const parent = filePath.split("/").slice(0, -1).join("/");
-  if (parent && !fm.fileExists(parent)) fm.createDirectory(parent, true);
-}
-
-async function maybeMigrateTxtToJs(filePath) {
-  // רק עבור קבצי JS, אם שמורים אצלך ב-.txt
-  if (!/\.js$/i.test(filePath)) return;
-
-  const fileTxtPath = filePath.replace(/\.js$/i, ".txt");
-  if (!fm.fileExists(filePath) && fm.fileExists(fileTxtPath)) {
-    await fm.downloadFileFromiCloud(fileTxtPath);
-    const content = fm.readString(fileTxtPath);
-    await ensureParentDir(filePath);
-    fm.writeString(filePath, content);
-  }
-}
-
-async function shouldUpdate(filePath) {
-  if (!fm.fileExists(filePath)) return true;
-  const m = fm.modificationDate(filePath);
-  if (!m) return true;
-  return hoursSince(m) >= UPDATE_EVERY_HOURS;
-}
-
-async function downloadToFile(url, filePath) {
+// ===============================
+// פונקציות עזר פנימיות
+// ===============================
+async function _downloadToFile(url, localPath) {
   const req = new Request(url);
   req.timeoutInterval = 30;
   const txt = await req.loadString();
   if (!txt || txt.trim().length < 10) {
-    throw new Error("Downloaded file looks empty: " + url);
+    throw new Error("Downloaded file empty or invalid: " + url);
   }
-  await ensureParentDir(filePath);
-  fm.writeString(filePath, txt);
+  
+  // יצירת תיקיות אם חסרות
+  const dir = localPath.substring(0, localPath.lastIndexOf("/"));
+  if (!fm.fileExists(dir)) fm.createDirectory(dir, true);
+  
+  fm.writeString(localPath, txt);
+  return txt;
 }
 
-async function ensureKavNavModules() {
-  await ensureDir(localDir);
+function _hoursSince(date) {
+  return (Date.now() - date.getTime()) / (1000 * 60 * 60);
+}
 
-  for (const fileName of MODULE_FILES) {
+// ===============================
+// פונקציות ראשיות (Public)
+// ===============================
+
+// 1. עדכון/הורדת כל המודולים (מחליף את ה-Bootstrap הראשי)
+async function ensureAllModules() {
+  if (!IS_SCRIPTABLE) return; // בדפדפן אין הורדת קבצים
+  
+  // ודא שתיקייה קיימת
+  if (!fm.fileExists(localDir)) fm.createDirectory(localDir, true);
+
+  // טען קונפיגורציה אם חסרה (למקרה של ריצה ראשונה)
+  if (!Config) Config = importModule('KavNavConfig');
+  
+  const files = Config.MODULE_FILES || [];
+  const repo = Config.GITHUB_RAW_URL;
+  const updateInterval = Config.UPDATE_EVERY_HOURS || 12;
+
+  for (const fileName of files) {
     const localPath = fm.joinPath(localDir, fileName);
+    const url = repo + fileName;
 
-    await maybeMigrateTxtToJs(localPath);
-
-    if (await shouldUpdate(localPath)) {
-      const url = REPO_RAW_BASE + fileName;
-      try {
-        console.log("⬇️ Downloading: " + fileName);
-        await downloadToFile(url, localPath);
-        console.log("✅ Updated: " + fileName);
-      } catch (e) {
-        if (!fm.fileExists(localPath)) throw e;
-        console.log("⚠️ Failed to update " + fileName + " using cached local copy. Error: " + e);
-      }
+    // בדיקה אם צריך לעדכן
+    let needUpdate = false;
+    if (!fm.fileExists(localPath)) {
+      needUpdate = true;
     } else {
-      console.log("⏭️ Skipping " + fileName + " (cached)");
+      const m = fm.modificationDate(localPath);
+      if (!m || _hoursSince(m) > updateInterval) needUpdate = true;
+    }
+
+    if (needUpdate) {
+      try {
+        console.log(`Loader: Downloading ${fileName}...`);
+        await _downloadToFile(url, localPath);
+        console.log(`Loader: Updated ${fileName}`);
+      } catch (e) {
+        console.warn(`Loader: Failed to update ${fileName} (${e.message}). Using local.`);
+      }
     }
   }
 }
 
-/**
- * טעינת stops.json (local -> iCloud -> URL + cache local)
- * זה מרכז את ההורדה שהייתה מפוזרת בתוך KavNavSearch.js
- */
-let _stopsData = null;
-let _stopsLoadPromise = null;
+// 2. טעינת stops.json (הגיון מאוחד: Local -> iCloud -> URL -> Save Local)
+let _stopsCache = null;
 
 async function loadStopsData() {
-  if (_stopsData) return _stopsData;
-  if (_stopsLoadPromise) return _stopsLoadPromise;
+  if (_stopsCache) return _stopsCache;
 
-  _stopsLoadPromise = (async () => {
-    // נטען Config כדי לקבל STOPS_JSON_URL
-    let Config;
-    try {
-      Config = importModule("kavnav/KavNavConfig");
-    } catch (e) {
-      // אם עוד לא ירד—ננסה לוודא מודולים ואז לטעון
-      await ensureKavNavModules();
-      Config = importModule("kavnav/KavNavConfig");
-    }
-
+  // --- דפדפן ---
+  if (IS_BROWSER) {
     const url = Config.STOPS_JSON_URL;
-    const REL_PATH = "data/stops.json";
-
-    // 1) Local
     try {
-      const fmLocal = FileManager.local();
-      const baseLocal = fmLocal.documentsDirectory();
-      const localPath = fmLocal.joinPath(baseLocal, REL_PATH);
-
-      if (fmLocal.fileExists(localPath)) {
-        const raw = fmLocal.readString(localPath);
-        _stopsData = JSON.parse(raw);
-        return _stopsData;
-      }
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Network err');
+      _stopsCache = await response.json();
+      return _stopsCache;
     } catch (e) {
-      console.warn("Local stops.json exists but failed to read/parse:", e);
-    }
-
-    // 2) iCloud
-    try {
-      const baseIcloud = fm.documentsDirectory();
-      const icloudPath = fm.joinPath(baseIcloud, REL_PATH);
-
-      if (fm.fileExists(icloudPath)) {
-        await fm.downloadFileFromiCloud(icloudPath);
-        const raw = fm.readString(icloudPath);
-        _stopsData = JSON.parse(raw);
-
-        // cache to Local
-        try {
-          const fmLocal = FileManager.local();
-          const baseLocal = fmLocal.documentsDirectory();
-          const localDataDir = fmLocal.joinPath(baseLocal, "data");
-          const localPath = fmLocal.joinPath(baseLocal, REL_PATH);
-
-          if (!fmLocal.fileExists(localDataDir)) fmLocal.createDirectory(localDataDir, true);
-          fmLocal.writeString(localPath, JSON.stringify(_stopsData));
-        } catch (e2) {
-          console.warn("Could not cache iCloud stops.json to local:", e2);
-        }
-
-        return _stopsData;
-      }
-    } catch (e) {
-      console.warn("iCloud stops.json check failed:", e);
-    }
-
-    // 3) URL + cache Local
-    try {
-      const req = new Request(url);
-      req.timeoutInterval = 30;
-      const raw = await req.loadString();
-      _stopsData = JSON.parse(raw);
-
-      try {
-        const fmLocal = FileManager.local();
-        const baseLocal = fmLocal.documentsDirectory();
-        const localDataDir = fmLocal.joinPath(baseLocal, "data");
-        const localPath = fmLocal.joinPath(baseLocal, REL_PATH);
-
-        if (!fmLocal.fileExists(localDataDir)) fmLocal.createDirectory(localDataDir, true);
-        fmLocal.writeString(localPath, JSON.stringify(_stopsData));
-      } catch (e2) {
-        console.warn("Could not save downloaded stops.json to local:", e2);
-      }
-
-      return _stopsData;
-    } catch (e) {
-      console.error("Failed to load stops.json from URL:", e);
-      _stopsLoadPromise = null;
+      console.error("Browser loadStops failed", e);
       return [];
     }
-  })();
+  }
 
-  return _stopsLoadPromise;
+  // --- Scriptable ---
+  if (IS_SCRIPTABLE) {
+    const REL_PATH = 'data/stops.json';
+    const fmLocal = FileManager.local(); // לשימוש ב-Cache מקומי מהיר
+    const baseLocalDocs = fmLocal.documentsDirectory();
+    const localCachePath = fmLocal.joinPath(fmLocal.joinPath(baseLocalDocs, "kavnav"), REL_PATH);
+    
+    // א. נסה לקרוא מקומית (Cache מהיר)
+    if (fmLocal.fileExists(localCachePath)) {
+      try {
+        const raw = fmLocal.readString(localCachePath);
+        _stopsCache = JSON.parse(raw);
+        return _stopsCache;
+      } catch(e) { console.warn("Local cache corrupted", e); }
+    }
+
+    // ב. נסה לקרוא מ-iCloud (הקובץ "הרשמי" במכשיר)
+    const icloudPath = fm.joinPath(localDir, REL_PATH);
+    if (fm.fileExists(icloudPath)) {
+       try {
+         await fm.downloadFileFromiCloud(icloudPath);
+         const raw = fm.readString(icloudPath);
+         _stopsCache = JSON.parse(raw);
+         
+         // שמור עותק ל-Cache המקומי לפעם הבאה
+         try {
+            const lDir = localCachePath.substring(0, localCachePath.lastIndexOf("/"));
+            if (!fmLocal.fileExists(lDir)) fmLocal.createDirectory(lDir, true);
+            fmLocal.writeString(localCachePath, raw);
+         } catch(e){}
+         
+         return _stopsCache;
+       } catch (e) { console.warn("iCloud read failed", e); }
+    }
+
+    // ג. הורד מהאינטרנט (GitHub)
+    try {
+      console.log("Loader: Downloading stops.json from GitHub...");
+      const url = Config.STOPS_JSON_URL;
+      const jsonStr = await _downloadToFile(url, icloudPath); // שומר ל-iCloud
+      _stopsCache = JSON.parse(jsonStr);
+      
+      // שמור גם ל-Local Cache
+      try {
+        const lDir = localCachePath.substring(0, localCachePath.lastIndexOf("/"));
+        if (!fmLocal.fileExists(lDir)) fmLocal.createDirectory(lDir, true);
+        fmLocal.writeString(localCachePath, jsonStr);
+      } catch(e){}
+
+      return _stopsCache;
+    } catch (e) {
+      console.error("All stops methods failed", e);
+      return [];
+    }
+  }
 }
 
-module.exports = {
-  ensureKavNavModules,
-  loadStopsData
+// 3. קריאת קובץ טקסט (עבור UI CSS/JS)
+function readModuleFile(fileName) {
+  if (!IS_SCRIPTABLE) return "";
+  try {
+    // מניח שקבצי web נמצאים ב-kavnav/web/
+    const filePath = fm.joinPath(localDir, "web/" + fileName);
+    if (fm.fileExists(filePath)) {
+       fm.downloadFileFromiCloud(filePath);
+       return fm.readString(filePath);
+    }
+    // תמיכה לאחור אם הקובץ בתיקייה הראשית
+    const rootPath = fm.joinPath(localDir, fileName);
+    if (fm.fileExists(rootPath)) {
+       fm.downloadFileFromiCloud(rootPath);
+       return fm.readString(rootPath);
+    }
+    return "";
+  } catch(e) {
+    console.error("Error reading file " + fileName, e);
+    return "";
+  }
+}
+
+// ===============================
+// Export
+// ===============================
+var Loader = {
+  ensureAllModules,
+  loadStopsData,
+  readModuleFile
 };
+
+if (IS_SCRIPTABLE) {
+  module.exports = Loader;
+} else {
+  window.KavNavLoader = Loader;
+}
