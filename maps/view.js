@@ -116,15 +116,18 @@ module.exports.getHtml = function() {
     </div>
   </div>
 
-  <script>
-    window.APP_ENVIRONMENT = 'scriptable';
-    // Map style (no API key required): OpenFreeMap public style
-    window.KAVNAV_MAP_STYLE_URL = window.KAVNAV_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
-    // 3D model URL (GLB/GLTF). Set this to a real model file you host (e.g. GitHub raw URL)
-    window.KAVNAV_BUS_MODEL_URL = window.KAVNAV_BUS_MODEL_URL || '';
-    // Optional: try to extrude buildings (works only if the style contains building layers)
-    window.KAVNAV_ENABLE_3D_BUILDINGS = (window.KAVNAV_ENABLE_3D_BUILDINGS ?? true);
-  </script>
+ <script>
+  window.APP_ENVIRONMENT = 'scriptable';
+
+  // ✅ מודל 3D של האוטובוס (GLB)
+  window.KAVNAV_BUS_MODEL_URL =
+    "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/deckgl-3d/maps/Bus4glb.glb";
+
+  // כיוונון (תתחיל כך, נשנה אחרי צילום מסך אם צריך)
+  window.KAVNAV_BUS_SIZE_SCALE = 30; // תנסה 10–80
+  window.KAVNAV_BUS_SCALE = 1;       // תנסה 0.5–3
+  window.KAVNAV_BUS_YAW_OFFSET = 0;  // אם האוטובוס “מסתכל הצידה”: 90/180/-90
+</script>
 
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
 </body>
