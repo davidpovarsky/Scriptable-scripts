@@ -294,8 +294,8 @@ function syncUI(data) {
     // עדכון/יצירת כרטיסים
     groups.forEach(g => {
         const key = generateGroupKey(g);
-        // ✅ תיקון: חיפוש פשוט יותר
-        let card = cardsContainer.querySelector(`.line-card[data-key="${key}"]`);
+        // ✅ חזרה לגרסה המקורית - עובדת עם תווים מיוחדים!
+        let card = Array.from(cardsContainer.children).find(el => el.dataset && el.dataset.key === key);
 
         if (card) {
             // עדכון כרטיס קיים
