@@ -1,99 +1,112 @@
 // web/app.js
-// נקודת הכניסה הראשית - גרסה סופית מתוקנת
+// Runs inside WebView (browser-like) and drives UI
 
-// ============================================
-// משתנים גלובליים
-// ============================================
-let mapManager = null;
-let busMarkers = null;
-let userLocationManager = null;
-let nearbyPanel = null;
-let bottomSheet = null;
-let modeToggle = null;
+let mapManager;
+let busMarkers;
+let userLocation;
+let nearbyPanel;
+let bottomSheet;
+let modeToggle;
 
 const staticDataStore = new Map();
 const routeCards = new Map();
 
-// ============================================
-// אתחול ראשוני
-// ============================================
-const initApp = async function() {
-  console.log("🚀 KavNav App Starting...");
+window.startKavNavApp = async function() {
+  console.log("🚀 KavNav App Starting.....");
 
   mapManager = new MapManager();
   mapManager.init('map');
 
-  busMarkers = new BusMarkers(mapManager.getBusLayerGroup());
-  userLocationManager = new UserLocationManager(mapManager);
+  busMarkers = new BusMarkers(mapManager);
+  userLocation = new UserLocation(mapManager);
   nearbyPanel = new NearbyPanel();
   bottomSheet = new BottomSheet();
   modeToggle = new ModeToggle(mapManager);
 
-  bottomSheet.init();
-  modeToggle.init();
-  userLocationManager.setupLocateButton();
+  // locate me button
+  const locateBtn = document.getElementById("locateMeBtn");
+  if (locateBtn) {
+    locateBtn.addEventListener("click", () => userLocation.centerOnUser());
+  }
 
-  console.log("✅ All managers initialized");
+  console.log("✅ App ready. Waiting for data...");
 };
 
-// ============================================
-// פונקציות גלובליות לשימוש Scriptable
-// ============================================
+window.receiveDataFromScriptable = function(payload) {
+  try {
+    console.log("📦 Received data:", payload);
 
-window.initNearbyStops = function(stops) {
-  if (!Array.isArray(stops)) return;
-  console.log("📍 Initializing nearby stops:", stops.length);
-  
-  if (nearbyPanel) {
-    nearbyPanel.init(stops);
+    // payload.routes: array of { meta, shapeCoords, stops, ... }
+    if (payload && payload.routes && payload.routes.length) {
+      initializeStaticData(payload.routes);
+    }
+
+    // payload.realtime: array of realtime updates per routeId
+    if (payload && payload.realtime && payload.realtime.length) {
+      updateRealtimeData(payload.realtime);
+    }
+
+    if (payload && payload.nearbyStops) {
+      nearbyPanel.updateStops(payload.nearbyStops);
+    }
+  } catch (e) {
+    console.error("❌ receiveDataFromScriptable error:", e);
   }
 };
 
-window.setUserLocation = function(lat, lon) {
-  if (!mapManager) return;
-  console.log("👤 Setting user location:", lat, lon);
-  mapManager.setUserLocation(lat, lon);
-};
+function initializeStaticData(routePayloads) {
+  console.log("🧩 Initializing static data:", routePayloads.length);
 
-window.initStaticData = function(payloads) {
-  if (!Array.isArray(payloads)) return;
-  console.log("📦 Receiving static data:", payloads.length, "routes");
-
-  const allShapeCoords = [];
-
-  payloads.forEach(p => {
+  routePayloads.forEach(p => {
     const routeId = p.meta.routeId;
     staticDataStore.set(routeId, p);
 
-    if (p.shapeCoords && p.shapeCoords.length) {
-      allShapeCoords.push(p.shapeCoords);
+    const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
+
+    // draw route polyline
+    if (mapManager && p.shapeCoords && p.shapeCoords.length) {
+      mapManager.drawRoutePolyline(routeId, p.shapeCoords, color);
     }
 
-    const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
-    
-    if (mapManager && p.shapeCoords && p.shapeCoords.length) {
-      mapManager.drawRoutePolyline(p.shapeCoords, color);
-    }
-    
-    const card = new RouteCard(routeId, p.meta, p.stops, color);
-    card.create();
+    // create card
+    const card = new RouteCard(p.meta, color);
     routeCards.set(routeId, card);
+    bottomSheet.addCard(card);
   });
 
-  if (mapManager && allShapeCoords.length) {
-    mapManager.fitBoundsToShapes(allShapeCoords);
+  // initial fit
+  if (mapManager) {
+    const shapes = routePayloads.map(p => p.shapeCoords).filter(Boolean);
+    mapManager.fitBoundsToShapes(shapes);
   }
+}
 
-  console.log("✅ Static data initialized");
-};
-
-window.updateRealtimeData = function(updates) {
-  if (!Array.isArray(updates)) return;
-  console.log("🔄 Updating realtime data:", updates.length, "routes");
+function updateRealtimeData(updates) {
+  console.log("🟢 Realtime updates:", updates.length);
 
   if (mapManager) {
     mapManager.clearBuses();
   }
+
+  const computeVehiclePosition = (v, shapeCoords) => {
+    let lat = v && v.lat;
+    let lon = v && v.lon;
+
+    // אם אין מיקום מדויק, נשתמש ב-positionOnLine
+    if ((!lat || !lon) && v && typeof v.positionOnLine === "number" && Array.isArray(shapeCoords) && shapeCoords.length > 1) {
+      const idx = Math.floor(v.positionOnLine * (shapeCoords.length - 1));
+      const point = shapeCoords[idx];
+      if (Array.isArray(point) && point.length >= 2) {
+        lon = point[0];
+        lat = point[1];
+      }
+    }
+
+    if (typeof lat !== "number" || typeof lon !== "number") return null;
+    return { lat, lon };
+  };
+
+  const allBuses = [];
 
   updates.forEach(u => {
     const routeId = u.routeId;
@@ -111,16 +124,36 @@ window.updateRealtimeData = function(updates) {
       card.update(u);
     }
 
-    if (u.vehicles && u.vehicles.length && busMarkers) {
-      busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
+    // נאסוף את כל האוטובוסים לכל המסלולים — deck.gl צריך Layer אחד (אחרת תדרוס את עצמו)
+    if (u.vehicles && u.vehicles.length) {
+      const shapeCoords = staticData.shapeCoords || [];
+      u.vehicles.forEach((v, i) => {
+        const pos = computeVehiclePosition(v, shapeCoords);
+        if (!pos) return;
+
+        allBuses.push({
+          id: `${routeId}:${v.id || v.vehicleId || v.license || v.plate || i}`,
+          lon: pos.lon,
+          lat: pos.lat,
+          bearing: Number(v.bearing) || 0,
+          routeNumber: staticData.meta.routeNumber || v.routeNumber || "",
+          color
+        });
+      });
     }
   });
+
+  if (busMarkers) {
+    busMarkers.setBuses(allBuses);
+  }
 
   if (nearbyPanel) {
     nearbyPanel.updateTimes(updates);
   }
+}
 
-  console.log("✅ Realtime data updated");
-};
-
-console.log("📱 KavNav Client Script Loaded");
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.APP_ENVIRONMENT !== 'scriptable') {
+    window.startKavNavApp();
+  }
+});
