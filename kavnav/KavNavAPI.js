@@ -6,68 +6,47 @@
 var IS_SCRIPTABLE = typeof window !== 'undefined' ? window.IS_SCRIPTABLE : (typeof FileManager !== 'undefined');
 var IS_BROWSER = typeof window !== 'undefined' ? window.IS_BROWSER : false;
 
-var Config, Helpers, Search;
+var Config, Helpers;
 
 if (IS_SCRIPTABLE) {
   Config = importModule('kavnav/KavNavConfig');
   Helpers = importModule('kavnav/KavNavHelpers');
-  Search = importModule('kavnav/KavNavSearch');
 } else {
+  // בדפדפן - השתמש ישירות מ-window (ללא הגדרה מחדש)
   if (typeof window.KavNavConfig !== 'undefined') {
     Config = window.KavNavConfig;
     Helpers = window.KavNavHelpers;
-    Search = window.KavNavSearch;
   }
 }
 
 // ===============================
 // פונקציית עזר ל-Fetch עם תמיכה ב-PROXY
 // ===============================
-async function fetchJSON(url) {
-  const finalUrl = Config.PROXY_URL ? Config.PROXY_URL + encodeURIComponent(url) : url;
-
-  // ===== Scriptable =====
-  if (IS_SCRIPTABLE) {
-    const req = new Request(finalUrl);
-    req.headers = {
-      "Accept": "application/json",
-      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1"
-    };
-    req.timeoutInterval = 15;
-
-    try {
-      const text = await req.loadString();
-      try {
-        return JSON.parse(text);
-      } catch (parseErr) {
-        console.error("Fetch error: invalid JSON", finalUrl, text.slice(0, 200));
-        throw parseErr;
-      }
-    } catch (e) {
-      console.error("Fetch error:", (e && e.message) ? e.message : e, finalUrl);
-      throw e;
-    }
+function buildUrl(originalUrl) {
+  if (IS_BROWSER) {
+    // בדפדפן - תמיד השתמש ב-PROXY (בגלל CORS)
+    return Config.PROXY_URL + encodeURIComponent(originalUrl);
   }
+  // Scriptable - URL ישיר
+  return originalUrl;
+}
 
-  // ===== Browser =====
+async function fetchJSON(url) {
   try {
-    const r = await fetch(finalUrl, { headers: { "Accept": "application/json" } });
-    const text = await r.text();
-
-    if (!r.ok) {
-      console.error("Fetch error:", r.status, r.statusText, finalUrl, text.slice(0, 200));
-      throw new Error(`HTTP ${r.status}`);
-    }
-
-    try {
-      return JSON.parse(text);
-    } catch (parseErr) {
-      console.error("Fetch error: invalid JSON", finalUrl, text.slice(0, 200));
-      throw parseErr;
+    const finalUrl = buildUrl(url);
+    
+    if (IS_SCRIPTABLE) {
+      const req = new Request(finalUrl);
+      req.timeoutInterval = 8;
+      return await req.loadJSON();
+    } else {
+      const response = await fetch(finalUrl);
+      if (!response.ok) return null;
+      return await response.json();
     }
   } catch (e) {
-    console.error("Fetch error:", (e && e.message) ? e.message : e, finalUrl);
-    throw e;
+    console.error('Fetch error:', e);
+    return null;
   }
 }
 
@@ -112,6 +91,7 @@ async function _getStopScheduleCached(stopCode, dateStr) {
 // ===============================
 async function getLocation() {
   if (IS_SCRIPTABLE) {
+    // Scriptable - נסה לקבל מפרמטרים או מ-GPS
     const p = args.shortcutParameter || {};
     const lat = parseFloat(p.lat || p.latitude);
     const lon = parseFloat(p.lon || p.longitude);
@@ -126,6 +106,7 @@ async function getLocation() {
       return null;
     }
   } else {
+    // Browser - השתמש ב-Geolocation API
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
         resolve(null);
@@ -154,60 +135,30 @@ async function getLocation() {
 }
 
 // ===============================
-// Nearby Stops (stops.json) במקום Overpass
+// Overpass Logic
 // ===============================
 async function findNearbyStops(lat, lon, currentStops = [], limit = Config.MAX_STATIONS, radius = Config.SEARCH_RADIUS) {
+  const query = `[out:json][timeout:25];(node[highway=bus_stop](around:${radius},${lat},${lon});node[public_transport=platform](around:${radius},${lat},${lon}););out body;`;
+  const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
   try {
-    const stops = (Search && typeof Search.loadStopsData === 'function') ? await Search.loadStopsData() : [];
-    if (!Array.isArray(stops) || stops.length === 0) return [];
+    const data = await fetchJSON(url);
+    if (!data?.elements) return [];
 
     const existingCodes = new Set(currentStops.map(s => String(s.stopCode)));
 
-    const lat0 = Number(lat);
-    const lon0 = Number(lon);
-    const r = Number(radius) || 0;
-    const lim = Number(limit) || 0;
-    if (!isFinite(lat0) || !isFinite(lon0) || r <= 0 || lim <= 0) return [];
-
-    // סינון מהיר בקופסת גבולות לפני חישוב מרחק מלא
-    const metersPerDegLat = 111320;
-    const degLat = r / metersPerDegLat;
-    const cosLat = Math.cos(lat0 * Math.PI / 180) || 1e-6;
-    const degLon = r / (metersPerDegLat * cosLat);
-
-    const out = [];
-
-    for (const st of stops) {
-      if (!st) continue;
-
-      const code = st.stopCode;
-      if (code == null) continue;
-
-      const codeStr = String(code);
-      if (existingCodes.has(codeStr)) continue;
-
-      const sLat = Number(st.lat);
-      const sLon = Number(st.lon);
-      if (!isFinite(sLat) || !isFinite(sLon)) continue;
-
-      // bounding box quick reject
-      if (Math.abs(sLat - lat0) > degLat) continue;
-      if (Math.abs(sLon - lon0) > degLon) continue;
-
-      const dist = Math.round(Helpers.getDistance(lat0, lon0, sLat, sLon));
-      if (dist > r) continue;
-
-      out.push({
-        name: st.stopName || st.name || "תחנה",
-        stopCode: codeStr,
-        distance: dist
-      });
-    }
-
-    out.sort((a, b) => a.distance - b.distance);
-    return out.slice(0, lim);
+    return data.elements
+      .filter(el => el.tags && el.tags.ref)
+      .map(el => ({
+        name: el.tags?.name || el.tags?.["name:he"] || "תחנה",
+        stopCode: String(el.tags.ref),
+        distance: Math.round(Helpers.getDistance(lat, lon, el.lat, el.lon))
+      }))
+      .filter(s => !existingCodes.has(s.stopCode))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, limit);
   } catch (e) {
-    console.error('Nearby stops (stops.json) error:', e);
+    console.error('Overpass error:', e);
     return [];
   }
 }
@@ -249,14 +200,18 @@ async function getStopData(stopCode) {
   const trips = [];
   const realtimeTrips = new Set();
 
-  // ✅ תיקון: buses במקום vehicles!
-  if (realtime?.buses) {
-    realtime.buses.forEach(bus => {
-      const dep = new Date(bus.expectedArrivalTime || bus.expectedDepartureTime || bus.plannedArrivalTime || bus.plannedDepartureTime);
-      const minutes = Helpers.getMinutesDiff(dep);
-      if (minutes < 0 || minutes > Config.LOOKAHEAD_MINUTES) return;
+  if (realtime?.vehicles) {
+    realtime.vehicles.forEach(bus => {
+      const call = bus.trip?.onwardCalls?.calls?.find(c => String(c.stopCode) === String(stopCode));
+      if (!call) return;
+      
+      const eta = new Date(call.eta);
+      const minutes = Helpers.getMinutesDiff(eta);
+      
+      if (minutes < -0 || minutes > Config.LOOKAHEAD_MINUTES) return;
 
-      if (bus.trip?.tripId) realtimeTrips.add(bus.trip.tripId);
+      const tripId = bus.trip.gtfsInfo?.tripId;
+      if (tripId) realtimeTrips.add(tripId);
 
       trips.push({
         line: bus.trip.gtfsInfo?.routeNumber || routeMap[bus.trip.routeId] || "?",
@@ -273,10 +228,10 @@ async function getStopData(stopCode) {
     list.forEach(s => {
       s.trips?.forEach(t => {
         if (realtimeTrips.has(t.tripId)) return;
-
+        
         const dep = Helpers.parseTimeStr(t.departureTime, today);
         const minutes = Helpers.getMinutesDiff(dep);
-
+        
         if (minutes < 0 || minutes > Config.LOOKAHEAD_MINUTES) return;
         trips.push({
           line: routeMap[t.routeId] || t.routeId,
