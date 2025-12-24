@@ -6,43 +6,36 @@
 module.exports.APP_MODE = typeof importModule !== 'undefined' ? "scriptable" : "local";
 
 // כתובת הפרוקסי
-module.exports.PROXY_URL = "https://script.google.com/macros/s/AKfycbxKfWtTeeoOJCoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec";
-module.exports.API_BASE = "https://kavnav.com/api";
-module.exports.REFRESH_INTERVAL_MS = 10000;
+module.exports.PROXY_URL = "https://script.google.com/macros/s/A...CoR_WD4JQhvDGHcE3j82tVHVQXqElwL9NVO9ourZxSHTA20GoBJKfmiLw/exec";
+module.exports.API_BASE = "https://";
 
-// ברירת מחדל למסלולים אם אין התראה
-module.exports.DEFAULT_ROUTES = [
-  { routeId: 30794 },
-  { routeId: 18086 },
-];
+// ... שאר הקובץ שלך נשאר כמו שהיה ...
 
-const OPERATOR_COLORS = {
-  "5": "#3868A7", // דן
-  "31": "#3868A7", "32": "#3868A7",
-  "3": "#218563", // אגד
-  "6": "#009d43", // אופניבוס
-  "40": "#aa131f", // יונייטד טורס
-  "4": "#9aca3c", // אפיקים
-  "25": "#9aca3c",
-  "15": "#F3AD44", // מטרופולין
-  "16": "#cdcdcd", // סופרבוס
-  "18": "#99ca3c", // קווים
-  "20": "#e28a07", // כרמלית
-  "7": "#e0e1e3", "14": "#e0e1e3", // נתיב אקספרס
-  "33": "#e0e1e3",
-  "8": "#ad1b1c", // גבי טורס
-  "34": "#78be99", // תנופה
-  "35": "#e0e1e3", "37": "#df8430", "38": "#df8430", // אקסטרה
-  "98": "#f2d03f", "93": "#f2d03f", "91": "#f2d03f", "97": "#f2d03f", // מוניות שירות
-  "21": "#bf4000", "22": "#bf4000", // קפיר
-  "24": "#6fa421", // גולן
-  "49": "#ffffff", "42": "#ffffff", // מקומי
-  "135": "#8db7e1" // דרך אגד
-};
+// ======================================================
+// 🧊 3D Buses (deck.gl)
+// ======================================================
+// להפעיל/לכבות תלת-מימד לאוטובוסים (מעל Leaflet)
+module.exports.ENABLE_DECKGL_3D = true;
 
-module.exports.getOperatorColor = function(operatorId, apiColor) {
-  const key = operatorId != null ? String(operatorId) : "";
-  if (key && OPERATOR_COLORS[key]) return OPERATOR_COLORS[key];
-  if (apiColor && typeof apiColor === "string") return apiColor;
-  return null;
-};
+// כתובת GLB (חייב RAW ולא blob)
+// אם יש לך לינק כזה:
+//   https://github.com/.../blob/deckgl-3d/maps/Bus4glb.glb
+// תשנה ל-RAW כזה:
+//   https://raw.githubusercontent.com/.../deckgl-3d/maps/Bus4glb.glb
+module.exports.BUS_MODEL_GLB_URL =
+  "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/deckgl-3d/maps/Bus4glb.glb";
+
+// גודל/סקייל של המודל (ככל שגדול יותר - המודל יותר גדול)
+module.exports.BUS_MODEL_SIZE_SCALE = 25;
+
+// “גובה” (במטרים) מעל הקרקע - רק כדי להבליט טיפה מעל המפה
+module.exports.BUS_MODEL_ELEVATION_METERS = 6;
+
+// הסטה לסיבוב המודל (כי כל מודל מגיע עם ציר קדמי אחר)
+module.exports.BUS_MODEL_YAW_OFFSET_DEG = 0;
+
+// זווית מצלמה (pitch) לתחושת תלת-מימד
+module.exports.DECK_PITCH_DEG = 50;
+
+// אם יש סטייה בין deck ל-leaflet - אפשר להזיז zoom ב-+/-1
+module.exports.DECK_ZOOM_OFFSET = 0;
