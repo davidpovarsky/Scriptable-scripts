@@ -23,37 +23,95 @@ let stopsData = null;
 let stopsLoadPromise = null;
 
 // ===============================
-// טעינת stops.json
-// Scriptable: דרך KavNavLoader (מרכז את ההורדות)
-// Browser: fetch מה-URL
+// טעינת stops.json (local -> iCloud -> URL + cache local)
 // ===============================
 async function loadStopsData() {
   if (stopsData) return stopsData;
+
   if (stopsLoadPromise) return stopsLoadPromise;
 
   stopsLoadPromise = (async () => {
     try {
       const url = Config.STOPS_JSON_URL;
 
+      // Scriptable: local -> iCloud -> URL (GitHub) -> cache local
       if (IS_SCRIPTABLE) {
-        // מרכז הכל בלודר
+        const REL_PATH = 'data/stops.json';
+
+        // 1) Local
         try {
-          const Loader = importModule('kavnav/KavNavLoader');
-          const data = await Loader.loadStopsData();
-          stopsData = Array.isArray(data) ? data : [];
-          return stopsData;
+          const fmLocal = FileManager.local();
+          const baseLocal = fmLocal.documentsDirectory();
+          const localPath = fmLocal.joinPath(baseLocal, REL_PATH);
+
+          if (fmLocal.fileExists(localPath)) {
+            const raw = fmLocal.readString(localPath);
+            stopsData = JSON.parse(raw);
+            return stopsData;
+          }
         } catch (e) {
-          console.warn('Loader loadStopsData failed, fallback to direct URL:', e);
-          // fallback: URL
+          console.warn('Local stops.json exists but failed to read/parse:', e);
+        }
+
+        // 2) iCloud
+        try {
+          const fmIcloud = FileManager.iCloud();
+          const baseIcloud = fmIcloud.documentsDirectory();
+          const icloudPath = fmIcloud.joinPath(baseIcloud, REL_PATH);
+
+          if (fmIcloud.fileExists(icloudPath)) {
+            await fmIcloud.downloadFileFromiCloud(icloudPath);
+            const raw = fmIcloud.readString(icloudPath);
+            stopsData = JSON.parse(raw);
+
+            // cache to Local for next time
+            try {
+              const fmLocal = FileManager.local();
+              const baseLocal = fmLocal.documentsDirectory();
+              const localDataDir = fmLocal.joinPath(baseLocal, 'data');
+              const localPath = fmLocal.joinPath(baseLocal, REL_PATH);
+
+              if (!fmLocal.fileExists(localDataDir)) fmLocal.createDirectory(localDataDir, true);
+              fmLocal.writeString(localPath, JSON.stringify(stopsData));
+            } catch (e2) {
+              console.warn('Could not cache iCloud stops.json to local:', e2);
+            }
+
+            return stopsData;
+          }
+        } catch (e) {
+          console.warn('iCloud stops.json check failed:', e);
+        }
+
+        // 3) URL (GitHub) + cache Local
+        try {
           const req = new Request(url);
           req.timeoutInterval = 30;
+
           const raw = await req.loadString();
           stopsData = JSON.parse(raw);
+
+          try {
+            const fmLocal = FileManager.local();
+            const baseLocal = fmLocal.documentsDirectory();
+            const localDataDir = fmLocal.joinPath(baseLocal, 'data');
+            const localPath = fmLocal.joinPath(baseLocal, REL_PATH);
+
+            if (!fmLocal.fileExists(localDataDir)) fmLocal.createDirectory(localDataDir, true);
+            fmLocal.writeString(localPath, JSON.stringify(stopsData));
+          } catch (e2) {
+            console.warn('Could not save downloaded stops.json to local:', e2);
+          }
+
           return stopsData;
+        } catch (e) {
+          console.error('Failed to load stops.json from URL:', e);
+          stopsLoadPromise = null;
+          return [];
         }
       }
 
-      // Browser
+      // Browser: fetch מה-URL
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to load stops data');
       stopsData = await response.json();
@@ -86,12 +144,12 @@ function calculateRelevance(stop, searchTerms) {
   let score = 0;
 
   searchTerms.forEach(term => {
-    // התאמה לשם
+    // התאמה מדויקת לשם - ציון גבוה
     if (stopName === term) score += 1000;
     else if (stopName.startsWith(term)) score += 500;
     else if (stopName.includes(term)) score += 100;
 
-    // התאמה לקוד
+    // התאמה מדויקת לקוד
     if (stopCode === term) score += 800;
     else if (stopCode.startsWith(term)) score += 400;
     else if (stopCode.includes(term)) score += 80;
@@ -122,7 +180,7 @@ async function searchStops(query) {
     }))
     .filter(stop => stop.relevance > 0)
     .sort((a, b) => b.relevance - a.relevance)
-    .slice(0, 20);
+    .slice(0, 20); // הגבלה ל-20 תוצאות
 
   return results;
 }
