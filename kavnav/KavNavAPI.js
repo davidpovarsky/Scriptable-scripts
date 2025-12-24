@@ -154,7 +154,7 @@ async function getLocation() {
 }
 
 // ===============================
-// ✅ Nearby Stops (stops.json) במקום Overpass
+// Nearby Stops (stops.json) במקום Overpass
 // ===============================
 async function findNearbyStops(lat, lon, currentStops = [], limit = Config.MAX_STATIONS, radius = Config.SEARCH_RADIUS) {
   try {
@@ -249,6 +249,7 @@ async function getStopData(stopCode) {
   const trips = [];
   const realtimeTrips = new Set();
 
+  // ✅ תיקון: buses במקום vehicles!
   if (realtime?.buses) {
     realtime.buses.forEach(bus => {
       const dep = new Date(bus.expectedArrivalTime || bus.expectedDepartureTime || bus.plannedArrivalTime || bus.plannedDepartureTime);
