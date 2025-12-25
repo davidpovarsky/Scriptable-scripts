@@ -15,6 +15,7 @@ const staticDataStore = new Map();
 const routeCards = new Map();
 let pendingStaticData = null;
 let pendingRealtimeData = [];
+let mapIsFullyLoaded = false;
 
 // ============================================
 // אתחול ראשוני
@@ -46,6 +47,7 @@ const initApp = async function() {
     // Wait for map to fully load
     map.on('load', () => {
       console.log("🗺️ Mapbox loaded successfully!");
+      mapIsFullyLoaded = true;
       
       // Now initialize map-dependent components
       busMarkers = new BusMarkers(mapManager);
@@ -63,13 +65,13 @@ const initApp = async function() {
 
       // Process any pending data immediately
       if (pendingStaticData) {
-        console.log("📦 Processing pending static data...");
+        console.log("📦 Processing pending static data from queue...");
         processStaticData(pendingStaticData);
         pendingStaticData = null;
       }
 
       if (pendingRealtimeData.length > 0) {
-        console.log("🔄 Processing pending realtime data...");
+        console.log("🔄 Processing pending realtime data from queue...");
         pendingRealtimeData.forEach(data => processRealtimeData(data));
         pendingRealtimeData = [];
       }
@@ -78,12 +80,13 @@ const initApp = async function() {
     // Fallback: process pending data after 5 seconds if map load didn't trigger
     setTimeout(() => {
       if (pendingStaticData) {
-        console.log("⏰ Timeout: Processing pending static data");
+        console.log("⏰ Timeout: Processing pending static data (fallback)");
+        mapIsFullyLoaded = true;
         processStaticData(pendingStaticData);
         pendingStaticData = null;
       }
       if (pendingRealtimeData.length > 0) {
-        console.log("⏰ Timeout: Processing pending realtime data");
+        console.log("⏰ Timeout: Processing pending realtime data (fallback)");
         pendingRealtimeData.forEach(data => processRealtimeData(data));
         pendingRealtimeData = [];
       }
@@ -121,12 +124,20 @@ function setup3DToggle() {
 // Process Static Data
 // ============================================
 function processStaticData(payloads) {
-  if (!Array.isArray(payloads)) return;
+  if (!Array.isArray(payloads)) {
+    console.warn("⚠️ Invalid payloads for static data");
+    return;
+  }
+  
+  console.log("🔧 Processing static data for", payloads.length, "routes");
   
   const allShapeCoords = [];
 
   payloads.forEach(p => {
     const routeId = p.meta.routeId;
+    
+    console.log(`  📍 Route ${routeId}: ${p.meta.routeNumber || 'N/A'} - ${p.meta.headsign || 'N/A'}`);
+    
     staticDataStore.set(routeId, p);
 
     if (p.shapeCoords && p.shapeCoords.length) {
@@ -136,26 +147,30 @@ function processStaticData(payloads) {
     const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
     
     // Draw route polyline
-    if (mapManager) {
+    if (mapManager && mapIsFullyLoaded) {
       try {
         mapManager.drawRoutePolyline(p.shapeCoords, color, routeId);
       } catch (e) {
-        console.error("Error drawing route:", e);
+        console.error(`  ❌ Error drawing route ${routeId}:`, e);
       }
     }
     
     // Create route card
-    const card = new RouteCard(routeId, p.meta, p.stops, color);
-    card.create();
-    routeCards.set(routeId, card);
+    try {
+      const card = new RouteCard(routeId, p.meta, p.stops, color);
+      card.create();
+      routeCards.set(routeId, card);
+    } catch (e) {
+      console.error(`  ❌ Error creating card for route ${routeId}:`, e);
+    }
   });
 
   // Fit bounds to all routes
-  if (mapManager && allShapeCoords.length) {
+  if (mapManager && mapIsFullyLoaded && allShapeCoords.length) {
     try {
       mapManager.fitBoundsToShapes(allShapeCoords);
     } catch (e) {
-      console.error("Error fitting bounds:", e);
+      console.error("  ❌ Error fitting bounds:", e);
     }
   }
 
@@ -166,18 +181,25 @@ function processStaticData(payloads) {
 // Process Realtime Data
 // ============================================
 function processRealtimeData(updates) {
-  if (!Array.isArray(updates)) return;
+  if (!Array.isArray(updates)) {
+    console.warn("⚠️ Invalid updates for realtime data");
+    return;
+  }
 
-  if (mapManager) {
+  if (mapManager && mapIsFullyLoaded) {
     mapManager.clearBuses();
   }
+
+  let processedCount = 0;
+  let skippedCount = 0;
 
   updates.forEach(u => {
     const routeId = u.routeId;
     const staticData = staticDataStore.get(routeId);
     
     if (!staticData) {
-      console.warn(`No static data for route ${routeId}`);
+      console.warn(`⚠️ No static data for route ${routeId} - skipping`);
+      skippedCount++;
       return;
     }
 
@@ -186,7 +208,12 @@ function processRealtimeData(updates) {
     // Update route card
     const card = routeCards.get(routeId);
     if (card) {
-      card.update(u);
+      try {
+        card.update(u);
+        processedCount++;
+      } catch (e) {
+        console.error(`❌ Error updating card for route ${routeId}:`, e);
+      }
     }
 
     // Draw buses
@@ -194,17 +221,69 @@ function processRealtimeData(updates) {
       try {
         busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
       } catch (e) {
-        console.error("Error drawing buses:", e);
+        console.error(`❌ Error drawing buses for route ${routeId}:`, e);
       }
     }
   });
 
   // Update nearby panel
   if (nearbyPanel) {
-    nearbyPanel.updateTimes(updates);
+    try {
+      nearbyPanel.updateTimes(updates);
+    } catch (e) {
+      console.error("❌ Error updating nearby panel:", e);
+    }
   }
 
-  console.log("✅ Realtime updated:", updates.length, "routes");
+  console.log(`✅ Realtime updated: ${processedCount} routes processed, ${skippedCount} skipped`);
+}
+
+// ============================================
+// פונקציות עזר
+// ============================================
+
+function getVariedColor(baseColor, seed) {
+  if (!baseColor) return "#1976d2";
+  
+  // If seed is provided, vary the color slightly for visual distinction
+  if (seed) {
+    // Simple hash function to get consistent variation
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+      hash = hash & hash;
+    }
+    
+    // Parse base color
+    let r, g, b;
+    if (baseColor.startsWith('#')) {
+      const hex = baseColor.substring(1);
+      r = parseInt(hex.substring(0, 2), 16);
+      g = parseInt(hex.substring(2, 4), 16);
+      b = parseInt(hex.substring(4, 6), 16);
+    } else if (baseColor.startsWith('rgb')) {
+      const matches = baseColor.match(/\d+/g);
+      if (matches && matches.length >= 3) {
+        r = parseInt(matches[0]);
+        g = parseInt(matches[1]);
+        b = parseInt(matches[2]);
+      } else {
+        return baseColor;
+      }
+    } else {
+      return baseColor;
+    }
+    
+    // Apply slight variation (±10%)
+    const variation = (hash % 21) - 10; // -10 to +10
+    r = Math.max(0, Math.min(255, r + variation));
+    g = Math.max(0, Math.min(255, g + variation));
+    b = Math.max(0, Math.min(255, b + variation));
+    
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+  
+  return baseColor;
 }
 
 // ============================================
@@ -225,7 +304,7 @@ window.initNearbyStops = function(stops) {
 window.setUserLocation = function(lat, lon) {
   console.log("👤 Setting user location:", lat, lon);
   
-  if (mapManager && mapManager.getMap() && mapManager.getMap().loaded()) {
+  if (mapManager && mapIsFullyLoaded) {
     mapManager.setUserLocation(lat, lon);
   } else {
     console.log("⏳ Map not ready, will set location when loaded");
@@ -238,16 +317,13 @@ window.setUserLocation = function(lat, lon) {
 };
 
 window.initStaticData = function(payloads) {
-  if (!Array.isArray(payloads)) return;
+  if (!Array.isArray(payloads)) {
+    console.warn("⚠️ Invalid static data received");
+    return;
+  }
   console.log("📦 Receiving static data:", payloads.length, "routes");
 
-  // Check if map is ready - need to check both map exists AND is loaded
-  const mapReady = mapManager && 
-                   mapManager.getMap() && 
-                   mapManager.getMap().loaded && 
-                   mapManager.getMap().loaded();
-  
-  if (mapReady) {
+  if (mapIsFullyLoaded) {
     console.log("📦 Map ready, processing immediately");
     processStaticData(payloads);
   } else {
@@ -257,19 +333,16 @@ window.initStaticData = function(payloads) {
 };
 
 window.updateRealtimeData = function(updates) {
-  if (!Array.isArray(updates)) return;
+  if (!Array.isArray(updates)) {
+    console.warn("⚠️ Invalid realtime data received");
+    return;
+  }
   console.log("🔄 Receiving realtime data:", updates.length, "routes");
 
-  // Check if map is ready
-  const mapReady = mapManager && 
-                   mapManager.getMap() && 
-                   mapManager.getMap().loaded && 
-                   mapManager.getMap().loaded();
-  
-  if (mapReady) {
+  if (mapIsFullyLoaded && staticDataStore.size > 0) {
     processRealtimeData(updates);
   } else {
-    console.log("⏳ Map not ready, queueing realtime data");
+    console.log("⏳ Map or static data not ready, queueing realtime data");
     pendingRealtimeData.push(updates);
   }
 };
