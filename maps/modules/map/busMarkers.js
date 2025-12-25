@@ -4,46 +4,48 @@
 class BusMarkers {
   constructor(mapManager) {
     this.mapManager = mapManager;
-    this.map = mapManager.getMap();
+    this.map = mapManager ? mapManager.getMap() : null;
     this.busMarkers = new Map();
     this.modelLoaded = false;
-    this.busModel = null;
     
-    // Initialize 3D model layer when map is ready
+    if (!this.map) {
+      console.error('❌ BusMarkers: Map not available');
+      return;
+    }
+    
+    console.log('🚌 BusMarkers initialized');
+    
+    // Wait for map to load
     if (this.map.loaded()) {
       this.init3DLayer();
     } else {
-      this.map.on('load', () => this.init3DLayer());
+      this.map.on('load', () => {
+        console.log('🚌 Map loaded, initializing 3D layer');
+        this.init3DLayer();
+      });
     }
   }
 
   async init3DLayer() {
-    // Load the 3D bus model
     try {
-      await this.loadBusModel();
-      console.log('🚌 3D bus model ready');
+      // For now, we'll use CSS 3D models instead of GLB
+      this.modelLoaded = true;
+      console.log('✅ 3D bus model ready (CSS-based)');
     } catch (e) {
-      console.error('Failed to load 3D model:', e);
-      // Fallback to 2D markers
+      console.error('Failed to initialize 3D layer:', e);
       this.modelLoaded = false;
     }
   }
 
-  async loadBusModel() {
-    return new Promise((resolve, reject) => {
-      const modelUrl = 'https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/deckgl-3d/maps/Bus4glb.glb';
-      
-      // We'll use the model via custom layer
-      this.busModel = modelUrl;
-      this.modelLoaded = true;
-      resolve();
-    });
-  }
-
   drawBuses(vehicles, color, shapeCoords) {
-    if (!this.map) return;
+    if (!this.map) {
+      console.warn('Map not available for drawing buses');
+      return;
+    }
 
-    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : []; // lon, lat
+    console.log(`Drawing ${vehicles.length} buses`);
+
+    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : [];
     
     vehicles.forEach(v => {
       let lon = v.lon;
@@ -60,13 +62,17 @@ class BusMarkers {
       }
       
       if (lat && lon) {
-        const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId}`;
+        const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId}` || Math.random();
         const bearing = v.bearing || 0;
         
-        if (this.modelLoaded) {
-          this.draw3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
-        } else {
-          this.draw2DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
+        try {
+          if (this.modelLoaded) {
+            this.draw3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
+          } else {
+            this.draw2DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
+          }
+        } catch (e) {
+          console.error(`Failed to draw bus ${vehicleId}:`, e);
         }
       }
     });
@@ -75,26 +81,30 @@ class BusMarkers {
     const currentVehicleIds = new Set(
       vehicles
         .filter(v => v.lat && v.lon)
-        .map(v => v.vehicleId || `${v.routeNumber}-${v.tripId}`)
+        .map(v => v.vehicleId || `${v.routeNumber}-${v.tripId}` || Math.random())
     );
 
     this.busMarkers.forEach((marker, id) => {
       if (!currentVehicleIds.has(id)) {
-        if (marker.remove) marker.remove();
+        try {
+          if (marker.remove) marker.remove();
+        } catch (e) {
+          console.error('Failed to remove marker:', e);
+        }
         this.busMarkers.delete(id);
       }
     });
+    
+    console.log(`✅ ${this.busMarkers.size} buses on map`);
   }
 
   draw3DBus(vehicleId, lon, lat, bearing, color, routeNumber) {
-    // Check if marker exists
     let marker = this.busMarkers.get(vehicleId);
     
     if (marker) {
       // Update existing marker
       marker.setLngLat([lon, lat]);
       
-      // Update rotation
       const el = marker.getElement();
       if (el) {
         const model = el.querySelector('.bus-3d-container');
@@ -120,14 +130,12 @@ class BusMarkers {
   }
 
   draw2DBus(vehicleId, lon, lat, bearing, color, routeNumber) {
-    // Fallback to 2D markers
     let marker = this.busMarkers.get(vehicleId);
     
     if (marker) {
       // Update existing marker
       marker.setLngLat([lon, lat]);
       
-      // Update rotation
       const el = marker.getElement();
       if (el) {
         const arrow = el.querySelector('.bus-direction-arrow');
@@ -202,43 +210,16 @@ class BusMarkers {
   }
 
   clearAll() {
+    console.log('Clearing all bus markers');
     this.busMarkers.forEach(marker => {
       if (marker && marker.remove) {
-        marker.remove();
+        try {
+          marker.remove();
+        } catch (e) {
+          console.error('Failed to remove marker:', e);
+        }
       }
     });
     this.busMarkers.clear();
-  }
-
-  // Animate bus movement (smooth transitions)
-  animateBusTo(vehicleId, newLon, newLat, duration = 1000) {
-    const marker = this.busMarkers.get(vehicleId);
-    if (!marker) return;
-
-    const start = marker.getLngLat();
-    const end = [newLon, newLat];
-    
-    const startTime = performance.now();
-    
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Easing function
-      const eased = progress < 0.5
-        ? 2 * progress * progress
-        : -1 + (4 - 2 * progress) * progress;
-      
-      const currentLng = start.lng + (end[0] - start.lng) * eased;
-      const currentLat = start.lat + (end[1] - start.lat) * eased;
-      
-      marker.setLngLat([currentLng, currentLat]);
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    };
-    
-    requestAnimationFrame(animate);
   }
 }
