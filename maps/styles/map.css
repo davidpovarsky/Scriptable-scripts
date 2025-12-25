@@ -1,7 +1,8 @@
-/* styles/map.css */
-/* עיצוב למפה תלת-מימדית עם MapLibre GL JS */
+/* styles/map.css - Minimal 3D version */
 
-/* Map Container */
+/* ============================================
+   Map Container
+   ============================================ */
 #map {
   position: absolute;
   top: 0;
@@ -10,16 +11,10 @@
   bottom: 0;
   width: 100%;
   height: 100%;
-  background: #f0f0f0;
-}
-
-/* MapLibre Canvas */
-.maplibregl-canvas {
-  outline: none;
 }
 
 /* ============================================
-   User Location Marker - Pulsing Effect
+   User Location
    ============================================ */
 .user-location-marker {
   position: relative;
@@ -67,239 +62,121 @@
 }
 
 /* ============================================
-   3D Bus Marker Styles
+   3D Bus Markers
    ============================================ */
 .bus-marker-3d {
-  position: relative;
   width: 50px;
   height: 50px;
   cursor: pointer;
-  transform-style: preserve-3d;
-  perspective: 1000px;
 }
 
 .bus-3d-container {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform-origin: center center;
-  transition: transform 0.3s ease-out;
-  transform-style: preserve-3d;
-}
-
-/* 3D Bus Body */
-.bus-3d-model {
-  position: relative;
-  width: 40px;
-  height: 70px;
-  transform-style: preserve-3d;
-  transform: translate(-50%, -50%) rotateX(60deg);
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
-}
-
-.bus-3d-body {
   position: relative;
   width: 100%;
   height: 100%;
-  transform-style: preserve-3d;
 }
 
-/* Front of bus */
+.bus-3d-model {
+  position: absolute;
+  width: 30px;
+  height: 50px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 8px 8px 4px 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.bus-3d-body {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Front windshield */
 .bus-3d-front {
   position: absolute;
-  width: 40px;
-  height: 20px;
-  background: inherit;
-  border: 2px solid rgba(255,255,255,0.8);
-  border-radius: 8px 8px 0 0;
-  top: 0;
-  transform: translateZ(10px);
-  box-shadow: inset 0 -2px 4px rgba(0,0,0,0.2);
-}
-
-.bus-3d-front::before {
-  content: '';
-  position: absolute;
-  top: 4px;
-  left: 6px;
-  right: 6px;
+  top: 5px;
+  left: 4px;
+  right: 4px;
   height: 8px;
   background: rgba(100, 200, 255, 0.6);
-  border-radius: 2px;
-  box-shadow: 0 0 4px rgba(100, 200, 255, 0.8);
+  border-radius: 3px 3px 0 0;
 }
 
-/* Top of bus */
-.bus-3d-top {
-  position: absolute;
-  width: 40px;
-  height: 70px;
-  background: inherit;
-  opacity: 0.95;
-  border: 2px solid rgba(255,255,255,0.6);
-  top: 0;
-  transform: rotateX(90deg) translateZ(10px);
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
-}
-
-/* Sides of bus */
-.bus-3d-side-left,
-.bus-3d-side-right {
-  position: absolute;
-  width: 20px;
-  height: 70px;
-  background: inherit;
-  opacity: 0.9;
-  border: 1px solid rgba(255,255,255,0.5);
-  top: 0;
-  box-shadow: inset 0 0 8px rgba(0,0,0,0.15);
-}
-
-.bus-3d-side-left {
-  left: 0;
-  transform: rotateY(90deg) translateZ(10px);
-}
-
-.bus-3d-side-right {
-  right: 0;
-  transform: rotateY(-90deg) translateZ(10px);
-}
-
-/* Windows effect */
-.bus-3d-side-left::before,
-.bus-3d-side-right::before {
+/* Windows */
+.bus-3d-body::before {
   content: '';
   position: absolute;
-  top: 8px;
-  left: 2px;
-  right: 2px;
-  height: 50px;
-  background: 
-    linear-gradient(transparent 0%, transparent 45%, rgba(255,255,255,0.3) 45%, rgba(255,255,255,0.3) 55%, transparent 55%),
-    repeating-linear-gradient(
-      transparent,
-      transparent 8px,
-      rgba(255,255,255,0.2) 8px,
-      rgba(255,255,255,0.2) 10px
-    );
+  top: 15px;
+  left: 4px;
+  right: 4px;
+  bottom: 8px;
+  background: repeating-linear-gradient(
+    transparent,
+    transparent 6px,
+    rgba(255,255,255,0.2) 6px,
+    rgba(255,255,255,0.2) 8px
+  );
 }
 
 /* Wheels */
 .bus-3d-wheels {
   position: absolute;
-  width: 100%;
-  height: 100%;
-  transform-style: preserve-3d;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 3px;
 }
 
 .wheel {
-  position: absolute;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   background: #333;
-  border: 2px solid #555;
   border-radius: 50%;
-  box-shadow: 0 0 3px rgba(0,0,0,0.5);
+  border: 1px solid #555;
 }
 
-.wheel-fl { left: 5px; top: 15px; }
-.wheel-fr { right: 5px; top: 15px; }
-.wheel-rl { left: 5px; bottom: 15px; }
-.wheel-rr { right: 5px; bottom: 15px; }
-
-/* Route Badge on 3D Bus */
+/* Route badge */
 .route-badge-3d {
   position: absolute;
-  top: -25px;
-  left: 50%;
-  transform: translateX(-50%) rotateX(-60deg);
-  padding: 4px 10px;
-  border-radius: 12px;
-  border: 2px solid;
-  font-weight: bold;
-  font-size: 13px;
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  backdrop-filter: blur(4px);
-}
-
-/* Shadow under bus */
-.bus-3d-shadow {
-  position: absolute;
-  bottom: -8px;
+  top: -20px;
   left: 50%;
   transform: translateX(-50%);
-  width: 45px;
-  height: 20px;
-  background: radial-gradient(ellipse, rgba(0,0,0,0.4), transparent);
-  border-radius: 50%;
-  filter: blur(4px);
-  z-index: -1;
-}
-
-/* ============================================
-   2D Bus Marker (Fallback)
-   ============================================ */
-.bus-marker-container {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.bus-direction-arrow {
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-  transition: transform 0.3s ease;
-}
-
-.main-bus-icon {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  z-index: 2;
-}
-
-.main-bus-icon .material-symbols-outlined {
-  font-size: 20px;
-  color: white;
-}
-
-.route-badge {
-  position: absolute;
-  bottom: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 2px 8px;
+  padding: 3px 8px;
   background: white;
   border: 2px solid;
   border-radius: 10px;
   font-weight: bold;
   font-size: 11px;
   white-space: nowrap;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  z-index: 3;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  z-index: 10;
+}
+
+/* Shadow */
+.bus-3d-shadow {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 35px;
+  height: 15px;
+  background: radial-gradient(ellipse, rgba(0,0,0,0.4), transparent);
+  border-radius: 50%;
+  filter: blur(3px);
+  z-index: -1;
 }
 
 /* ============================================
-   Locate Me Button
+   Buttons
    ============================================ */
-#locateMeBtn {
+#locateMeBtn,
+#toggle3DBtn {
   position: absolute;
-  bottom: 100px;
   right: 20px;
   width: 44px;
   height: 44px;
@@ -316,37 +193,15 @@
   transition: all 0.2s;
 }
 
-#locateMeBtn:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  transform: scale(1.05);
+#locateMeBtn {
+  bottom: 100px;
 }
 
-#locateMeBtn:active {
-  transform: scale(0.95);
-}
-
-/* ============================================
-   3D Toggle Button
-   ============================================ */
 #toggle3DBtn {
-  position: absolute;
   bottom: 160px;
-  right: 20px;
-  width: 44px;
-  height: 44px;
-  background: white;
-  border: none;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  cursor: pointer;
-  font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  transition: all 0.2s;
 }
 
+#locateMeBtn:hover,
 #toggle3DBtn:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   transform: scale(1.05);
@@ -358,105 +213,15 @@
 }
 
 /* ============================================
-   Map Controls Override
+   Mapbox Controls
    ============================================ */
-.maplibregl-ctrl-group {
+.mapboxgl-ctrl-group {
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
-.maplibregl-ctrl-group button {
+.mapboxgl-ctrl-group button {
   width: 36px;
   height: 36px;
-  border: none;
-}
-
-.maplibregl-ctrl-group button:hover {
-  background: #f5f5f5;
-}
-
-/* ============================================
-   Popup Styles
-   ============================================ */
-.maplibregl-popup-content {
-  background: white;
-  border-radius: 12px;
-  padding: 12px 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-
-.maplibregl-popup-close-button {
-  font-size: 20px;
-  padding: 4px 8px;
-  color: #666;
-}
-
-.maplibregl-popup-close-button:hover {
-  background: #f0f0f0;
-  color: #333;
-}
-
-.maplibregl-popup-tip {
-  border-top-color: white;
-}
-
-/* ============================================
-   Animation Effects
-   ============================================ */
-@keyframes bus-arrive {
-  0% {
-    transform: scale(0.8);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.1);
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.bus-marker-3d.new-bus {
-  animation: bus-arrive 0.5s ease-out;
-}
-
-/* ============================================
-   Responsive Design
-   ============================================ */
-@media (max-width: 768px) {
-  .bus-3d-model {
-    width: 35px;
-    height: 60px;
-  }
-  
-  .route-badge-3d {
-    font-size: 11px;
-    padding: 3px 8px;
-  }
-  
-  #locateMeBtn,
-  #toggle3DBtn {
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
-  }
-}
-
-/* ============================================
-   Performance Optimization
-   ============================================ */
-.bus-marker-3d,
-.bus-marker-container {
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-/* Smooth transitions for moving buses */
-.bus-marker-3d.moving,
-.bus-marker-container.moving {
-  transition: transform 1s linear;
 }
