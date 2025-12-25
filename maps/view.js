@@ -1,5 +1,5 @@
 // view.js
-// בונה HTML עם bundle מלא - גרסת MapLibre GL JS (3D)
+// בונה HTML עם bundle מלא - גרסת DEBUG עם לוגים
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -90,12 +90,11 @@ module.exports.getHtml = function() {
 console.log("✅ KavNav 3D Bundle Complete");
 `;
       
-      // Debug output - שמירה גם ב-Local וגם ב-iCloud
+      // Debug output
       const debugPathLocal = fm.joinPath(baseDir, 'debug-bundle.js');
       fm.writeString(debugPathLocal, allJs);
       console.log(`📝 Debug (local): debug-bundle.js (${allJs.length} chars)`);
       
-      // שמירה נוספת ב-iCloud
       try {
         const fmCloud = FileManager.iCloud();
         const debugPathCloud = fmCloud.joinPath(fmCloud.documentsDirectory(), 'debug-bundle.js');
@@ -114,7 +113,7 @@ console.log("✅ KavNav 3D Bundle Complete");
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>KavNav 3D</title>
+  <title>KavNav 3D - DEBUG</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   
   <!-- Google Fonts & Icons -->
@@ -122,11 +121,57 @@ console.log("✅ KavNav 3D Bundle Complete");
   
   <!-- MapLibre GL JS (3D Maps!) -->
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
-  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js" onerror="console.error('MapLibre failed to load')"></script>
+  
+  <!-- Leaflet (2D Fallback) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <style>
+    /* Debug Console */
+    #debugConsole {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 150px;
+      background: rgba(0,0,0,0.9);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 11px;
+      overflow-y: auto;
+      z-index: 10000;
+      padding: 10px;
+      display: none;
+      direction: ltr;
+      text-align: left;
+    }
+    #debugToggle {
+      position: fixed;
+      bottom: 160px;
+      left: 10px;
+      background: #000;
+      color: #0f0;
+      border: 2px solid #0f0;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-family: monospace;
+      cursor: pointer;
+      z-index: 10001;
+    }
+    .log-error { color: #f00; }
+    .log-warn { color: #ff0; }
+    .log-info { color: #0ff; }
+    .log-success { color: #0f0; }
+  </style>
   
   ${isScriptable && allCss ? `<style>${allCss}</style>` : ''}
 </head>
 <body class="mode-map-only">
+  <!-- Debug Console -->
+  <button id="debugToggle" onclick="toggleDebug()">🐛 Console</button>
+  <div id="debugConsole"></div>
+
   <div id="modeToggleContainer">
     <div class="mode-toggle">
       <input type="radio" name="viewMode" id="modeDual" value="dual">
@@ -159,10 +204,68 @@ console.log("✅ KavNav 3D Bundle Complete");
   </div>
 
   <script>
+    // ===== Debug Console =====
+    const debugConsole = document.getElementById('debugConsole');
+    let debugVisible = false;
+    
+    function toggleDebug() {
+      debugVisible = !debugVisible;
+      debugConsole.style.display = debugVisible ? 'block' : 'none';
+    }
+    
+    function addLog(message, type = 'info') {
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = 'log-' + type;
+      div.textContent = time + ' | ' + message;
+      debugConsole.appendChild(div);
+      debugConsole.scrollTop = debugConsole.scrollHeight;
+    }
+    
+    // Override console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      addLog(args.join(' '), 'info');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      addLog('ERROR: ' + args.join(' '), 'error');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      addLog('WARN: ' + args.join(' '), 'warn');
+    };
+    
+    // Catch all errors
+    window.addEventListener('error', (e) => {
+      addLog('UNCAUGHT ERROR: ' + e.message + ' at ' + e.filename + ':' + e.lineno, 'error');
+    });
+    
+    window.addEventListener('unhandledrejection', (e) => {
+      addLog('PROMISE REJECTION: ' + e.reason, 'error');
+    });
+    
+    // Check MapLibre availability
+    addLog('Starting KavNav 3D...', 'info');
+    addLog('MapLibre available: ' + (typeof maplibregl !== 'undefined'), 'info');
+    
     window.APP_ENVIRONMENT = 'scriptable';
     console.log('🌍 Environment: Scriptable (3D Mode)');
   </script>
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
+  
+  <script>
+    // Show debug console after 2 seconds
+    setTimeout(() => {
+      toggleDebug();
+    }, 2000);
+  </script>
 </body>
 </html>`;
 };
