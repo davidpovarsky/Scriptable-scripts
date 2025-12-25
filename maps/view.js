@@ -1,5 +1,5 @@
 // view.js
-// בונה HTML עם bundle מלא - תיקון סופי
+// בונה HTML עם bundle מלא - גרסת MapLibre GL JS (3D)
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -12,7 +12,7 @@ module.exports.getHtml = function() {
       const fm = FileManager.local();
       const baseDir = fm.documentsDirectory();
       
-      console.log("🔧 Building modular bundle...");
+      console.log("🔧 Building modular bundle with 3D support...");
       
       // ===== CSS =====
       const cssFiles = [
@@ -46,7 +46,7 @@ module.exports.getHtml = function() {
       // התחלת IIFE
       allJs = '(function() {\n';
       allJs += '  "use strict";\n\n';
-      allJs += '  console.log("🔧 KavNav Bundle Loading...");\n\n';
+      allJs += '  console.log("🔧 KavNav 3D Bundle Loading...");\n\n';
       
       jsFiles.forEach((file) => {
         const path = fm.joinPath(baseDir, file);
@@ -61,12 +61,6 @@ module.exports.getHtml = function() {
             .replace(/^export\s+default\s+/gm, '')
             .replace(/^export\s+\{[^}]+\};?\s*$/gm, '')
             .replace(/\n{3,}/g, '\n\n');
-          
-          // טיפול מיוחד ב-app.js
-          if (file === 'web/app.js') {
-            // אין צורך להסיר DOMContentLoaded - זה כבר לא קיים בקובץ החדש
-            // הקובץ כבר מתוקן עם const initApp = async function()
-          }
           
           allJs += `  // ===== ${file} =====\n`;
           allJs += code.split('\n').map(line => '  ' + line).join('\n');
@@ -93,7 +87,7 @@ module.exports.getHtml = function() {
   
 })();
 
-console.log("✅ KavNav Bundle Complete");
+console.log("✅ KavNav 3D Bundle Complete");
 `;
       
       // Debug output - שמירה גם ב-Local וגם ב-iCloud
@@ -120,11 +114,16 @@ console.log("✅ KavNav Bundle Complete");
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>KavNav</title>
+  <title>KavNav 3D</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  
+  <!-- Google Fonts & Icons -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  
+  <!-- MapLibre GL JS (3D Maps!) -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  
   ${isScriptable && allCss ? `<style>${allCss}</style>` : ''}
 </head>
 <body class="mode-map-only">
@@ -149,16 +148,20 @@ console.log("✅ KavNav Bundle Complete");
     <div class="pane-map-wrapper">
       <div id="map">
         <button id="locateMeBtn" title="המיקום שלי">📍</button>
+        <button id="toggle3DBtn" title="מעבר בין 2D ל-3D" class="active">🏗️</button>
       </div>
       <div id="bottomSheet">
         <div id="dragHandleArea"><div class="handle-bar"></div></div>
         <div id="routesContainer"></div>
-        <div class="footer-note-global">ETA • KavNav</div>
+        <div class="footer-note-global">ETA • KavNav 3D</div>
       </div>
     </div>
   </div>
 
-  <script>window.APP_ENVIRONMENT = 'scriptable';</script>
+  <script>
+    window.APP_ENVIRONMENT = 'scriptable';
+    console.log('🌍 Environment: Scriptable (3D Mode)');
+  </script>
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
 </body>
 </html>`;
