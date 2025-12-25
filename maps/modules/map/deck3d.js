@@ -1,187 +1,166 @@
 // modules/map/deck3d.js
-// שכבת תלת-מימד (deck.gl) שמצוירת מעל Leaflet - ללא export
-// נועדה לציור הרבה אוטובוסים בצורה יעילה + מודל GLB
+// 3D buses overlay using deck.gl ScenegraphLayer above Leaflet
 
-(function () {
-  function hexToRgbArray(hex) {
-    if (!hex) return [0, 122, 255];
-    const h = String(hex).replace("#", "").trim();
+class Deck3D {
+  constructor(mapManager) {
+    this.mapManager = mapManager;
+    this.map = null;
+
+    this.deckInstance = null;
+    this.canvas = null;
+
+    this.vehicles = [];
+
+    // ✅ כאן אתה מכניס את הקישור ל-GLB שלך:
+    this.DEFAULT_MODEL_URL =
+      "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/deckgl-3d/maps/Bus4glb.glb";
+
+    // כוונונים
+    this.modelScale = 18;        // תגדיל/תקטין לפי איך שזה נראה אצלך
+    this.zIndex = 450;           // מעל אריחים/פוליליינים
+  }
+
+  async init() {
+    if (!this.mapManager || !this.mapManager.getMap) {
+      throw new Error("Deck3D: invalid mapManager");
+    }
+    this.map = this.mapManager.getMap();
+    if (!this.map) {
+      throw new Error("Deck3D: Leaflet map is null");
+    }
+    if (!window.deck) {
+      throw new Error("Deck3D: deck.gl not loaded (window.deck missing)");
+    }
+
+    const mapEl = this.map.getContainer();
+    mapEl.style.position = mapEl.style.position || "relative";
+
+    // Canvas overlay
+    this.canvas = document.createElement("canvas");
+    this.canvas.id = "deck3d-canvas";
+    this.canvas.style.position = "absolute";
+    this.canvas.style.left = "0";
+    this.canvas.style.top = "0";
+    this.canvas.style.width = "100%";
+    this.canvas.style.height = "100%";
+    this.canvas.style.pointerEvents = "none";
+    this.canvas.style.zIndex = String(this.zIndex);
+
+    mapEl.appendChild(this.canvas);
+
+    // Deck instance
+    this.deckInstance = new window.deck.Deck({
+      canvas: this.canvas,
+      controller: false,
+      initialViewState: this._getViewState(),
+      layers: [],
+    });
+
+    // Bind Leaflet events
+    this.map.on("move", () => this._syncView());
+    this.map.on("zoom", () => this._syncView());
+    this.map.on("resize", () => this._resize());
+
+    // initial
+    this._resize();
+    this._syncView(true);
+
+    return true;
+  }
+
+  setVehicles(list) {
+    if (!Array.isArray(list)) list = [];
+    this.vehicles = list;
+    this._render();
+  }
+
+  _getViewState() {
+    const c = this.map.getCenter();
+    const z = this.map.getZoom();
+
+    // ⚠️ pitch חייב להיות 0 כדי להישאר מיושר ל-Leaflet tiles.
+    return {
+      longitude: c.lng,
+      latitude: c.lat,
+      zoom: z,
+      pitch: 0,
+      bearing: 0,
+    };
+  }
+
+  _syncView(force) {
+    if (!this.deckInstance) return;
+    this.deckInstance.setProps({ viewState: this._getViewState() });
+    if (force) this.deckInstance.redraw(true);
+  }
+
+  _resize() {
+    if (!this.deckInstance || !this.canvas) return;
+
+    const mapEl = this.map.getContainer();
+    const w = mapEl.clientWidth;
+    const h = mapEl.clientHeight;
+
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.max(1, Math.floor(w * dpr));
+    this.canvas.height = Math.max(1, Math.floor(h * dpr));
+
+    this.deckInstance.setProps({ width: w, height: h });
+    this.deckInstance.redraw(true);
+  }
+
+  _hexToRgb(hex) {
+    if (!hex) return [41, 182, 246];
+    const h = hex.replace("#", "").trim();
     if (h.length === 3) {
       const r = parseInt(h[0] + h[0], 16);
       const g = parseInt(h[1] + h[1], 16);
       const b = parseInt(h[2] + h[2], 16);
       return [r, g, b];
     }
-    if (h.length === 6) {
-      const r = parseInt(h.slice(0, 2), 16);
-      const g = parseInt(h.slice(2, 4), 16);
-      const b = parseInt(h.slice(4, 6), 16);
+    if (h.length >= 6) {
+      const r = parseInt(h.substring(0, 2), 16);
+      const g = parseInt(h.substring(2, 4), 16);
+      const b = parseInt(h.substring(4, 6), 16);
       return [r, g, b];
     }
-    return [0, 122, 255];
+    return [41, 182, 246];
   }
 
-  class Deck3D {
-    constructor(leafletMap, cfg) {
-      this.map = leafletMap;
-      this.cfg = Object.assign({
-        enabled: true,
-        glbUrl: null,
-        sizeScale: 25,
-        elevationMeters: 6,
-        yawOffsetDeg: 0,
-        pitchDeg: 50,
-        zoomOffset: 0,
-      }, cfg || {});
+  _render() {
+    if (!this.deckInstance) return;
 
-      this._routeVehicles = new Map(); // routeId -> { vehicles, colorHex }
-      this._deck = null;
-      this._overlay = null;
+    const data = this.vehicles.map((v) => ({
+      position: [v.lon, v.lat, 0],
+      bearing: typeof v.bearing === "number" ? v.bearing : 0,
+      color: this._hexToRgb(v.color),
+      route: v.route || "",
+    }));
 
-      this._init();
-    }
+    const layer = new window.deck.ScenegraphLayer({
+      id: "kavnav-buses-3d",
+      data,
+      scenegraph: this.DEFAULT_MODEL_URL,
 
-    _hasDeps() {
-      if (!window.deck || !window.deck.Deck) {
-        console.warn("🧊 Deck3D disabled: deck.gl not loaded (window.deck missing)");
-        return false;
-      }
-      if (!window.deck.ScenegraphLayer) {
-        console.warn("🧊 Deck3D disabled: ScenegraphLayer missing (mesh-layers not loaded?)");
-        return false;
-      }
-      return true;
-    }
+      // מיקום/סקייל
+      getPosition: (d) => d.position,
+      sizeScale: this.modelScale,
+      getScale: (d) => [1, 1, 1],
 
-    _ensureOverlay() {
-      const container = this.map.getContainer();
-      if (!container.style.position) container.style.position = "relative";
+      // כיוון: לפעמים צריך להפוך סימן/צירים לפי המודל.
+      // אם האוטובוסים “פונים הפוך”, תשנה את ה- yaw כאן.
+      getOrientation: (d) => [0, -d.bearing, 90],
 
-      let overlay = document.getElementById("deckOverlay");
-      if (!overlay) {
-        overlay = document.createElement("div");
-        overlay.id = "deckOverlay";
-        overlay.style.position = "absolute";
-        overlay.style.inset = "0";
-        overlay.style.pointerEvents = "none";
-        overlay.style.zIndex = "500";
-        container.appendChild(overlay);
-      }
-      this._overlay = overlay;
-    }
+      // צבע
+      getColor: (d) => d.color,
 
-    _leafletViewState() {
-      const c = this.map.getCenter();
-      return {
-        longitude: c.lng,
-        latitude: c.lat,
-        zoom: (this.map.getZoom() || 0) + (this.cfg.zoomOffset || 0),
-        pitch: this.cfg.pitchDeg || 0,
-        bearing: 0
-      };
-    }
+      // ביצועים
+      pickable: false,
+      _lighting: "pbr",
+      // opacity: 1,  // אפשר להוסיף אם צריך
+    });
 
-    _init() {
-      if (!this.cfg.enabled) return;
-      if (!this._hasDeps()) {
-        this.cfg.enabled = false;
-        return;
-      }
-      if (!this.cfg.glbUrl) {
-        console.warn("🧊 Deck3D disabled: missing glbUrl");
-        this.cfg.enabled = false;
-        return;
-      }
-
-      this._ensureOverlay();
-
-      this._deck = new window.deck.Deck({
-        parent: this._overlay,
-        controller: false,
-        initialViewState: this._leafletViewState(),
-        views: [new window.deck.MapView({ repeat: true })],
-        layers: [],
-        parameters: { depthTest: true }
-      });
-
-      const sync = () => this.syncToLeaflet();
-      this.map.on("move", sync);
-      this.map.on("zoom", sync);
-      this.map.on("resize", sync);
-
-      this.syncToLeaflet();
-      console.log("🧊 Deck3D overlay ready");
-    }
-
-    syncToLeaflet() {
-      if (!this._deck || !this.cfg.enabled) return;
-      this._deck.setProps({ viewState: this._leafletViewState() });
-    }
-
-    reset() {
-      this._routeVehicles.clear();
-      this._render();
-    }
-
-    setRouteVehicles(routeId, vehicles, colorHex) {
-      if (!this.cfg.enabled || !this._deck) return;
-      this._routeVehicles.set(String(routeId), {
-        vehicles: Array.isArray(vehicles) ? vehicles : [],
-        colorHex: colorHex || "#0aa"
-      });
-      this._render();
-    }
-
-    _flattenData() {
-      const out = [];
-      for (const [routeId, info] of this._routeVehicles.entries()) {
-        const rgb = hexToRgbArray(info.colorHex);
-        for (const v of (info.vehicles || [])) {
-          const lat = Number(v.lat);
-          const lon = Number(v.lon);
-          if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-
-          out.push({
-            id: String(v.vehicleId || v.vid || v.id || `${routeId}-${lon}-${lat}`),
-            routeId,
-            lat,
-            lon,
-            bearing: Number(v.bearing ?? v.heading ?? 0) || 0,
-            color: rgb
-          });
-        }
-      }
-      return out;
-    }
-
-    _render() {
-      if (!this.cfg.enabled || !this._deck) return;
-
-      const data = this._flattenData();
-
-      if (!data.length) {
-        this._deck.setProps({ layers: [] });
-        return;
-      }
-
-      const layer = new window.deck.ScenegraphLayer({
-        id: "buses-3d",
-        data,
-        scenegraph: this.cfg.glbUrl,
-        sizeScale: this.cfg.sizeScale,
-        pickable: false,
-
-        getPosition: d => [d.lon, d.lat, this.cfg.elevationMeters],
-
-        // ייתכן שתצטרך לשחק עם yawOffsetDeg כדי שהאוטובוס “יפנה קדימה”
-        getOrientation: d => [0, (d.bearing + (this.cfg.yawOffsetDeg || 0)), 90],
-
-        getColor: d => d.color
-      });
-
-      this._deck.setProps({ layers: [layer] });
-    }
+    this.deckInstance.setProps({ layers: [layer] });
+    this.deckInstance.redraw(true);
   }
-
-  window.Deck3D = Deck3D;
-})();
+}
