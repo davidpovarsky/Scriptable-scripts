@@ -23,9 +23,10 @@ const initApp = async function() {
   console.log("🚀 KavNav Mapbox App Starting...");
 
   try {
-    // Initialize non-map components first
+    // Initialize ALL components immediately (not dependent on map)
     nearbyPanel = new NearbyPanel();
     bottomSheet = new BottomSheet();
+    modeToggle = new ModeToggle(null); // Will set mapManager later
     
     bottomSheet.init();
     
@@ -49,8 +50,11 @@ const initApp = async function() {
       // Now initialize map-dependent components
       busMarkers = new BusMarkers(mapManager);
       userLocationManager = new UserLocationManager(mapManager);
-      modeToggle = new ModeToggle(mapManager);
-
+      
+      // Update modeToggle with mapManager
+      if (modeToggle) {
+        modeToggle.mapManager = mapManager;
+      }
       modeToggle.init();
       userLocationManager.setupLocateButton();
       setup3DToggle();
