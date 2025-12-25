@@ -1,113 +1,462 @@
 /* styles/map.css */
-/* עיצוב המפה ואייקוני אוטובוס */
+/* עיצוב למפה תלת-מימדית עם MapLibre GL JS */
 
-.pane-map-wrapper {
-  flex: 1;
-  position: relative;
-  height: 100%;
-  transition: width 0.4s ease;
-}
-
+/* Map Container */
 #map {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
   height: 100%;
-  z-index: 0;
+  background: #f0f0f0;
 }
 
-/* --- כפתור מיקום --- */
-#locateMeBtn {
+/* MapLibre Canvas */
+.maplibregl-canvas {
+  outline: none;
+}
+
+/* ============================================
+   User Location Marker - Pulsing Effect
+   ============================================ */
+.user-location-marker {
+  position: relative;
+  width: 30px;
+  height: 30px;
+}
+
+.pulse-dot {
   position: absolute;
-  top: 70px;
-  left: 15px;
-  z-index: 2500;
-  background: #ffffff;
-  border: none;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  background: #2196f3;
+  border: 2px solid white;
   border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
+  z-index: 2;
+}
+
+.pulse-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  background: rgba(33, 150, 243, 0.3);
+  border: 2px solid rgba(33, 150, 243, 0.5);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: pulse-animation 2s infinite;
+  z-index: 1;
+}
+
+@keyframes pulse-animation {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* ============================================
+   3D Bus Marker Styles
+   ============================================ */
+.bus-marker-3d {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+.bus-3d-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: center center;
+  transition: transform 0.3s ease-out;
+  transform-style: preserve-3d;
+}
+
+/* 3D Bus Body */
+.bus-3d-model {
+  position: relative;
+  width: 40px;
+  height: 70px;
+  transform-style: preserve-3d;
+  transform: translate(-50%, -50%) rotateX(60deg);
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+}
+
+.bus-3d-body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+/* Front of bus */
+.bus-3d-front {
+  position: absolute;
+  width: 40px;
+  height: 20px;
+  background: inherit;
+  border: 2px solid rgba(255,255,255,0.8);
+  border-radius: 8px 8px 0 0;
+  top: 0;
+  transform: translateZ(10px);
+  box-shadow: inset 0 -2px 4px rgba(0,0,0,0.2);
+}
+
+.bus-3d-front::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  height: 8px;
+  background: rgba(100, 200, 255, 0.6);
+  border-radius: 2px;
+  box-shadow: 0 0 4px rgba(100, 200, 255, 0.8);
+}
+
+/* Top of bus */
+.bus-3d-top {
+  position: absolute;
+  width: 40px;
+  height: 70px;
+  background: inherit;
+  opacity: 0.95;
+  border: 2px solid rgba(255,255,255,0.6);
+  top: 0;
+  transform: rotateX(90deg) translateZ(10px);
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+}
+
+/* Sides of bus */
+.bus-3d-side-left,
+.bus-3d-side-right {
+  position: absolute;
+  width: 20px;
+  height: 70px;
+  background: inherit;
+  opacity: 0.9;
+  border: 1px solid rgba(255,255,255,0.5);
+  top: 0;
+  box-shadow: inset 0 0 8px rgba(0,0,0,0.15);
+}
+
+.bus-3d-side-left {
+  left: 0;
+  transform: rotateY(90deg) translateZ(10px);
+}
+
+.bus-3d-side-right {
+  right: 0;
+  transform: rotateY(-90deg) translateZ(10px);
+}
+
+/* Windows effect */
+.bus-3d-side-left::before,
+.bus-3d-side-right::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 2px;
+  right: 2px;
+  height: 50px;
+  background: 
+    linear-gradient(transparent 0%, transparent 45%, rgba(255,255,255,0.3) 45%, rgba(255,255,255,0.3) 55%, transparent 55%),
+    repeating-linear-gradient(
+      transparent,
+      transparent 8px,
+      rgba(255,255,255,0.2) 8px,
+      rgba(255,255,255,0.2) 10px
+    );
+}
+
+/* Wheels */
+.bus-3d-wheels {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.wheel {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #333;
+  border: 2px solid #555;
+  border-radius: 50%;
+  box-shadow: 0 0 3px rgba(0,0,0,0.5);
+}
+
+.wheel-fl { left: 5px; top: 15px; }
+.wheel-fr { right: 5px; top: 15px; }
+.wheel-rl { left: 5px; bottom: 15px; }
+.wheel-rr { right: 5px; bottom: 15px; }
+
+/* Route Badge on 3D Bus */
+.route-badge-3d {
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%) rotateX(-60deg);
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 2px solid;
+  font-weight: bold;
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  backdrop-filter: blur(4px);
+}
+
+/* Shadow under bus */
+.bus-3d-shadow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 45px;
+  height: 20px;
+  background: radial-gradient(ellipse, rgba(0,0,0,0.4), transparent);
+  border-radius: 50%;
+  filter: blur(4px);
+  z-index: -1;
+}
+
+/* ============================================
+   2D Bus Marker (Fallback)
+   ============================================ */
+.bus-marker-container {
+  position: relative;
   width: 44px;
   height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
   cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s, background 0.2s;
-}
-
-#locateMeBtn:active {
-  transform: scale(0.90);
-  background: #f0f0f0;
-}
-
-body.mode-dual #locateMeBtn {
-  left: 15px;
-}
-
-/* --- אייקוני אוטובוס --- */
-.bus-marker-container {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
 }
 
 .bus-direction-arrow {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1;
-  pointer-events: none;
-}
-
-.bus-direction-arrow svg {
-  margin-top: -14px;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+  transition: transform 0.3s ease;
 }
 
 .main-bus-icon {
+  position: relative;
   width: 34px;
   height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
-  border: 2px solid #fff;
-  box-sizing: border-box;
-  z-index: 10;
-  position: relative;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 2;
 }
 
-.material-symbols-outlined {
+.main-bus-icon .material-symbols-outlined {
   font-size: 20px;
-  line-height: 1;
+  color: white;
 }
 
 .route-badge {
   position: absolute;
-  top: -6px;
-  right: -6px;
-  background: #fff;
-  border-radius: 99px;
-  height: 18px;
-  min-width: 18px;
-  padding: 0 3px;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  background: white;
+  border: 2px solid;
+  border-radius: 10px;
+  font-weight: bold;
+  font-size: 11px;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  z-index: 3;
+}
+
+/* ============================================
+   Locate Me Button
+   ============================================ */
+#locateMeBtn {
+  position: absolute;
+  bottom: 100px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  background: white;
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  cursor: pointer;
+  font-size: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 800;
-  border: 2px solid currentColor;
-  box-sizing: border-box;
-  white-space: nowrap;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  z-index: 20;
+  z-index: 1000;
+  transition: all 0.2s;
+}
+
+#locateMeBtn:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  transform: scale(1.05);
+}
+
+#locateMeBtn:active {
+  transform: scale(0.95);
+}
+
+/* ============================================
+   3D Toggle Button
+   ============================================ */
+#toggle3DBtn {
+  position: absolute;
+  bottom: 160px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  background: white;
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  transition: all 0.2s;
+}
+
+#toggle3DBtn:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  transform: scale(1.05);
+}
+
+#toggle3DBtn.active {
+  background: #2196f3;
+  color: white;
+}
+
+/* ============================================
+   Map Controls Override
+   ============================================ */
+.maplibregl-ctrl-group {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.maplibregl-ctrl-group button {
+  width: 36px;
+  height: 36px;
+  border: none;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: #f5f5f5;
+}
+
+/* ============================================
+   Popup Styles
+   ============================================ */
+.maplibregl-popup-content {
+  background: white;
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.maplibregl-popup-close-button {
+  font-size: 20px;
+  padding: 4px 8px;
+  color: #666;
+}
+
+.maplibregl-popup-close-button:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: white;
+}
+
+/* ============================================
+   Animation Effects
+   ============================================ */
+@keyframes bus-arrive {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.bus-marker-3d.new-bus {
+  animation: bus-arrive 0.5s ease-out;
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+@media (max-width: 768px) {
+  .bus-3d-model {
+    width: 35px;
+    height: 60px;
+  }
+  
+  .route-badge-3d {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+  
+  #locateMeBtn,
+  #toggle3DBtn {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+}
+
+/* ============================================
+   Performance Optimization
+   ============================================ */
+.bus-marker-3d,
+.bus-marker-container {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Smooth transitions for moving buses */
+.bus-marker-3d.moving,
+.bus-marker-container.moving {
+  transition: transform 1s linear;
 }
