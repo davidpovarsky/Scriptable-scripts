@@ -1,5 +1,5 @@
 // web/app.js
-// נקודת הכניסה הראשית - גרסת Mapbox
+// נקודת הכניסה הראשית - גרסת Mapbox המתוקנת
 
 // ============================================
 // משתנים גלובליים
@@ -178,7 +178,7 @@ function processStaticData(payloads) {
 }
 
 // ============================================
-// Process Realtime Data
+// Process Realtime Data - FIXED
 // ============================================
 function processRealtimeData(updates) {
   if (!Array.isArray(updates)) {
@@ -186,20 +186,16 @@ function processRealtimeData(updates) {
     return;
   }
 
-  if (mapManager && mapIsFullyLoaded) {
-    mapManager.clearBuses();
-  }
-
+  // Set לאיסוף כל הרכבים הפעילים בכל הקווים בעדכון הנוכחי
+  const activeVehicleIds = new Set();
   let processedCount = 0;
-  let skippedCount = 0;
 
   updates.forEach(u => {
     const routeId = u.routeId;
     const staticData = staticDataStore.get(routeId);
     
     if (!staticData) {
-      console.warn(`⚠️ No static data for route ${routeId} - skipping`);
-      skippedCount++;
+      // אם אין מידע סטטי, לא נוכל לצייר, אבל לא נשבור את הלולאה
       return;
     }
 
@@ -216,15 +212,29 @@ function processRealtimeData(updates) {
       }
     }
 
-    // Draw buses
+    // Draw buses & collect IDs
     if (u.vehicles && u.vehicles.length && busMarkers) {
       try {
+        // איסוף ה-IDs של הרכבים בקו הזה
+        u.vehicles.forEach(v => {
+           if(v.lat && v.lon) {
+              const vId = v.vehicleId || `${v.routeNumber}-${v.tripId || ''}`;
+              activeVehicleIds.add(vId);
+           }
+        });
+        
+        // ציור/עדכון (מבלי למחוק אחרים)
         busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
       } catch (e) {
         console.error(`❌ Error drawing buses for route ${routeId}:`, e);
       }
     }
   });
+
+  // כעת, כשיש לנו את כל הרכבים הפעילים מכל הקווים, ננקה את השאר
+  if (busMarkers) {
+    busMarkers.pruneMarkers(activeVehicleIds);
+  }
 
   // Update nearby panel
   if (nearbyPanel) {
@@ -235,7 +245,7 @@ function processRealtimeData(updates) {
     }
   }
 
-  console.log(`✅ Realtime updated: ${processedCount} routes processed, ${skippedCount} skipped`);
+  console.log(`✅ Realtime updated: ${processedCount} routes processed`);
 }
 
 // ============================================
@@ -247,14 +257,12 @@ function getVariedColor(baseColor, seed) {
   
   // If seed is provided, vary the color slightly for visual distinction
   if (seed) {
-    // Simple hash function to get consistent variation
     let hash = 0;
     for (let i = 0; i < seed.length; i++) {
       hash = ((hash << 5) - hash) + seed.charCodeAt(i);
       hash = hash & hash;
     }
     
-    // Parse base color
     let r, g, b;
     if (baseColor.startsWith('#')) {
       const hex = baseColor.substring(1);
@@ -275,7 +283,7 @@ function getVariedColor(baseColor, seed) {
     }
     
     // Apply slight variation (±10%)
-    const variation = (hash % 21) - 10; // -10 to +10
+    const variation = (hash % 21) - 10;
     r = Math.max(0, Math.min(255, r + variation));
     g = Math.max(0, Math.min(255, g + variation));
     b = Math.max(0, Math.min(255, b + variation));
