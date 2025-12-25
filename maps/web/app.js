@@ -61,7 +61,7 @@ const initApp = async function() {
 
       console.log("✅ Map-dependent components initialized");
 
-      // Process any pending data
+      // Process any pending data immediately
       if (pendingStaticData) {
         console.log("📦 Processing pending static data...");
         processStaticData(pendingStaticData);
@@ -74,6 +74,20 @@ const initApp = async function() {
         pendingRealtimeData = [];
       }
     });
+    
+    // Fallback: process pending data after 5 seconds if map load didn't trigger
+    setTimeout(() => {
+      if (pendingStaticData) {
+        console.log("⏰ Timeout: Processing pending static data");
+        processStaticData(pendingStaticData);
+        pendingStaticData = null;
+      }
+      if (pendingRealtimeData.length > 0) {
+        console.log("⏰ Timeout: Processing pending realtime data");
+        pendingRealtimeData.forEach(data => processRealtimeData(data));
+        pendingRealtimeData = [];
+      }
+    }, 5000);
 
     map.on('error', (e) => {
       console.error("❌ Mapbox error:", e);
@@ -227,8 +241,14 @@ window.initStaticData = function(payloads) {
   if (!Array.isArray(payloads)) return;
   console.log("📦 Receiving static data:", payloads.length, "routes");
 
-  // Check if map is ready
-  if (mapManager && mapManager.getMap() && mapManager.getMap().loaded()) {
+  // Check if map is ready - need to check both map exists AND is loaded
+  const mapReady = mapManager && 
+                   mapManager.getMap() && 
+                   mapManager.getMap().loaded && 
+                   mapManager.getMap().loaded();
+  
+  if (mapReady) {
+    console.log("📦 Map ready, processing immediately");
     processStaticData(payloads);
   } else {
     console.log("⏳ Map not ready, queueing static data");
@@ -241,7 +261,12 @@ window.updateRealtimeData = function(updates) {
   console.log("🔄 Receiving realtime data:", updates.length, "routes");
 
   // Check if map is ready
-  if (mapManager && mapManager.getMap() && mapManager.getMap().loaded()) {
+  const mapReady = mapManager && 
+                   mapManager.getMap() && 
+                   mapManager.getMap().loaded && 
+                   mapManager.getMap().loaded();
+  
+  if (mapReady) {
     processRealtimeData(updates);
   } else {
     console.log("⏳ Map not ready, queueing realtime data");
