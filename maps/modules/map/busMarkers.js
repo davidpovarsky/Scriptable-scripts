@@ -18,7 +18,7 @@ class BusMarkers {
     // טעינת Three.js
     this.loadThreeJS();
     
-    console.log("🚌 BusMarkers initialized (Fixed Version)");
+    console.log("🚌 BusMarkers initialized (Fixed Camera Version)");
   }
 
   loadThreeJS() {
@@ -49,13 +49,14 @@ class BusMarkers {
 
   setupRenderer() {
     // יצירת Canvas נסתר לרינדור
+    // הקטנתי ל-128 לביצועים, אבל האיכות תהיה טובה כי האייקון במפה קטן
     const canvas = document.createElement('canvas');
-    canvas.width = 128; // הקטנתי מעט לביצועים טובים יותר, אפשר להחזיר ל-256
+    canvas.width = 128;
     canvas.height = 128;
     
     this.renderer = new THREE.WebGLRenderer({ 
       canvas: canvas,
-      alpha: true, // קריטי לרקע שקוף
+      alpha: true, // חובה לרקע שקוף
       antialias: true,
       preserveDrawingBuffer: true
     });
@@ -66,14 +67,13 @@ class BusMarkers {
     // הגדרת סצנה
     this.scene = new THREE.Scene();
     
-    // --- תיקון: הגדרת מצלמה זהה ל-Viewer שעובד ---
-    // המצלמה ב-Viewer מוגדרת: camera.position.set(0, -8, 4);
-    // יחס רוחב גובה 1:1 כי האייקון מרובע
+    // --- תיקון קריטי: הגדרת מצלמה כמו ב-Viewer שעובד ---
+    // המצלמה ב-Viewer היא: (0, -8, 4). כאן שמתי 5 כדי להבטיח שהאוטובוס כולו בפריים
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
-    this.camera.position.set(0, -8, 5); // מעט יותר רחוק כדי שכל האוטובוס ייכנס
+    this.camera.position.set(0, -8, 5); 
     this.camera.lookAt(0, 0, 0);
     
-    // --- תיקון: תאורה זהה ל-Viewer ---
+    // --- תאורה (כמו ב-Viewer) ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambientLight);
     
@@ -90,6 +90,7 @@ class BusMarkers {
 
   loadBusModel() {
     const loader = new THREE.GLTFLoader();
+    // שימוש בקישור שנתת שעובד ב-Viewer
     const glbPath = 'https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb';
     
     loader.load(
@@ -97,16 +98,19 @@ class BusMarkers {
       (gltf) => {
         this.glbModel = gltf.scene;
         
-        // --- תיקון: ביטול חישובי Box3 מסובכים ---
-        // אנחנו סומכים על המודל שהוא סביר (כמו ב-Viewer)
-        // אם המודל נראה קטן מדי או גדול מדי, נשנה את ה-Scale כאן:
-        // this.glbModel.scale.set(1.5, 1.5, 1.5); 
+        // --- תיקון: ביטלתי את חישובי ה-Bounding Box ---
+        // החישובים האלה גרמו למודל "לברוח" מהמרכז.
+        // אנחנו סומכים על המודל שהוא במרכז (0,0,0) כפי שהוא ב-Viewer.
         
+        // אם האוטובוס נראה קטן מדי, אפשר להגדיל אותו כאן:
+        // this.glbModel.scale.set(1.2, 1.2, 1.2);
+
         this.modelLoaded = true;
         console.log(`✅ Model loaded successfully!`);
         
-        // ציור אוטובוסים שהמתינו לטעינה
+        // עיבוד אוטובוסים שחיכו לטעינה
         if (this.pendingBuses.length > 0) {
+          console.log(`🔄 Processing ${this.pendingBuses.length} pending buses...`);
           this.pendingBuses.forEach(bus => {
             this.draw3DBus(
               bus.vehicleId,
@@ -120,7 +124,7 @@ class BusMarkers {
           this.pendingBuses = [];
         }
       },
-      undefined,
+      undefined, // onProgress
       (error) => {
         console.error('❌ Error loading model:', error);
       }
@@ -133,11 +137,10 @@ class BusMarkers {
 
     vehicles.forEach(v => {
       try {
-        // לוגיקה למציאת קואורדינטות (זהה למקור)
         let lon = v.lon;
         let lat = v.lat;
         
-        // תמיכה במיקום משוער על הקו אם אין GPS
+        // השלמת מיקום אם חסר
         if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeCoords) {
             const idx = Math.floor(v.positionOnLine * (shapeCoords.length - 1));
             const point = shapeCoords[idx];
@@ -160,7 +163,7 @@ class BusMarkers {
           }
         }
       } catch (e) {
-        console.error("❌ Error processing bus:", e);
+        console.error("❌ Error in drawBuses:", e);
       }
     });
   }
@@ -172,10 +175,9 @@ class BusMarkers {
       // עדכון מיקום (אנימציה)
       this.animateBusTo(vehicleId, lon, lat, 2000);
       
-      // עדכון סיבוב וצבע אם צריך
+      // עדכון סיבוב וצבע רק אם השתנו משמעותית
       const el = marker.getElement();
       if (el && el._busData) {
-        // עדכון רק אם הזווית או הצבע השתנו משמעותית כדי לחסוך משאבים
         if (Math.abs(el._busData.bearing - bearing) > 5 || el._busData.color !== color) {
             el._busData.bearing = bearing;
             el._busData.color = color;
@@ -189,8 +191,8 @@ class BusMarkers {
       marker = new mapboxgl.Marker({
         element: el,
         anchor: 'center',
-        rotationAlignment: 'map', // המרקר מסתובב עם המפה
-        pitchAlignment: 'viewport' // המרקר נשאר זקוף כשמטים את המפה
+        rotationAlignment: 'map', // מסתובב עם המפה
+        pitchAlignment: 'viewport' // נשאר עומד בהטיה
       })
         .setLngLat([lon, lat])
         .addTo(this.map);
@@ -202,15 +204,16 @@ class BusMarkers {
   createBusElement(color, bearing, routeNumber) {
     const container = document.createElement('div');
     container.className = 'bus-3d-marker';
-    // גודל האלמנט על המפה
-    container.style.width = '60px'; 
-    container.style.height = '60px';
+    // גודל המרקר על המפה
+    container.style.width = '50px'; 
+    container.style.height = '50px';
     container.style.position = 'relative';
+    container.style.cursor = 'pointer';
     
     const canvas = document.createElement('canvas');
-    canvas.width = 128; // רזולוציית רינדור
+    canvas.width = 128;
     canvas.height = 128;
-    canvas.style.width = '100%'; // התאמה לגודל הקונטיינר
+    canvas.style.width = '100%';
     canvas.style.height = '100%';
     
     container._busData = {
@@ -230,7 +233,7 @@ class BusMarkers {
       badge.className = 'route-badge-3d';
       badge.style.cssText = `
         position: absolute;
-        top: -5px;
+        top: -8px;
         left: 50%;
         transform: translateX(-50%);
         padding: 2px 5px;
@@ -243,6 +246,7 @@ class BusMarkers {
         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         pointer-events: none;
         z-index: 10;
+        white-space: nowrap;
       `;
       badge.textContent = routeNumber;
       container.appendChild(badge);
@@ -254,45 +258,37 @@ class BusMarkers {
   renderBusToCanvas(targetCanvas, color, bearing) {
     if (!this.glbModel || !this.renderer || !this.scene) return;
     
-    // שיבוט המודל כדי לא להרוס את המקורי
-    // הערה: clone() ב-Three.js משבט את ה-Nodes אבל משתף Geometries
+    // שיבוט המודל
     const busModel = this.glbModel.clone(true);
     
-    // שינוי צבע
+    // צביעת המודל
     busModel.traverse((child) => {
       if (child.isMesh) {
-        // חשוב לשבט את החומר כדי לא לשנות את כל האוטובוסים
         child.material = child.material.clone(); 
-        
-        // המרת צבע HEX ל-Three.js Color
         const threeColor = new THREE.Color(color);
         child.material.color.set(threeColor);
       }
     });
     
-    // --- סיבוב ---
-    // bearing במפה הוא בכיוון השעון מצפון.
-    // ב-Viewer ראינו שהמודל שוכב על XY ו-Z זה הציר המסתובב (RotationY ב-Viewer שולט על Z במודל הזה)
-    // המרה מ-Degrees ל-Radians
-    // ייתכן ונצטרך להוסיף Math.PI (180 מעלות) אם האוטובוס נוסע "אחורה"
+    // סיבוב - המרה למעלות
+    // Z הוא הציר המסתובב במבט על
     busModel.rotation.z = (bearing * Math.PI / 180); 
     
-    // איפוס מיקום (למקרה שהמודל המקורי הוזז)
+    // איפוס מיקום מוחלט
     busModel.position.set(0, 0, 0);
 
     this.scene.add(busModel);
     this.renderer.render(this.scene, this.camera);
     
-    // העתקה ל-Canvas של המרקר הספציפי
+    // העתקה לקנבס המטרה
     const ctx = targetCanvas.getContext('2d');
     ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
-    // הופך אנכית כי לפעמים WebGL מרנדר הפוך ל-Canvas 2D, אבל בדרך כלל בסדר
     ctx.drawImage(this.renderer.domElement, 0, 0, targetCanvas.width, targetCanvas.height);
     
-    // ניקוי הסצנה לרינדור הבא
+    // ניקוי
     this.scene.remove(busModel);
     
-    // ניקוי זיכרון של החומרים המשובטים (חשוב למניעת דליפת זיכרון)
+    // שחרור זיכרון חומרים
     busModel.traverse((child) => {
         if (child.isMesh && child.material) {
             child.material.dispose();
@@ -324,14 +320,12 @@ class BusMarkers {
     const marker = this.busMarkers.get(vehicleId);
     if (!marker) return;
 
-    // אנימציה פשוטה של המרקר (Mapbox עושה חלק מזה לבד, אבל זה להחלקה נוספת)
     const start = marker.getLngLat();
     const startTime = performance.now();
     
     const animate = (time) => {
       const progress = Math.min((time - startTime) / duration, 1);
-      // Easing function
-      const t = progress * (2 - progress); 
+      const t = progress * (2 - progress); // Ease out
       
       const lng = start.lng + (newLon - start.lng) * t;
       const lat = start.lat + (newLat - start.lat) * t;
