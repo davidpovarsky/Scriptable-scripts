@@ -109,7 +109,7 @@ pitchAlignment: 'viewport'
     el.className = 'bus-marker-3d';
     
     el.innerHTML = `
-      <div class="bus-3d-container" style="transform: rotateZ(${bearing}deg);">
+ <div class="bus-3d-container" style="transform: rotateX(60deg) rotateZ(${bearing}deg);">
         <div class="bus-3d-model" style="background: ${color};">
           <div class="bus-3d-body">
             <div class="bus-3d-front"></div>
