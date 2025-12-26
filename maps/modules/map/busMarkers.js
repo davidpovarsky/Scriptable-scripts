@@ -1,6 +1,5 @@
 // modules/map/busMarkers.js
 // אחראי על ציור אוטובוסים תלת-מימדיים על המפה - Canvas Markers + Three.js
-// גרסה פשוטה: כל אוטובוס = Canvas עם התמונה שלו מה-renderer המשותף
 
 class BusMarkers {
   constructor(mapManager) {
@@ -10,16 +9,16 @@ class BusMarkers {
     this.glbModel = null;
     this.modelLoaded = false;
     
-    // Shared Three.js components for rendering
+    // רכיבי Three.js משותפים לרינדור
     this.scene = null;
     this.camera = null;
     this.renderer = null;
     this.pendingBuses = [];
     
-    // Load Three.js and setup
+    // טעינת Three.js
     this.loadThreeJS();
     
-    console.log("🚌 BusMarkers initialized (Canvas Markers + Three.js)");
+    console.log("🚌 BusMarkers initialized (Fixed Version)");
   }
 
   loadThreeJS() {
@@ -49,39 +48,41 @@ class BusMarkers {
   }
 
   setupRenderer() {
-    // Create offscreen canvas for rendering
+    // יצירת Canvas נסתר לרינדור
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
+    canvas.width = 128; // הקטנתי מעט לביצועים טובים יותר, אפשר להחזיר ל-256
+    canvas.height = 128;
     
     this.renderer = new THREE.WebGLRenderer({ 
       canvas: canvas,
-      alpha: true,
+      alpha: true, // קריטי לרקע שקוף
       antialias: true,
-      preserveDrawingBuffer: true // Important for capturing frames
+      preserveDrawingBuffer: true
     });
     
-    this.renderer.setSize(256, 256);
-    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setSize(128, 128);
+    this.renderer.setClearColor(0x000000, 0); // שקוף לחלוטין
     
-    // Setup scene
+    // הגדרת סצנה
     this.scene = new THREE.Scene();
     
-    // Setup camera
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-    this.camera.position.set(0, -5, 3);
+    // --- תיקון: הגדרת מצלמה זהה ל-Viewer שעובד ---
+    // המצלמה ב-Viewer מוגדרת: camera.position.set(0, -8, 4);
+    // יחס רוחב גובה 1:1 כי האייקון מרובע
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    this.camera.position.set(0, -8, 5); // מעט יותר רחוק כדי שכל האוטובוס ייכנס
     this.camera.lookAt(0, 0, 0);
     
-    // Setup lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    // --- תיקון: תאורה זהה ל-Viewer ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    directionalLight.position.set(5, -5, 5);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 5, 5);
     this.scene.add(directionalLight);
     
     const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
-    directionalLight2.position.set(-5, 5, 3);
+    directionalLight2.position.set(-5, -5, 5);
     this.scene.add(directionalLight2);
     
     console.log('✅ Three.js renderer initialized');
@@ -89,35 +90,23 @@ class BusMarkers {
 
   loadBusModel() {
     const loader = new THREE.GLTFLoader();
+    const glbPath = 'https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb';
     
     loader.load(
-      'https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb',
+      glbPath,
       (gltf) => {
         this.glbModel = gltf.scene;
         
-        // Calculate bounding box and center the model
-        const box = new THREE.Box3().setFromObject(this.glbModel);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        
-        // Center the model
-        this.glbModel.position.sub(center);
-        
-        // Calculate camera distance based on model size
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = this.camera.fov * (Math.PI / 180);
-        const cameraDistance = maxDim / (2 * Math.tan(fov / 2));
-        
-        // Position camera to see the whole model
-        this.camera.position.set(0, -cameraDistance * 1.5, cameraDistance * 0.8);
-        this.camera.lookAt(0, 0, 0);
+        // --- תיקון: ביטול חישובי Box3 מסובכים ---
+        // אנחנו סומכים על המודל שהוא סביר (כמו ב-Viewer)
+        // אם המודל נראה קטן מדי או גדול מדי, נשנה את ה-Scale כאן:
+        // this.glbModel.scale.set(1.5, 1.5, 1.5); 
         
         this.modelLoaded = true;
-        console.log(`✅ Model loaded! Size: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
+        console.log(`✅ Model loaded successfully!`);
         
-        // Process pending buses
+        // ציור אוטובוסים שהמתינו לטעינה
         if (this.pendingBuses.length > 0) {
-          console.log(`🔄 Processing ${this.pendingBuses.length} pending buses...`);
           this.pendingBuses.forEach(bus => {
             this.draw3DBus(
               bus.vehicleId,
@@ -131,9 +120,7 @@ class BusMarkers {
           this.pendingBuses = [];
         }
       },
-      (xhr) => {
-        console.log(`Loading: ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`);
-      },
+      undefined,
       (error) => {
         console.error('❌ Error loading model:', error);
       }
@@ -144,20 +131,20 @@ class BusMarkers {
     if (!this.map) return;
     if (!Array.isArray(vehicles)) return;
 
-    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : [];
-    
     vehicles.forEach(v => {
       try {
+        // לוגיקה למציאת קואורדינטות (זהה למקור)
         let lon = v.lon;
         let lat = v.lat;
         
-        if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
-          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-          const point = shapeLatLngs[idx];
-          if (point) {
-            lon = point[0];
-            lat = point[1];
-          }
+        // תמיכה במיקום משוער על הקו אם אין GPS
+        if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeCoords) {
+            const idx = Math.floor(v.positionOnLine * (shapeCoords.length - 1));
+            const point = shapeCoords[idx];
+            if (point) {
+              lon = point[0];
+              lat = point[1];
+            }
         }
         
         if (lat && lon) {
@@ -166,19 +153,14 @@ class BusMarkers {
           
           if (!this.modelLoaded) {
             this.pendingBuses.push({
-              vehicleId,
-              lon,
-              lat,
-              bearing,
-              color,
-              routeNumber: v.routeNumber
+              vehicleId, lon, lat, bearing, color, routeNumber: v.routeNumber
             });
           } else {
             this.draw3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
           }
         }
       } catch (e) {
-        console.error("❌ Error:", e);
+        console.error("❌ Error processing bus:", e);
       }
     });
   }
@@ -187,48 +169,50 @@ class BusMarkers {
     let marker = this.busMarkers.get(vehicleId);
     
     if (marker) {
-      // Update existing marker
+      // עדכון מיקום (אנימציה)
       this.animateBusTo(vehicleId, lon, lat, 2000);
       
-      // Update rotation if needed
+      // עדכון סיבוב וצבע אם צריך
       const el = marker.getElement();
       if (el && el._busData) {
-        el._busData.bearing = bearing;
-        this.updateBusImage(el, color, bearing, routeNumber);
+        // עדכון רק אם הזווית או הצבע השתנו משמעותית כדי לחסוך משאבים
+        if (Math.abs(el._busData.bearing - bearing) > 5 || el._busData.color !== color) {
+            el._busData.bearing = bearing;
+            el._busData.color = color;
+            this.updateBusImage(el, color, bearing, routeNumber);
+        }
       }
     } else {
-      // Create new marker
+      // יצירת מרקר חדש
       const el = this.createBusElement(color, bearing, routeNumber);
       
       marker = new mapboxgl.Marker({
         element: el,
         anchor: 'center',
-        rotationAlignment: 'map',
-        pitchAlignment: 'viewport'
+        rotationAlignment: 'map', // המרקר מסתובב עם המפה
+        pitchAlignment: 'viewport' // המרקר נשאר זקוף כשמטים את המפה
       })
         .setLngLat([lon, lat])
         .addTo(this.map);
       
       this.busMarkers.set(vehicleId, marker);
-      console.log(`✅ Bus ${vehicleId} added`);
     }
   }
 
   createBusElement(color, bearing, routeNumber) {
     const container = document.createElement('div');
     container.className = 'bus-3d-marker';
-    container.style.width = '64px';
-    container.style.height = '64px';
+    // גודל האלמנט על המפה
+    container.style.width = '60px'; 
+    container.style.height = '60px';
     container.style.position = 'relative';
     
-    // Create canvas for the 3D bus
     const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    canvas.style.width = '64px';
-    canvas.style.height = '64px';
+    canvas.width = 128; // רזולוציית רינדור
+    canvas.height = 128;
+    canvas.style.width = '100%'; // התאמה לגודל הקונטיינר
+    canvas.style.height = '100%';
     
-    // Store data for updates
     container._busData = {
       canvas: canvas,
       color: color,
@@ -236,30 +220,29 @@ class BusMarkers {
       routeNumber: routeNumber
     };
     
-    // Render the bus
     this.renderBusToCanvas(canvas, color, bearing);
     
     container.appendChild(canvas);
     
-    // Add route badge
+    // תווית מספר קו
     if (routeNumber) {
       const badge = document.createElement('div');
       badge.className = 'route-badge-3d';
       badge.style.cssText = `
         position: absolute;
-        top: -10px;
+        top: -5px;
         left: 50%;
         transform: translateX(-50%);
-        padding: 2px 6px;
+        padding: 2px 5px;
         background: white;
         border: 2px solid ${color};
-        border-radius: 8px;
-        font-weight: bold;
-        font-size: 10px;
-        color: ${color};
-        white-space: nowrap;
+        border-radius: 6px;
+        font-weight: 800;
+        font-size: 11px;
+        color: #333;
         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         pointer-events: none;
+        z-index: 10;
       `;
       badge.textContent = routeNumber;
       container.appendChild(badge);
@@ -271,116 +254,95 @@ class BusMarkers {
   renderBusToCanvas(targetCanvas, color, bearing) {
     if (!this.glbModel || !this.renderer || !this.scene) return;
     
-    // Clone and prepare the model
-    const busModel = this.glbModel.clone();
+    // שיבוט המודל כדי לא להרוס את המקורי
+    // הערה: clone() ב-Three.js משבט את ה-Nodes אבל משתף Geometries
+    const busModel = this.glbModel.clone(true);
     
-    // Apply color
+    // שינוי צבע
     busModel.traverse((child) => {
       if (child.isMesh) {
-        let r, g, b;
-        if (color.startsWith('#')) {
-          const hex = color.substring(1);
-          r = parseInt(hex.substring(0, 2), 16) / 255;
-          g = parseInt(hex.substring(2, 4), 16) / 255;
-          b = parseInt(hex.substring(4, 6), 16) / 255;
-        } else if (color.startsWith('rgb')) {
-          const matches = color.match(/\d+/g);
-          if (matches && matches.length >= 3) {
-            r = parseInt(matches[0]) / 255;
-            g = parseInt(matches[1]) / 255;
-            b = parseInt(matches[2]) / 255;
-          }
-        }
+        // חשוב לשבט את החומר כדי לא לשנות את כל האוטובוסים
+        child.material = child.material.clone(); 
         
-        if (r !== undefined) {
-          child.material = child.material.clone();
-          child.material.color.setRGB(r, g, b);
-        }
+        // המרת צבע HEX ל-Three.js Color
+        const threeColor = new THREE.Color(color);
+        child.material.color.set(threeColor);
       }
     });
     
-    // Set rotation
-    busModel.rotation.z = bearing * Math.PI / 180;
+    // --- סיבוב ---
+    // bearing במפה הוא בכיוון השעון מצפון.
+    // ב-Viewer ראינו שהמודל שוכב על XY ו-Z זה הציר המסתובב (RotationY ב-Viewer שולט על Z במודל הזה)
+    // המרה מ-Degrees ל-Radians
+    // ייתכן ונצטרך להוסיף Math.PI (180 מעלות) אם האוטובוס נוסע "אחורה"
+    busModel.rotation.z = (bearing * Math.PI / 180); 
     
-    // Add to scene temporarily
+    // איפוס מיקום (למקרה שהמודל המקורי הוזז)
+    busModel.position.set(0, 0, 0);
+
     this.scene.add(busModel);
-    
-    // Render
     this.renderer.render(this.scene, this.camera);
     
-    // Copy to target canvas
+    // העתקה ל-Canvas של המרקר הספציפי
     const ctx = targetCanvas.getContext('2d');
     ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+    // הופך אנכית כי לפעמים WebGL מרנדר הפוך ל-Canvas 2D, אבל בדרך כלל בסדר
     ctx.drawImage(this.renderer.domElement, 0, 0, targetCanvas.width, targetCanvas.height);
     
-    // Remove from scene
+    // ניקוי הסצנה לרינדור הבא
     this.scene.remove(busModel);
+    
+    // ניקוי זיכרון של החומרים המשובטים (חשוב למניעת דליפת זיכרון)
+    busModel.traverse((child) => {
+        if (child.isMesh && child.material) {
+            child.material.dispose();
+        }
+    });
   }
 
   updateBusImage(element, color, bearing, routeNumber) {
     if (!element._busData) return;
-    
-    const canvas = element._busData.canvas;
-    this.renderBusToCanvas(canvas, color, bearing);
+    this.renderBusToCanvas(element._busData.canvas, color, bearing);
   }
 
   pruneMarkers(activeVehicleIds) {
-    if (!activeVehicleIds || !(activeVehicleIds instanceof Set)) return;
-
+    if (!activeVehicleIds) return;
     this.busMarkers.forEach((marker, id) => {
       if (!activeVehicleIds.has(id)) {
-        try {
-          marker.remove();
-          this.busMarkers.delete(id);
-        } catch (e) {
-          console.error("❌ Error removing:", e);
-        }
+        marker.remove();
+        this.busMarkers.delete(id);
       }
     });
   }
 
   clearAll() {
-    this.busMarkers.forEach(marker => {
-      try {
-        marker.remove();
-      } catch (e) {}
-    });
+    this.busMarkers.forEach(marker => marker.remove());
     this.busMarkers.clear();
-    console.log("🗑️ Cleared");
   }
 
   animateBusTo(vehicleId, newLon, newLat, duration = 2000) {
     const marker = this.busMarkers.get(vehicleId);
     if (!marker) return;
 
-    try {
-      const start = marker.getLngLat();
-      const end = [newLon, newLat];
+    // אנימציה פשוטה של המרקר (Mapbox עושה חלק מזה לבד, אבל זה להחלקה נוספת)
+    const start = marker.getLngLat();
+    const startTime = performance.now();
+    
+    const animate = (time) => {
+      const progress = Math.min((time - startTime) / duration, 1);
+      // Easing function
+      const t = progress * (2 - progress); 
       
-      if (Math.abs(start.lng - end[0]) < 0.00001 && Math.abs(start.lat - end[1]) < 0.00001) {
-        return;
+      const lng = start.lng + (newLon - start.lng) * t;
+      const lat = start.lat + (newLat - start.lat) * t;
+      
+      marker.setLngLat([lng, lat]);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
       }
-      
-      let startTime = null;
-      
-      const animate = (timestamp) => {
-        if (!startTime) startTime = timestamp;
-        const progress = Math.min((timestamp - startTime) / duration, 1);
-        const eased = progress * (2 - progress);
-        
-        const currentLng = start.lng + (end[0] - start.lng) * eased;
-        const currentLat = start.lat + (end[1] - start.lat) * eased;
-        
-        marker.setLngLat([currentLng, currentLat]);
-        
-        if (progress < 1) {
-          requestAnimationFrame(animate);
-        }
-      };
-      
-      requestAnimationFrame(animate);
-    } catch (e) {
-      console.error("❌ Animation error:", e);
-    }
+    };
+    
+    requestAnimationFrame(animate);
   }
 }
