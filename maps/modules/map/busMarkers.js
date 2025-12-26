@@ -1,23 +1,21 @@
 // modules/map/busMarkers.js
-// אחראי על ציור אוטובוסים תלת-ממדיים (HTML markers) על המפה
-// כולל אנימציות תנועה, סיבוב לפי כיוון, ועוד
+// אחראי על ציור אוטובוסים תלת-מימדיים על המפה - Mapbox version
+// גרסה מתוקנת: אנימציה חלקה + מניעת הבהובים
 
-export default class BusMarkers {
+class BusMarkers {
   constructor(mapManager) {
     this.mapManager = mapManager;
     this.map = mapManager.getMap();
     this.busMarkers = new Map();
-    this.motionTrails = new Map();
-    this.lastPositions = new Map();
-    this.animations = new Map();
-    this.isAnimating = false;
+    this.modelLoaded = true;
+    
+    console.log("🚌 BusMarkers initialized (Mapbox Fixed)");
   }
 
-  // Create 3D bus marker element
-  createBusElement(bus, color) {
+  // Create 3D bus element
+  _create3DBusElement(bearing, color, routeNumber) {
     const container = document.createElement('div');
     container.className = 'bus-marker-3d';
-    container.dataset.busId = bus.id || bus.vehicleId || bus.vehicle_id || '';
 
     const busContainer = document.createElement('div');
     busContainer.className = 'bus-3d-container';
@@ -26,15 +24,15 @@ export default class BusMarkers {
     busModel.className = 'bus-3d-model';
     busModel.style.backgroundColor = color;
 
-    // Add bus details
-    const busBody = document.createElement('div');
-    busBody.className = 'bus-3d-body';
+    // Add body
+    const body = document.createElement('div');
+    body.className = 'bus-3d-body';
 
     // Front windshield
     const front = document.createElement('div');
     front.className = 'bus-3d-front';
 
-    // Side windows
+    // Windows
     const windows = document.createElement('div');
     windows.className = 'bus-3d-windows';
 
@@ -42,223 +40,130 @@ export default class BusMarkers {
     const wheels = document.createElement('div');
     wheels.className = 'bus-3d-wheels';
 
-    // Direction indicator
+    const wheel1 = document.createElement('div');
+    wheel1.className = 'wheel';
+    const wheel2 = document.createElement('div');
+    wheel2.className = 'wheel';
+
+    wheels.appendChild(wheel1);
+    wheels.appendChild(wheel2);
+
+    body.appendChild(front);
+    body.appendChild(windows);
+    body.appendChild(wheels);
+
+    // Direction arrow
     const direction = document.createElement('div');
     direction.className = 'bus-direction';
     direction.innerHTML = '▲';
+    direction.style.transform = `rotate(${bearing}deg)`;
 
-    // Add line number if available
-    const lineNumber = document.createElement('div');
-    lineNumber.className = 'bus-line-number';
-    lineNumber.textContent = bus.line || bus.lineId || bus.route_short_name || '';
+    // Route number
+    const label = document.createElement('div');
+    label.className = 'bus-route-label';
+    label.textContent = routeNumber || '';
 
-    // Assemble
-    busBody.appendChild(front);
-    busBody.appendChild(windows);
-    busBody.appendChild(wheels);
+    // Shadow
+    const shadow = document.createElement('div');
+    shadow.className = 'bus-3d-shadow';
 
-    busModel.appendChild(busBody);
+    busModel.appendChild(body);
     busModel.appendChild(direction);
-    if (lineNumber.textContent) busModel.appendChild(lineNumber);
+    if (routeNumber) busModel.appendChild(label);
 
+    busContainer.appendChild(shadow);
     busContainer.appendChild(busModel);
-    container.appendChild(busContainer);
 
-    // Add click handler
-    container.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.onBusClick(bus);
-    });
+    container.appendChild(busContainer);
 
     return container;
   }
 
-  // Update all bus markers
-  updateBuses(buses, getRouteColor) {
+  // Draw/update all buses
+  drawBuses(buses, getRouteColor) {
     if (!this.map || !buses) return;
 
     const activeIds = new Set();
 
-    buses.forEach(bus => {
-      const id = bus.id || bus.vehicleId || bus.vehicle_id;
-      if (!id) return;
+    for (const bus of buses) {
+      const vehicleId = bus.vehicleId || bus.id || bus.vehicle_id;
+      if (!vehicleId) continue;
+      activeIds.add(vehicleId);
 
-      activeIds.add(id);
+      const lat = bus.lat ?? bus.latitude;
+      const lon = bus.lon ?? bus.longitude;
+      if (typeof lat !== 'number' || typeof lon !== 'number') continue;
 
-      const lat = bus.lat || bus.latitude;
-      const lon = bus.lon || bus.longitude;
-      if (typeof lat !== 'number' || typeof lon !== 'number') return;
+      const bearing = bus.bearing ?? bus.heading ?? 0;
+      const routeNumber = bus.routeNumber || bus.line || bus.lineId || bus.route_short_name || '';
 
-      const bearing = bus.bearing || bus.heading || 0;
       const routeId = bus.routeId || bus.route_id || bus.lineId || bus.line;
       const color = getRouteColor ? getRouteColor(routeId) : '#00ff88';
 
-      if (this.busMarkers.has(id)) {
-        // Update existing marker position + rotation
-        this.animateBusTo(id, [lon, lat], bearing);
-      } else {
-        // Create new marker
-        const el = this.createBusElement(bus, color);
+      try {
+        let marker = this.busMarkers.get(vehicleId);
 
-        const marker = new mapboxgl.Marker({
-          element: el,
-          anchor: 'center',
-          rotationAlignment: 'map',
-          pitchAlignment: 'viewport' // ✅ חשוב: לא "נשכב" עם ה-pitch של המפה
-        })
-          .setLngLat([lon, lat])
-          .addTo(this.map);
+        if (marker) {
+          // Update existing
+          const el = marker.getElement();
+          const arrow = el.querySelector('.bus-direction');
+          if (arrow) arrow.style.transform = `rotate(${bearing}deg)`;
 
-        this.busMarkers.set(id, {
-          marker,
-          element: el,
-          bus,
-          color,
-          lastBearing: bearing
-        });
-
-        this.lastPositions.set(id, [lon, lat]);
+          this._animateMarker(marker, [lon, lat]);
+        } else {
+          // Create new 3D marker
+          const el = this._create3DBusElement(bearing, color, routeNumber);
+          
+          marker = new mapboxgl.Marker({
+            element: el,
+            anchor: 'center',
+            rotationAlignment: 'map',
+            // ✅ שינוי מינימלי בלבד:
+            // במקום "map" (שנשכב עם ה-pitch ונראה שטוח) -> "viewport" (נשאר מול המסך)
+            pitchAlignment: 'viewport'
+          })
+            .setLngLat([lon, lat])
+            .addTo(this.map);
+          
+          this.busMarkers.set(vehicleId, marker);
+        }
+      } catch (e) {
+        console.error(`❌ Error drawing 3D bus ${vehicleId}:`, e);
       }
-    });
+    }
 
-    // Remove markers that are no longer active
-    this.busMarkers.forEach((data, id) => {
+    // Remove inactive markers
+    for (const [id, marker] of this.busMarkers.entries()) {
       if (!activeIds.has(id)) {
-        try {
-          data.marker.remove();
-        } catch (e) {}
-        this.busMarkers.delete(id);
-        this.motionTrails.delete(id);
-        this.lastPositions.delete(id);
-        this.animations.delete(id);
-      }
-    });
-  }
-
-  // Animate bus movement smoothly
-  animateBusTo(id, newPos, bearing) {
-    const data = this.busMarkers.get(id);
-    if (!data) return;
-
-    const oldPos = this.lastPositions.get(id) || newPos;
-    this.lastPositions.set(id, newPos);
-
-    // Update bearing & visuals
-    const el = data.element;
-    const model = el.querySelector('.bus-3d-model');
-    const dirEl = el.querySelector('.bus-direction');
-
-    if (model && typeof bearing === 'number') {
-      model.style.transform = model.style.transform || '';
-      // Keep any existing transforms (CSS handles tilt), and apply rotateZ via CSS variable style
-      model.style.setProperty('--busBearing', `${bearing}deg`);
-
-      // Fallback: rotate direction arrow
-      if (dirEl) {
-        dirEl.style.transform = `rotate(${bearing}deg)`;
-      }
-    }
-
-    // If animation already running for this bus, update target
-    if (this.animations.has(id)) {
-      const anim = this.animations.get(id);
-      anim.to = newPos;
-      anim.bearing = bearing;
-      return;
-    }
-
-    // Start new animation
-    const startTime = performance.now();
-    const duration = 800; // ms
-
-    const animData = {
-      from: oldPos,
-      to: newPos,
-      start: startTime,
-      duration,
-      bearing
-    };
-    this.animations.set(id, animData);
-
-    if (!this.isAnimating) {
-      this.isAnimating = true;
-      this.animationLoop();
-    }
-  }
-
-  // Global animation loop
-  animationLoop() {
-    const now = performance.now();
-    let stillAnimating = false;
-
-    this.animations.forEach((anim, id) => {
-      const data = this.busMarkers.get(id);
-      if (!data) {
-        this.animations.delete(id);
-        return;
-      }
-
-      const progress = (now - anim.start) / anim.duration;
-
-      if (progress >= 1) {
-        // Finish
-        data.marker.setLngLat(anim.to);
-        this.animations.delete(id);
-      } else {
-        stillAnimating = true;
-        const eased = this.easeInOutCubic(progress);
-        const lon = anim.from[0] + (anim.to[0] - anim.from[0]) * eased;
-        const lat = anim.from[1] + (anim.to[1] - anim.from[1]) * eased;
-        data.marker.setLngLat([lon, lat]);
-      }
-    });
-
-    if (stillAnimating) {
-      requestAnimationFrame(() => this.animationLoop());
-    } else {
-      this.isAnimating = false;
-    }
-  }
-
-  // Smooth easing
-  easeInOutCubic(t) {
-    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  }
-
-  // Handle bus click
-  onBusClick(bus) {
-    // Dispatch a custom event for the UI to handle
-    const event = new CustomEvent('busClick', { detail: { bus } });
-    window.dispatchEvent(event);
-  }
-
-  // Optional: set visibility
-  setVisible(visible) {
-    this.busMarkers.forEach(({ element }) => {
-      if (element) element.style.display = visible ? '' : 'none';
-    });
-  }
-
-  // Cleanup
-  destroy() {
-    try {
-      this.busMarkers.forEach(({ marker }) => {
         try { marker.remove(); } catch (e) {}
-      });
-      this.busMarkers.clear();
-      this.motionTrails.clear();
-      this.lastPositions.clear();
-      this.animations.clear();
-      this.isAnimating = false;
-    } catch (e) {
-      console.error("❌ Error destroying bus markers:", e);
+        this.busMarkers.delete(id);
+      }
     }
   }
 
-  // Optional: debug animate single bus
-  debugAnimateOne(id, to, bearing = 0) {
+  // Smooth marker animation
+  _animateMarker(marker, end) {
     try {
-      this.animateBusTo(id, to, bearing);
+      const start = marker.getLngLat();
+      const duration = 800;
+
+      const startTime = performance.now();
+
+      const animate = (time) => {
+        const progress = Math.min((time - startTime) / duration, 1);
+        const eased = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+        const currentLng = start.lng + (end[0] - start.lng) * eased;
+        const currentLat = start.lat + (end[1] - start.lat) * eased;
+        
+        marker.setLngLat([currentLng, currentLat]);
+        
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      };
+      
+      requestAnimationFrame(animate);
     } catch (e) {
       console.error("❌ Error animating bus:", e);
     }
