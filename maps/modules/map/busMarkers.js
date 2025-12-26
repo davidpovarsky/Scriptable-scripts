@@ -80,9 +80,9 @@ class BusMarkers {
         const el = marker.getElement();
         if (el) {
           const model = el.querySelector('.bus-3d-container');
-          if (model) {
-            model.style.transform = `rotateZ(${bearing}deg)`;
-          }
+if (model) {
+  model.style.transform = `rotateX(60deg) rotateZ(${bearing}deg)`;
+}
         }
       } else {
         // Create new 3D marker
