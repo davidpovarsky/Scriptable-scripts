@@ -1,7 +1,7 @@
 /* styles/map.css - Minimal 3D version */
 
 :root {
-  --busTilt: 55deg; /* שנה בין 35deg ל-75deg עד שזה נראה נכון */
+  --busTilt: 55deg; /* שנה בין 35deg ל-75deg עד שזה נראה לך נכון */
 }
 
 /* ============================================
@@ -76,7 +76,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  perspective: 900px;
+  perspective: 900px; /* ✅ הוספה מינימלית: מאפשר rotateX להיראות "3D" */
 }
 
 .bus-3d-model {
@@ -85,19 +85,10 @@
   height: 50px;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%) rotateX(var(--busTilt));
-  transform-origin: 50% 80%;
+  transform: translate(-50%, -50%) rotateX(var(--busTilt)); /* ✅ */
+  transform-origin: 50% 80%; /* ✅ */
   border-radius: 8px 8px 4px 4px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-}
-
-.bus-3d-model::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(to bottom, rgba(255,255,255,0.25), rgba(0,0,0,0.25));
-  pointer-events: none;
 }
 
 .bus-3d-body {
@@ -128,15 +119,23 @@
   border-radius: 4px;
 }
 
-/* Wheels */
+/* Wheels strip */
 .bus-3d-wheels {
   position: absolute;
-  bottom: 5px;
-  left: 2px;
-  right: 2px;
-  height: 8px;
-  border-radius: 0 0 4px 4px;
-  background: rgba(0,0,0,0.35);
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 3px;
+}
+
+.wheel {
+  width: 6px;
+  height: 6px;
+  background: #333;
+  border-radius: 50%;
 }
 
 /* Direction indicator */
@@ -151,30 +150,44 @@
   pointer-events: none;
 }
 
-/* Line number label */
-.bus-line-number {
+/* Route label */
+.bus-route-label {
   position: absolute;
-  bottom: -12px;
+  bottom: -10px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 2px 6px;
+  padding: 3px 8px;
+  background: white;
+  border: 2px solid;
+  border-radius: 10px;
+  font-weight: bold;
   font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  color: #fff;
-  background: rgba(0,0,0,0.45);
-  border-radius: 999px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.35);
-  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  z-index: 10;
+}
+
+/* Shadow */
+.bus-3d-shadow {
+  position: absolute;
+  width: 26px;
+  height: 10px;
+  top: 70%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.25);
+  filter: blur(4px);
+  border-radius: 50%;
+  z-index: -1;
 }
 
 /* ============================================
-   Mapbox Controls (minimal styling)
+   Mapbox Controls
    ============================================ */
 .mapboxgl-ctrl-group {
-  background: rgba(0,0,0,0.35) !important;
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,0.15) !important;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
 .mapboxgl-ctrl-group button {
