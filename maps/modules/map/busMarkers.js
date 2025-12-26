@@ -12,6 +12,7 @@ class BusMarkers {
     this.customLayer = null;
     this.scene = null;
     this.camera = null;
+    this.pendingBuses = []; // Queue for buses before model loads
     
     // Load Three.js and setup
     this.loadThreeJS();
@@ -56,6 +57,22 @@ class BusMarkers {
         
         // Setup custom layer once model is loaded
         this.setupCustomLayer();
+        
+        // Process any pending buses
+        if (this.pendingBuses.length > 0) {
+          console.log(`🔄 Processing ${this.pendingBuses.length} pending buses...`);
+          this.pendingBuses.forEach(bus => {
+            this.updateOrCreate3DBus(
+              bus.vehicleId,
+              bus.lon,
+              bus.lat,
+              bus.bearing,
+              bus.color,
+              bus.routeNumber
+            );
+          });
+          this.pendingBuses = [];
+        }
       },
       (xhr) => {
         console.log(`Loading bus model: ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`);
@@ -166,7 +183,7 @@ class BusMarkers {
   }
 
   drawBuses(vehicles, color, shapeCoords) {
-    if (!this.map || !this.modelLoaded || !this.scene) {
+    if (!this.map) {
       return;
     }
 
@@ -194,7 +211,20 @@ class BusMarkers {
           const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId || Math.random()}`;
           const bearing = v.bearing || 0;
           
-          this.updateOrCreate3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
+          if (!this.modelLoaded || !this.scene) {
+            // Queue for later
+            this.pendingBuses.push({
+              vehicleId,
+              lon,
+              lat,
+              bearing,
+              color,
+              routeNumber: v.routeNumber
+            });
+            console.log(`⏳ Queued bus ${vehicleId} (model not ready)`);
+          } else {
+            this.updateOrCreate3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
+          }
         }
       } catch (e) {
         console.error("❌ Error drawing bus:", e);
