@@ -94,8 +94,26 @@ class BusMarkers {
       'https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb',
       (gltf) => {
         this.glbModel = gltf.scene;
+        
+        // Calculate bounding box and center the model
+        const box = new THREE.Box3().setFromObject(this.glbModel);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // Center the model
+        this.glbModel.position.sub(center);
+        
+        // Calculate camera distance based on model size
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = this.camera.fov * (Math.PI / 180);
+        const cameraDistance = maxDim / (2 * Math.tan(fov / 2));
+        
+        // Position camera to see the whole model
+        this.camera.position.set(0, -cameraDistance * 1.5, cameraDistance * 0.8);
+        this.camera.lookAt(0, 0, 0);
+        
         this.modelLoaded = true;
-        console.log('✅ Bus GLB model loaded!');
+        console.log(`✅ Model loaded! Size: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
         
         // Process pending buses
         if (this.pendingBuses.length > 0) {
