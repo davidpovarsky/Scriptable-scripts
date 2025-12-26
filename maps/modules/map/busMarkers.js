@@ -66,32 +66,31 @@ class BusMarkers {
     });
   }
 
-  draw3DBus(vehicleId, lon, lat, bearing, color, routeNumber) {
+    draw3DBus(vehicleId, lon, lat, bearing, color, routeNumber) {
     try {
       let marker = this.busMarkers.get(vehicleId);
       
       if (marker) {
-        // אנימציה למיקום החדש
         this.animateBusTo(vehicleId, lon, lat, 2000);
         
-        // עדכון רוטציה (כולל הטיה אנכית)
+        // תיקון: עדכון רק של כיוון הנסיעה (ציר Z)
+        // את ה"הקמה" (ציר X) נשאיר ל-CSS הקבוע
         const el = marker.getElement();
         if (el) {
-          const model = el.querySelector('.bus-3d-container');
-          if (model) {
-            // התיקון החשוב: rotateX(-90deg) מרים את האוטובוס, translateZ מגביה אותו מהכביש
-            model.style.transform = `rotateZ(${bearing}deg) rotateX(-90deg) translateZ(15px)`;
+          const container = el.querySelector('.bus-3d-container');
+          if (container) {
+             // רק מסובבים את המיכל החיצוני לפי כיוון הנסיעה
+             container.style.transform = `rotateZ(${bearing}deg)`;
           }
         }
       } else {
-        // יצירת מרקר חדש
         const el = this._create3DBusElement(bearing, color, routeNumber);
         
         marker = new mapboxgl.Marker({
           element: el,
-          anchor: 'center',
-          rotationAlignment: 'map',
-          pitchAlignment: 'map' // חשוב כדי שהסיבוב יהיה יחסי למפה
+          anchor: 'center', // חשוב: המרכז של המרקר הוא הנקודה במפה
+          pitchAlignment: 'map',
+          rotationAlignment: 'map'
         })
           .setLngLat([lon, lat])
           .addTo(this.map);
@@ -99,7 +98,7 @@ class BusMarkers {
         this.busMarkers.set(vehicleId, marker);
       }
     } catch (e) {
-      console.error(`❌ Error drawing 3D bus ${vehicleId}:`, e);
+      console.error(`❌ Error drawing bus ${vehicleId}:`, e);
     }
   }
 
@@ -107,11 +106,9 @@ class BusMarkers {
     const el = document.createElement('div');
     el.className = 'bus-marker-3d';
     
-    // הגדרת הטרנספורמציה הראשונית
-    const transformStyle = `rotateZ(${bearing}deg) rotateX(-90deg) translateZ(15px)`;
-
+    // מבנה חדש: קונטיינר שמסתובב לפי כיוון הנסיעה, ובתוכו המודל שעומד זקוף
     el.innerHTML = `
-      <div class="bus-3d-container" style="transform: ${transformStyle};">
+      <div class="bus-3d-container" style="transform: rotateZ(${bearing}deg);">
         <div class="bus-3d-model" style="background: ${color};">
           <div class="bus-3d-body">
             <div class="bus-3d-front"></div>
@@ -125,20 +122,17 @@ class BusMarkers {
             <div class="wheel wheel-rl"></div>
             <div class="wheel wheel-rr"></div>
           </div>
+          ${routeNumber ? `
+            <div class="route-badge-3d" style="background: white; color: ${color}; border-color: ${color};">
+              ${routeNumber}
+            </div>
+          ` : ''}
         </div>
-        ${routeNumber ? `
-          <div class="route-badge-3d" style="background: white; color: ${color}; border-color: ${color};">
-            ${routeNumber}
-          </div>
-        ` : ''}
-      </div>
-      <div class="bus-3d-shadow-wrapper" style="transform: rotateZ(${bearing}deg);">
-          <div class="bus-3d-shadow"></div>
       </div>
     `;
-    
     return el;
   }
+
 
   clearAll() {
     this.busMarkers.forEach(marker => {
