@@ -64,146 +64,125 @@
 /* ============================================
    3D Bus Markers - FIXED UPRIGHT
    ============================================ */
+/* ============================================
+   3D Bus Markers - FIXED UPRIGHT
+   ============================================ */
 .bus-marker-3d {
-  width: 40px;
-  height: 40px;
-  cursor: pointer;
-  /* פרספקטיבה היא המפתח לתלת מימד */
-  perspective: 1000px;
+  width: 0;
+  height: 0;
+  /* פרספקטיבה חזקה כדי שיראה תלת מימדי */
+  perspective: 600px;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .bus-3d-container {
-  position: absolute;
-  top: 50%;
-  left: 50%;
   width: 0;
   height: 0;
-  /* מאפשר לאלמנטים פנימיים להסתובב ב-3D */
   transform-style: preserve-3d;
-  /* נקודת הציר במרכז התחתית של האוטובוס */
-  transform-origin: center bottom; 
+  /* המיכל מסתובב אופקית (כיוון נסיעה) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .bus-3d-model {
   position: absolute;
-  /* מידות האוטובוס החדשות */
-  width: 26px;  /* רוחב */
-  height: 60px; /* אורך */
+  /* מידות האוטובוס */
+  width: 22px; 
+  height: 50px; 
   
-  /* ממקם את מרכז האוטובוס על הציר */
-  top: -30px; 
-  left: -13px;
-  
-  border-radius: 6px;
-  box-shadow: inset 0 0 15px rgba(0,0,0,0.15);
+  /* צבע ברירת מחדל */
+  background: #1976d2;
+  border-radius: 4px;
   border: 1px solid rgba(0,0,0,0.2);
+
+  /* === התיקון הקריטי === */
+  /* נקודת הציר היא תחתית האוטובוס (הגלגלים) */
+  transform-origin: center bottom;
+  /* הרמה של האוטובוס לזווית עמידה */
+  transform: rotateX(-90deg) translateZ(0);
   
-  /* אפקטים לנפח */
   transform-style: preserve-3d;
-  backface-visibility: hidden;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
 }
 
+/* גוף האוטובוס */
 .bus-3d-body {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-  border-radius: 6px;
-}
-
-/* Front windshield */
-.bus-3d-front {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  right: 2px;
-  height: 12px;
-  background: linear-gradient(to bottom, rgba(135, 206, 235, 0.9), rgba(100, 180, 255, 0.7));
-  border-radius: 4px 4px 2px 2px;
-  border-bottom: 1px solid rgba(0,0,0,0.1);
+  top: 0; left: 0; right: 0; bottom: 0;
+  transform-style: preserve-3d;
 }
 
-/* Windows / Details */
-.bus-3d-body::before {
+/* גג (מה שרואים מלמעלה אם מסתכלים ישר) */
+.bus-3d-body::after {
   content: '';
   position: absolute;
-  top: 18px;
-  left: 2px;
-  right: 2px;
-  bottom: 8px;
-  background: repeating-linear-gradient(
-    transparent,
-    transparent 10px,
-    rgba(255,255,255,0.3) 10px,
-    rgba(255,255,255,0.3) 12px
-  );
-  border-left: 4px solid rgba(50,50,50,0.1);
-  border-right: 4px solid rgba(50,50,50,0.1);
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: inherit; /* צבע האוטובוס */
+  filter: brightness(1.2); /* גג בהיר יותר */
+  transform: translateZ(1px); /* עובי מינימלי */
+  border-radius: 4px;
 }
 
-/* Wheels - מותאמים למבט צד/תלת מימד */
+/* שמשה קדמית */
+.bus-3d-front {
+  position: absolute;
+  top: 0; 
+  left: 2px; 
+  right: 2px;
+  height: 10px;
+  background: linear-gradient(to bottom, #87CEEB, #4682B4);
+  transform: translateZ(2px); /* בולט החוצה */
+}
+
+/* גלגלים - מותאמים לראייה מלמעלה */
 .bus-3d-wheels {
   position: absolute;
-  bottom: 4px; /* מיקום בתוך הגוף */
-  left: -2px;
-  right: -2px;
+  width: 100%;
   height: 100%;
+  top: 0;
+  left: 0;
   pointer-events: none;
+  transform: translateZ(1px);
 }
 
 .wheel {
   position: absolute;
-  width: 6px;
-  height: 12px; /* גלגל ארוך כי רואים אותו מלמעלה/צד */
+  width: 4px;
+  height: 8px;
   background: #222;
-  border-radius: 4px;
+  border-radius: 2px;
   box-shadow: 1px 1px 2px rgba(0,0,0,0.5);
 }
 
-.wheel-fl { top: 10px; left: -2px; }
-.wheel-fr { top: 10px; right: -2px; }
-.wheel-rl { bottom: 10px; left: -2px; }
-.wheel-rr { bottom: 10px; right: -2px; }
+.wheel-fl { top: 8px; left: -2px; }
+.wheel-fr { top: 8px; right: -2px; }
+.wheel-rl { bottom: 8px; left: -2px; }
+.wheel-rr { bottom: 8px; right: -2px; }
 
-/* Route badge - צף מעל האוטובוס */
+/* מספר קו - צף מעל הגג */
 .route-badge-3d {
   position: absolute;
-  top: -25px; /* מעל הגג */
+  /* ממוקם במרכז הגג */
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%) rotateX(90deg); /* הופך אותו לקריא מול המצלמה */
-  padding: 2px 6px;
+  /* מסובב חזרה כדי שיהיה קריא למשתמש */
+  transform: translate(-50%, -50%) rotateX(90deg) translateY(-30px);
+  
+  padding: 2px 5px;
   background: white;
   border: 2px solid;
-  border-radius: 8px;
+  border-radius: 6px;
   font-weight: bold;
-  font-size: 11px;
+  font-size: 10px;
   white-space: nowrap;
   box-shadow: 0 2px 4px rgba(0,0,0,0.3);
   z-index: 200;
 }
 
-/* Shadow Wrapper - שומר על הצל שטוח */
-.bus-3d-shadow-wrapper {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-}
-
-.bus-3d-shadow {
-  position: absolute;
-  top: -30px;
-  left: -15px;
-  width: 30px;
-  height: 60px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 8px;
-  filter: blur(5px);
-  transform: translateZ(0); /* נצמד לרצפה */
-  z-index: -1;
-}
 
 /* ============================================
    Buttons
