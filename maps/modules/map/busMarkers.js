@@ -92,7 +92,7 @@ class BusMarkers {
           element: el,
           anchor: 'center',
           rotationAlignment: 'map',
-          pitchAlignment: 'map'
+pitchAlignment: 'viewport'
         })
           .setLngLat([lon, lat])
           .addTo(this.map);
