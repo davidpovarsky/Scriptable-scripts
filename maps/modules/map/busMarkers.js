@@ -1,6 +1,6 @@
 // modules/map/busMarkers.js
 // אחראי על ציור אוטובוסים תלת-מימדיים על המפה - Mapbox version
-// גרסה מתוקנת: אנימציה חלקה + מניעת הבהובים
+// גרסה מתוקנת: אוטובוסים עומדים (3D) + אנימציה חלקה
 
 class BusMarkers {
   constructor(mapManager) {
@@ -9,7 +9,7 @@ class BusMarkers {
     this.busMarkers = new Map();
     this.modelLoaded = true;
     
-    console.log("🚌 BusMarkers initialized (Mapbox Fixed)");
+    console.log("🚌 BusMarkers initialized (3D Standing Fixed)");
   }
 
   drawBuses(vehicles, color, shapeCoords) {
@@ -48,11 +48,9 @@ class BusMarkers {
         console.error("❌ Error drawing bus:", e);
       }
     });
-
-    // הערה: הסרנו מכאן את לוגיקת המחיקה. המחיקה מתבצעת כעת ב-pruneMarkers
   }
 
-  // פונקציה חדשה לניקוי רכבים שלא קיימים יותר
+  // פונקציה לניקוי רכבים שלא קיימים יותר
   pruneMarkers(activeVehicleIds) {
     if (!activeVehicleIds || !(activeVehicleIds instanceof Set)) return;
 
@@ -73,26 +71,27 @@ class BusMarkers {
       let marker = this.busMarkers.get(vehicleId);
       
       if (marker) {
-        // === שינוי: שימוש באנימציה במקום קפיצה ===
-        this.animateBusTo(vehicleId, lon, lat, 2000); // 2 שניות אנימציה
+        // אנימציה למיקום החדש
+        this.animateBusTo(vehicleId, lon, lat, 2000);
         
-        // עדכון רוטציה
+        // עדכון רוטציה (כולל הטיה אנכית)
         const el = marker.getElement();
         if (el) {
           const model = el.querySelector('.bus-3d-container');
-if (model) {
-  model.style.transform = `rotateX(60deg) rotateZ(${bearing}deg)`;
-}
+          if (model) {
+            // התיקון החשוב: rotateX(-90deg) מרים את האוטובוס, translateZ מגביה אותו מהכביש
+            model.style.transform = `rotateZ(${bearing}deg) rotateX(-90deg) translateZ(15px)`;
+          }
         }
       } else {
-        // Create new 3D marker
+        // יצירת מרקר חדש
         const el = this._create3DBusElement(bearing, color, routeNumber);
         
         marker = new mapboxgl.Marker({
           element: el,
           anchor: 'center',
           rotationAlignment: 'map',
-pitchAlignment: 'viewport'
+          pitchAlignment: 'map' // חשוב כדי שהסיבוב יהיה יחסי למפה
         })
           .setLngLat([lon, lat])
           .addTo(this.map);
@@ -108,13 +107,11 @@ pitchAlignment: 'viewport'
     const el = document.createElement('div');
     el.className = 'bus-marker-3d';
     
-    _create3DBusElement(bearing, color, routeNumber) {
-    const el = document.createElement('div');
-    el.className = 'bus-marker-3d';
-    
-    // ללא rotateX - נשאיר רק rotateZ לכיוון
+    // הגדרת הטרנספורמציה הראשונית
+    const transformStyle = `rotateZ(${bearing}deg) rotateX(-90deg) translateZ(15px)`;
+
     el.innerHTML = `
-      <div class="bus-3d-container" style="transform: rotateZ(${bearing}deg);">
+      <div class="bus-3d-container" style="transform: ${transformStyle};">
         <div class="bus-3d-model" style="background: ${color};">
           <div class="bus-3d-body">
             <div class="bus-3d-front"></div>
@@ -135,7 +132,9 @@ pitchAlignment: 'viewport'
           </div>
         ` : ''}
       </div>
-      <div class="bus-3d-shadow"></div>
+      <div class="bus-3d-shadow-wrapper" style="transform: rotateZ(${bearing}deg);">
+          <div class="bus-3d-shadow"></div>
+      </div>
     `;
     
     return el;
@@ -163,7 +162,7 @@ pitchAlignment: 'viewport'
       const start = marker.getLngLat();
       const end = [newLon, newLat];
       
-      // אם המרחק קטן מאוד, לא צריך אנימציה (מונע רעידות בעמידה)
+      // מניעת רעידות במרחקים זעירים
       if (Math.abs(start.lng - end[0]) < 0.00001 && Math.abs(start.lat - end[1]) < 0.00001) {
         return;
       }
@@ -174,7 +173,7 @@ pitchAlignment: 'viewport'
         if (!startTime) startTime = timestamp;
         const progress = Math.min((timestamp - startTime) / duration, 1);
         
-        // Easing function (Ease Out Quad) - מתחיל מהר ומאיט בסוף
+        // Easing (Ease Out Quad)
         const eased = progress * (2 - progress);
         
         const currentLng = start.lng + (end[0] - start.lng) * eased;
