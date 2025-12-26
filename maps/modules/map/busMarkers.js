@@ -208,14 +208,23 @@ class BusMarkers {
     // Convert lat/lon to Mercator coordinates
     const mercatorCoord = mapboxgl.MercatorCoordinate.fromLngLat([lon, lat], 0);
     
+    // Calculate proper scale based on map zoom
+    const metersPerPixel = mercatorCoord.meterInMercatorCoordinateUnits();
+    const scale = metersPerPixel * 20; // Adjust multiplier for visibility
+    
     if (busObject) {
       // Update existing bus position
-      busObject.position.x = mercatorCoord.x;
-      busObject.position.y = mercatorCoord.y;
-      busObject.position.z = mercatorCoord.z;
+      busObject.position.set(
+        mercatorCoord.x,
+        mercatorCoord.y,
+        mercatorCoord.z
+      );
       
-      // Update rotation
-      busObject.rotation.z = -bearing * Math.PI / 180;
+      // Update rotation (bearing to radians, with correction for Mapbox coordinate system)
+      busObject.rotation.z = (bearing + 90) * Math.PI / 180;
+      
+      // Update scale
+      busObject.scale.set(scale, scale, scale);
       
     } else {
       // Create new bus
@@ -247,22 +256,23 @@ class BusMarkers {
       });
       
       // Position
-      busModel.position.x = mercatorCoord.x;
-      busModel.position.y = mercatorCoord.y;
-      busModel.position.z = mercatorCoord.z;
+      busModel.position.set(
+        mercatorCoord.x,
+        mercatorCoord.y,
+        mercatorCoord.z + 0.00001 // Slight elevation to ensure visibility
+      );
       
-      // Rotation
-      busModel.rotation.z = -bearing * Math.PI / 180;
+      // Rotation (bearing to radians, with correction)
+      busModel.rotation.z = (bearing + 90) * Math.PI / 180;
       
-      // Scale (adjust based on zoom level)
-      const scale = mercatorCoord.meterInMercatorCoordinateUnits() * 5;
+      // Scale
       busModel.scale.set(scale, scale, scale);
       
       // Add to scene
       this.scene.add(busModel);
       this.busMarkers.set(vehicleId, busModel);
       
-      console.log(`✅ Bus ${vehicleId} added to 3D scene`);
+      console.log(`✅ Bus ${vehicleId} added at [${lon}, ${lat}] scale=${scale.toFixed(6)}`);
     }
   }
 
