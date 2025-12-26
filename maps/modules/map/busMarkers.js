@@ -12,147 +12,167 @@ class BusMarkers {
     console.log("🚌 BusMarkers initialized (Mapbox Fixed)");
   }
 
-  // Create 3D bus element
-  _create3DBusElement(bearing, color, routeNumber) {
-    const container = document.createElement('div');
-    container.className = 'bus-marker-3d';
+  drawBuses(vehicles, color, shapeCoords) {
+    if (!this.map) {
+      return; // Map not ready
+    }
 
-    const busContainer = document.createElement('div');
-    busContainer.className = 'bus-3d-container';
+    if (!Array.isArray(vehicles)) {
+      return;
+    }
 
-    const busModel = document.createElement('div');
-    busModel.className = 'bus-3d-model';
-    busModel.style.backgroundColor = color;
-
-    // Add body
-    const body = document.createElement('div');
-    body.className = 'bus-3d-body';
-
-    // Front windshield
-    const front = document.createElement('div');
-    front.className = 'bus-3d-front';
-
-    // Windows
-    const windows = document.createElement('div');
-    windows.className = 'bus-3d-windows';
-
-    // Wheels
-    const wheels = document.createElement('div');
-    wheels.className = 'bus-3d-wheels';
-
-    const wheel1 = document.createElement('div');
-    wheel1.className = 'wheel';
-    const wheel2 = document.createElement('div');
-    wheel2.className = 'wheel';
-
-    wheels.appendChild(wheel1);
-    wheels.appendChild(wheel2);
-
-    body.appendChild(front);
-    body.appendChild(windows);
-    body.appendChild(wheels);
-
-    // Direction arrow
-    const direction = document.createElement('div');
-    direction.className = 'bus-direction';
-    direction.innerHTML = '▲';
-    direction.style.transform = `rotate(${bearing}deg)`;
-
-    // Route number
-    const label = document.createElement('div');
-    label.className = 'bus-route-label';
-    label.textContent = routeNumber || '';
-
-    // Shadow
-    const shadow = document.createElement('div');
-    shadow.className = 'bus-3d-shadow';
-
-    busModel.appendChild(body);
-    busModel.appendChild(direction);
-    if (routeNumber) busModel.appendChild(label);
-
-    busContainer.appendChild(shadow);
-    busContainer.appendChild(busModel);
-
-    container.appendChild(busContainer);
-
-    return container;
-  }
-
-  // Draw/update all buses
-  drawBuses(buses, getRouteColor) {
-    if (!this.map || !buses) return;
-
-    const activeIds = new Set();
-
-    for (const bus of buses) {
-      const vehicleId = bus.vehicleId || bus.id || bus.vehicle_id;
-      if (!vehicleId) continue;
-      activeIds.add(vehicleId);
-
-      const lat = bus.lat ?? bus.latitude;
-      const lon = bus.lon ?? bus.longitude;
-      if (typeof lat !== 'number' || typeof lon !== 'number') continue;
-
-      const bearing = bus.bearing ?? bus.heading ?? 0;
-      const routeNumber = bus.routeNumber || bus.line || bus.lineId || bus.route_short_name || '';
-
-      const routeId = bus.routeId || bus.route_id || bus.lineId || bus.line;
-      const color = getRouteColor ? getRouteColor(routeId) : '#00ff88';
-
+    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : [];
+    
+    vehicles.forEach(v => {
       try {
-        let marker = this.busMarkers.get(vehicleId);
-
-        if (marker) {
-          // Update existing
-          const el = marker.getElement();
-          const arrow = el.querySelector('.bus-direction');
-          if (arrow) arrow.style.transform = `rotate(${bearing}deg)`;
-
-          this._animateMarker(marker, [lon, lat]);
-        } else {
-          // Create new 3D marker
-          const el = this._create3DBusElement(bearing, color, routeNumber);
+        let lon = v.lon;
+        let lat = v.lat;
+        
+        // אם אין מיקום מדויק, נשתמש ב-positionOnLine
+        if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
+          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+          const point = shapeLatLngs[idx];
+          if (point) {
+            lon = point[0];
+            lat = point[1];
+          }
+        }
+        
+        if (lat && lon) {
+          const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId || Math.random()}`;
+          const bearing = v.bearing || 0;
           
-          marker = new mapboxgl.Marker({
-            element: el,
-            anchor: 'center',
-            rotationAlignment: 'map',
-            // ✅ שינוי מינימלי בלבד:
-            // במקום "map" (שנשכב עם ה-pitch ונראה שטוח) -> "viewport" (נשאר מול המסך)
-            pitchAlignment: 'viewport'
-          })
-            .setLngLat([lon, lat])
-            .addTo(this.map);
-          
-          this.busMarkers.set(vehicleId, marker);
+          this.draw3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
         }
       } catch (e) {
-        console.error(`❌ Error drawing 3D bus ${vehicleId}:`, e);
+        console.error("❌ Error drawing bus:", e);
       }
-    }
+    });
 
-    // Remove inactive markers
-    for (const [id, marker] of this.busMarkers.entries()) {
-      if (!activeIds.has(id)) {
-        try { marker.remove(); } catch (e) {}
-        this.busMarkers.delete(id);
+    // הערה: הסרנו מכאן את לוגיקת המחיקה. המחיקה מתבצעת כעת ב-pruneMarkers
+  }
+
+  // פונקציה חדשה לניקוי רכבים שלא קיימים יותר
+  pruneMarkers(activeVehicleIds) {
+    if (!activeVehicleIds || !(activeVehicleIds instanceof Set)) return;
+
+    this.busMarkers.forEach((marker, id) => {
+      if (!activeVehicleIds.has(id)) {
+        try {
+          if (marker.remove) marker.remove();
+          this.busMarkers.delete(id);
+        } catch (e) {
+          console.error("❌ Error removing marker:", e);
+        }
       }
+    });
+  }
+
+  draw3DBus(vehicleId, lon, lat, bearing, color, routeNumber) {
+    try {
+      let marker = this.busMarkers.get(vehicleId);
+      
+      if (marker) {
+        // === שינוי: שימוש באנימציה במקום קפיצה ===
+        this.animateBusTo(vehicleId, lon, lat, 2000); // 2 שניות אנימציה
+        
+        // עדכון רוטציה
+        const el = marker.getElement();
+        if (el) {
+          const model = el.querySelector('.bus-3d-container');
+          if (model) {
+            // Combine the 3D tilt (rotateX) with the direction rotation (rotateZ)
+            model.style.transform = `rotateX(45deg) rotateZ(${bearing}deg)`;
+          }
+        }
+      } else {
+        // Create new 3D marker
+        const el = this._create3DBusElement(bearing, color, routeNumber);
+        
+        marker = new mapboxgl.Marker({
+          element: el,
+          anchor: 'center',
+          rotationAlignment: 'map',
+          pitchAlignment: 'map'
+        })
+          .setLngLat([lon, lat])
+          .addTo(this.map);
+        
+        this.busMarkers.set(vehicleId, marker);
+      }
+    } catch (e) {
+      console.error(`❌ Error drawing 3D bus ${vehicleId}:`, e);
     }
   }
 
-  // Smooth marker animation
-  _animateMarker(marker, end) {
+  _create3DBusElement(bearing, color, routeNumber) {
+    const el = document.createElement('div');
+    el.className = 'bus-marker-3d';
+    
+    el.innerHTML = `
+      <div class="bus-3d-container" style="transform: rotateX(45deg) rotateZ(${bearing}deg);">
+        <div class="bus-3d-model" style="background: ${color};">
+          <div class="bus-3d-body">
+            <div class="bus-3d-front"></div>
+            <div class="bus-3d-top"></div>
+            <div class="bus-3d-side-left"></div>
+            <div class="bus-3d-side-right"></div>
+          </div>
+          <div class="bus-3d-wheels">
+            <div class="wheel wheel-fl"></div>
+            <div class="wheel wheel-fr"></div>
+            <div class="wheel wheel-rl"></div>
+            <div class="wheel wheel-rr"></div>
+          </div>
+        </div>
+        ${routeNumber ? `
+          <div class="route-badge-3d" style="background: white; color: ${color}; border-color: ${color};">
+            ${routeNumber}
+          </div>
+        ` : ''}
+      </div>
+      <div class="bus-3d-shadow"></div>
+    `;
+    
+    return el;
+  }
+
+  clearAll() {
+    this.busMarkers.forEach(marker => {
+      try {
+        if (marker && marker.remove) {
+          marker.remove();
+        }
+      } catch (e) {
+        console.error("❌ Error clearing marker:", e);
+      }
+    });
+    this.busMarkers.clear();
+    console.log("🗑️ All buses cleared");
+  }
+
+  animateBusTo(vehicleId, newLon, newLat, duration = 2000) {
+    const marker = this.busMarkers.get(vehicleId);
+    if (!marker) return;
+
     try {
       const start = marker.getLngLat();
-      const duration = 800;
-
-      const startTime = performance.now();
-
-      const animate = (time) => {
-        const progress = Math.min((time - startTime) / duration, 1);
-        const eased = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-
+      const end = [newLon, newLat];
+      
+      // אם המרחק קטן מאוד, לא צריך אנימציה (מונע רעידות בעמידה)
+      if (Math.abs(start.lng - end[0]) < 0.00001 && Math.abs(start.lat - end[1]) < 0.00001) {
+        return;
+      }
+      
+      let startTime = null;
+      
+      const animate = (timestamp) => {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        
+        // Easing function (Ease Out Quad) - מתחיל מהר ומאיט בסוף
+        const eased = progress * (2 - progress);
+        
         const currentLng = start.lng + (end[0] - start.lng) * eased;
         const currentLat = start.lat + (end[1] - start.lat) * eased;
         
