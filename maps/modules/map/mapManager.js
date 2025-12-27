@@ -1,5 +1,5 @@
 // modules/map/mapManager.js
-// אחראי על אתחול וניהול המפה - Mapbox GL JS עם תמיכה ב-Three.js
+// אחראי על אתחול וניהול המפה - Mapbox GL JS
 
 class MapManager {
   constructor() {
@@ -9,19 +9,19 @@ class MapManager {
     this.userLocationMarker = null;
     this.didInitialFit = false;
     this.is3DEnabled = true;
-    this.customLayers = new Map();
+
+    // ✅ חדש: שכבת GLB
+    this.busModelLayer = null;
   }
 
   init(elementId = 'map', accessToken = null) {
     try {
       console.log("🗺️ Initializing Mapbox GL JS...");
-      
-      // Check if Mapbox is available
+
       if (typeof mapboxgl === 'undefined') {
         throw new Error("Mapbox GL JS not loaded!");
       }
 
-      // Set access token
       if (accessToken) {
         mapboxgl.accessToken = accessToken;
         console.log("✅ Mapbox token set");
@@ -32,56 +32,33 @@ class MapManager {
         throw new Error("No Mapbox access token provided!");
       }
 
-      // Initialize map
       this.map = new mapboxgl.Map({
         container: elementId,
         style: 'mapbox://styles/mapbox/streets-v12',
-        center: [34.78, 32.08], // Tel Aviv
+        center: [34.78, 32.08],
         zoom: 13,
-        pitch: 60, // 3D tilt
-        bearing: -17,
-        antialias: true,
-        projection: 'globe' // Modern 3D globe
+        pitch: 45,
+        bearing: 0,
+        antialias: true
       });
 
-      // Add navigation controls
       this.map.addControl(new mapboxgl.NavigationControl({
-        visualizePitch: true,
-        showCompass: true,
-        showZoom: true
+        visualizePitch: true
       }), 'top-right');
 
-      // Add scale control
-      this.map.addControl(new mapboxgl.ScaleControl({
-        maxWidth: 100,
-        unit: 'metric'
-      }), 'bottom-right');
+      this.map.addControl(new mapboxgl.ScaleControl(), 'bottom-right');
 
-      // Wait for map to load
       this.map.on('load', () => {
         console.log('✅ Mapbox map loaded successfully');
         this.enable3DBuildings();
         this.initializeSources();
-        this.setupAtmosphere();
+
+        // ✅ חדש: הוספת שכבת GLB לכל הרכבים
+        this.enableBusGLBLayer();
       });
 
       this.map.on('error', (e) => {
         console.error('❌ Mapbox error:', e);
-        if (e.error && e.error.message) {
-          if (e.error.message.includes('401')) {
-            this.showTokenError();
-          }
-        }
-      });
-
-      // Map move/zoom handlers
-      this.map.on('move', () => {
-        // Trigger repaint for custom layers
-        this.map.triggerRepaint();
-      });
-
-      this.map.on('zoom', () => {
-        this.map.triggerRepaint();
       });
 
       console.log("✅ Mapbox initialized");
@@ -89,39 +66,14 @@ class MapManager {
 
     } catch (e) {
       console.error("❌ Failed to initialize Mapbox:", e);
-      this.showTokenError();
       throw e;
-    }
-  }
-
-  showTokenError() {
-    const errorOverlay = document.getElementById('errorOverlay');
-    if (errorOverlay) {
-      errorOverlay.classList.add('show');
-    }
-  }
-
-  setupAtmosphere() {
-    // Add atmospheric effects for 3D globe
-    try {
-      this.map.setFog({
-        'range': [0.8, 8],
-        'color': '#d4e6f1',
-        'horizon-blend': 0.05,
-        'high-color': '#245bde',
-        'space-color': '#000000',
-        'star-intensity': 0.15
-      });
-      console.log('🌍 Atmosphere effects enabled');
-    } catch (e) {
-      console.warn('⚠️ Atmosphere not supported:', e);
     }
   }
 
   enable3DBuildings() {
     try {
       const layers = this.map.getStyle().layers;
-      const labelLayerId = layers.find(
+      const labelLayer = layers.find(
         (layer) => layer.type === 'symbol' && layer.layout && layer.layout['text-field']
       );
 
@@ -134,33 +86,29 @@ class MapManager {
           type: 'fill-extrusion',
           minzoom: 15,
           paint: {
-            'fill-extrusion-color': [
-              'interpolate',
-              ['linear'],
-              ['get', 'height'],
-              0, '#e0e0e0',
-              50, '#d0d0d0',
-              100, '#c0c0c0',
-              200, '#aaaaaa'
-            ],
+            'fill-extrusion-color': '#aaa',
             'fill-extrusion-height': [
               'interpolate',
               ['linear'],
               ['zoom'],
-              15, 0,
-              15.05, ['get', 'height']
+              15,
+              0,
+              15.05,
+              ['get', 'height']
             ],
             'fill-extrusion-base': [
               'interpolate',
               ['linear'],
               ['zoom'],
-              15, 0,
-              15.05, ['get', 'min_height']
+              15,
+              0,
+              15.05,
+              ['get', 'min_height']
             ],
-            'fill-extrusion-opacity': 0.7
+            'fill-extrusion-opacity': 0.6
           }
         },
-        labelLayerId ? labelLayerId.id : undefined
+        labelLayer ? labelLayer.id : undefined
       );
 
       console.log('🏢 3D buildings enabled');
@@ -169,11 +117,63 @@ class MapManager {
     }
   }
 
+  // ✅ חדש: שכבת GLB
+  enableBusGLBLayer() {
+    try {
+      if (!this.map) return;
+      if (this.busModelLayer) return;
+
+      if (typeof BusModelLayer === 'undefined') {
+        console.warn("⚠️ BusModelLayer לא קיים. ודא שהקובץ modules/map/busModelLayer.js נטען ב-view.js לפני mapManager.js");
+        return;
+      }
+
+      const layers = this.map.getStyle().layers || [];
+      const labelLayer = layers.find(
+        (layer) => layer.type === 'symbol' && layer.layout && layer.layout['text-field']
+      );
+
+      this.busModelLayer = new BusModelLayer({
+        id: 'bus-glb-layer',
+        glbUrl: window.BUS_GLB_URL, // אם תרצה override
+        // הכיוונון שלך (אפשר גם דרך window.*)
+        MODEL_YAW_OFFSET_DEG: (typeof window.MODEL_YAW_OFFSET_DEG === 'number') ? window.MODEL_YAW_OFFSET_DEG : -51.75,
+        MODEL_BASE_ROT_X_DEG: (typeof window.MODEL_BASE_ROT_X_DEG === 'number') ? window.MODEL_BASE_ROT_X_DEG : 88.25,
+        MODEL_BASE_ROT_Y_DEG: (typeof window.MODEL_BASE_ROT_Y_DEG === 'number') ? window.MODEL_BASE_ROT_Y_DEG : 0,
+        MODEL_BASE_ROT_Z_DEG: (typeof window.MODEL_BASE_ROT_Z_DEG === 'number') ? window.MODEL_BASE_ROT_Z_DEG : 0,
+        OFFSET_EAST_M:  (typeof window.OFFSET_EAST_M === 'number') ? window.OFFSET_EAST_M : 0,
+        OFFSET_NORTH_M: (typeof window.OFFSET_NORTH_M === 'number') ? window.OFFSET_NORTH_M : 0,
+        OFFSET_UP_M:    (typeof window.OFFSET_UP_M === 'number') ? window.OFFSET_UP_M : 0,
+        SCALE_MUL:      (typeof window.SCALE_MUL === 'number') ? window.SCALE_MUL : 1,
+      });
+
+      // לשים מעל buildings אבל מתחת labels
+      this.map.addLayer(this.busModelLayer, labelLayer ? labelLayer.id : undefined);
+
+      console.log("🚌 GLB bus layer added (for ALL vehicles)");
+    } catch (e) {
+      console.error("❌ Error enabling bus GLB layer:", e);
+    }
+  }
+
+  getBusModelLayer() {
+    return this.busModelLayer;
+  }
+
   initializeSources() {
     try {
-      // Source for route polylines
       if (!this.map.getSource('routes')) {
         this.map.addSource('routes', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: []
+          }
+        });
+      }
+
+      if (!this.map.getSource('buses')) {
+        this.map.addSource('buses', {
           type: 'geojson',
           data: {
             type: 'FeatureCollection',
@@ -188,50 +188,21 @@ class MapManager {
     }
   }
 
-  addCustomLayer(layerId, customLayer) {
-    try {
-      if (this.map.getLayer(layerId)) {
-        console.warn(`⚠️ Layer ${layerId} already exists`);
-        return;
-      }
-
-      this.map.addLayer(customLayer);
-      this.customLayers.set(layerId, customLayer);
-      console.log(`✅ Custom layer ${layerId} added`);
-    } catch (e) {
-      console.error(`❌ Error adding custom layer ${layerId}:`, e);
-    }
-  }
-
-  removeCustomLayer(layerId) {
-    try {
-      if (this.map.getLayer(layerId)) {
-        this.map.removeLayer(layerId);
-        this.customLayers.delete(layerId);
-        console.log(`✅ Custom layer ${layerId} removed`);
-      }
-    } catch (e) {
-      console.error(`❌ Error removing custom layer ${layerId}:`, e);
-    }
-  }
-
   setUserLocation(lat, lon) {
     if (!this.map) return;
-    
+
     try {
-      // Remove old marker
       if (this.userLocationMarker) {
         this.userLocationMarker.remove();
       }
-      
-      // Create pulsing dot
+
       const el = document.createElement('div');
       el.className = 'user-location-marker';
       el.innerHTML = `
         <div class="pulse-ring"></div>
         <div class="pulse-dot"></div>
       `;
-      
+
       this.userLocationMarker = new mapboxgl.Marker({
         element: el,
         anchor: 'center'
@@ -252,65 +223,56 @@ class MapManager {
         center: [lngLat.lng, lngLat.lat],
         zoom: 16,
         pitch: 60,
-        bearing: -17,
-        duration: 2000,
-        essential: true
+        bearing: 0,
+        duration: 2000
+      });
+    }
+  }
+
+  clearBuses() {
+    // אם יש שכבת GLB – ננקה שם
+    if (this.busModelLayer && this.busModelLayer.clearAll) {
+      this.busModelLayer.clearAll();
+    }
+
+    // Clear old DOM markers map (אם נשארו)
+    this.busMarkers.forEach(marker => {
+      if (marker && marker.remove) {
+        marker.remove();
+      }
+    });
+    this.busMarkers.clear();
+
+    if (this.map && this.map.getSource('buses')) {
+      this.map.getSource('buses').setData({
+        type: 'FeatureCollection',
+        features: []
       });
     }
   }
 
   drawRoutePolyline(shapeCoords, color, routeId) {
     if (!this.map || !shapeCoords || !shapeCoords.length) return;
-    
+
     try {
       const coordinates = shapeCoords.map(c => [c[0], c[1]]);
 
       const layerId = `route-${routeId}`;
       const sourceId = `route-source-${routeId}`;
 
-      // Add source
       if (!this.map.getSource(sourceId)) {
         this.map.addSource(sourceId, {
           type: 'geojson',
           data: {
             type: 'Feature',
-            properties: { routeId: routeId },
             geometry: {
               type: 'LineString',
               coordinates: coordinates
             }
-          },
-          lineMetrics: true
-        });
-      }
-
-      // Add glow layer (under)
-      if (!this.map.getLayer(`${layerId}-glow`)) {
-        this.map.addLayer({
-          id: `${layerId}-glow`,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': color,
-            'line-width': [
-              'interpolate',
-              ['exponential', 1.5],
-              ['zoom'],
-              10, 8,
-              15, 16,
-              18, 28
-            ],
-            'line-opacity': 0.15,
-            'line-blur': 6
           }
         });
       }
 
-      // Add main line layer
       if (!this.map.getLayer(layerId)) {
         this.map.addLayer({
           id: layerId,
@@ -324,15 +286,38 @@ class MapManager {
             'line-color': color,
             'line-width': [
               'interpolate',
-              ['exponential', 1.5],
+              ['linear'],
               ['zoom'],
               10, 3,
               15, 6,
               18, 12
             ],
-            'line-opacity': 0.9
+            'line-opacity': 0.8
           }
         });
+
+        this.map.addLayer({
+          id: `${layerId}-glow`,
+          type: 'line',
+          source: sourceId,
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+          },
+          paint: {
+            'line-color': color,
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10, 6,
+              15, 12,
+              18, 20
+            ],
+            'line-opacity': 0.2,
+            'line-blur': 4
+          }
+        }, layerId);
       }
 
       this.routeLines.set(routeId, layerId);
@@ -365,11 +350,9 @@ class MapManager {
         );
 
         this.map.fitBounds(bounds, {
-          padding: { top: 80, bottom: 80, left: 80, right: 80 },
-          pitch: 60,
-          bearing: -17,
-          duration: 2500,
-          essential: true
+          padding: { top: 50, bottom: 50, left: 50, right: 50 },
+          pitch: 45,
+          duration: 2000
         });
 
         this.didInitialFit = true;
@@ -392,15 +375,14 @@ class MapManager {
 
   toggle3D() {
     this.is3DEnabled = !this.is3DEnabled;
-    
+
     this.map.easeTo({
       pitch: this.is3DEnabled ? 60 : 0,
       bearing: this.is3DEnabled ? -17 : 0,
-      duration: 1000,
-      essential: true
+      duration: 1000
     });
-    
-    console.log(`🗺️ 3D mode: ${this.is3DEnabled ? 'ON' : 'OFF'}`);
+
+    console.log(`🏗️ 3D mode: ${this.is3DEnabled ? 'ON' : 'OFF'}`);
   }
 
   getBearing(start, end) {
@@ -417,18 +399,5 @@ class MapManager {
 
     const bearing = Math.atan2(y, x) * 180 / Math.PI;
     return (bearing + 360) % 360;
-  }
-
-  enableDebugMode() {
-    // Show tile boundaries and collision boxes
-    this.map.showTileBoundaries = true;
-    this.map.showCollisionBoxes = true;
-    console.log('🐛 Debug mode enabled');
-  }
-
-  disableDebugMode() {
-    this.map.showTileBoundaries = false;
-    this.map.showCollisionBoxes = false;
-    console.log('🐛 Debug mode disabled');
   }
 }
