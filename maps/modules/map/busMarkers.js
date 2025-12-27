@@ -43,10 +43,18 @@ class BusMarkers {
     console.log("🚌 BusMarkers initialized (GLB + Three.js)");
     
     // Check if THREE is available and initialize
-    if (typeof THREE !== 'undefined') {
+    this.checkAndInitThree();
+  }
+
+  checkAndInitThree(attempt = 1, maxAttempts = 20) {
+    if (typeof THREE !== 'undefined' && THREE.GLTFLoader) {
+      console.log(`✅ Three.js found on attempt ${attempt}:`, THREE.REVISION);
       this.initThreeLayer();
+    } else if (attempt < maxAttempts) {
+      console.log(`⏳ Three.js not ready yet, retrying... (${attempt}/${maxAttempts})`);
+      setTimeout(() => this.checkAndInitThree(attempt + 1, maxAttempts), 200);
     } else {
-      console.warn("⚠️ Three.js not loaded, cannot use GLB models");
+      console.warn("⚠️ Three.js not loaded after max attempts, using fallback 2D markers");
     }
   }
 
