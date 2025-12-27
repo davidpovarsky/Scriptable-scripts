@@ -19,7 +19,7 @@ class BusMarkers {
     this.OFFSET_NORTH_M = 0;
     this.OFFSET_UP_M = 0;
     this.SCALE_MUL = 1;
-    this.MODEL_SCALE = 45;
+    this.MODEL_SCALE = 3;
     this.MODEL_ALT_METERS = 0;
     this.FLIP_X_180 = false;
     
