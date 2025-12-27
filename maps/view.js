@@ -31,10 +31,8 @@ module.exports.getHtml = function() {
       });
       
       // ===== JS =====
-      // ✅ הוספה: busModelLayer לפני mapManager
       const jsFiles = [
         'modules/ui/utils.js',
-        'modules/map/busModelLayer.js',
         'modules/map/mapManager.js',
         'modules/map/busMarkers.js',
         'modules/map/userLocation.js',
@@ -45,6 +43,7 @@ module.exports.getHtml = function() {
         'web/app.js'
       ];
       
+      // התחלת IIFE
       allJs = '(function() {\n';
       allJs += '  "use strict";\n\n';
       allJs += '  console.log("🔧 KavNav Mapbox Bundle Loading...");\n\n';
@@ -54,7 +53,7 @@ module.exports.getHtml = function() {
         if (fm.fileExists(path)) {
           let code = fm.readString(path);
           
-          // Clean up imports/exports for bundling
+          // ניקוי imports/exports
           code = code
             .replace(/^import\s+.*?from\s+['"][^'"]+['"];?\s*$/gm, '')
             .replace(/^import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"];?\s*$/gm, '')
@@ -68,9 +67,12 @@ module.exports.getHtml = function() {
           allJs += '\n\n';
           
           console.log(`✅ JS: ${file}`);
+        } else {
+          console.log(`⚠️ Missing: ${file}`);
         }
       });
       
+      // סגירת IIFE + קריאה לאתחול
       allJs += `
   // ===== Auto-initialization =====
   if (document.readyState === 'loading') {
@@ -139,11 +141,9 @@ console.log("✅ KavNav Mapbox Bundle Complete");
       text-align: center;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    
     #errorOverlay.show {
       display: flex;
     }
-    
     .error-content {
       max-width: 500px;
       background: #1a1a1a;
@@ -151,26 +151,22 @@ console.log("✅ KavNav Mapbox Bundle Complete");
       border-radius: 12px;
       border: 2px solid #ff4444;
     }
-    
     .error-icon {
       font-size: 60px;
       margin-bottom: 20px;
     }
-    
     .error-title {
       font-size: 24px;
       font-weight: bold;
       margin-bottom: 15px;
       color: #ff4444;
     }
-    
     .error-message {
       font-size: 16px;
       line-height: 1.6;
       margin-bottom: 20px;
       color: #ccc;
     }
-    
     .error-steps {
       text-align: right;
       direction: rtl;
@@ -179,17 +175,14 @@ console.log("✅ KavNav Mapbox Bundle Complete");
       border-radius: 8px;
       margin-top: 20px;
     }
-    
     .error-steps ol {
       margin: 0;
       padding-right: 20px;
     }
-    
     .error-steps li {
       margin: 10px 0;
       color: #fff;
     }
-    
     .error-code {
       background: #000;
       padding: 10px;
@@ -202,7 +195,6 @@ console.log("✅ KavNav Mapbox Bundle Complete");
       direction: ltr;
       overflow-x: auto;
     }
-    
     .error-link {
       color: #4af;
       text-decoration: none;
@@ -212,7 +204,6 @@ console.log("✅ KavNav Mapbox Bundle Complete");
   
   ${isScriptable && allCss ? `<style>${allCss}</style>` : ''}
 </head>
-
 <body class="mode-map-only">
   <!-- Error Overlay -->
   <div id="errorOverlay">
@@ -232,13 +223,19 @@ console.log("✅ KavNav Mapbox Bundle Complete");
               account.mapbox.com/auth/signup
             </a>
           </li>
-          <li>צור Access Token (לחץ "Create a token")</li>
-          <li>העתק את ה-Token (מתחיל ב-<code>pk.eyJ...</code>)</li>
+          <li>
+            צור Access Token (לחץ "Create a token")
+          </li>
+          <li>
+            העתק את ה-Token (מתחיל ב-<code>pk.eyJ...</code>)
+          </li>
           <li>
             פתח את <code>view.js</code> ומצא:
-            <div class="error-code">window.MAPBOX_TOKEN = 'YOUR_MAPBOX_ACCESS_TOKEN_HERE';</div>
+            <div class="error-code">window.MAPBOX_TOKEN = 'YOUR_...';</div>
           </li>
-          <li>החלף ב-Token שלך והעלה לגיטהאב</li>
+          <li>
+            החלף ב-Token שלך והעלה לגיטהאב
+          </li>
         </ol>
       </div>
       <div style="margin-top: 20px; font-size: 14px; color: #888;">
@@ -256,7 +253,7 @@ console.log("✅ KavNav Mapbox Bundle Complete");
       <div class="toggle-bg"></div>
     </div>
   </div>
-  
+
   <div class="main-split-container">
     <div class="pane-nearby">
       <div class="nearby-header">תחנות קרובות</div>
@@ -264,13 +261,12 @@ console.log("✅ KavNav Mapbox Bundle Complete");
         <div style="padding:20px; text-align:center; color:#888;">טוען תחנות...</div>
       </div>
     </div>
-    
+
     <div class="pane-map-wrapper">
       <div id="map">
         <button id="locateMeBtn" title="המיקום שלי">📍</button>
         <button id="toggle3DBtn" title="מעבר בין 2D ל-3D" class="active">🏗️</button>
       </div>
-      
       <div id="bottomSheet">
         <div id="dragHandleArea"><div class="handle-bar"></div></div>
         <div id="routesContainer"></div>
@@ -278,9 +274,15 @@ console.log("✅ KavNav Mapbox Bundle Complete");
       </div>
     </div>
   </div>
-  
+
   <script>
+    // ===== MAPBOX ACCESS TOKEN =====
+    // 🔑 שים כאן את ה-API key שלך מ-Mapbox!
+    // הירשם ב: https://account.mapbox.com/auth/signup/
+    
     window.MAPBOX_TOKEN = 'pk.eyJ1IjoiZGF2aWRwb3YiLCJhIjoiY21qbGNvMG1jMDkyZzNpcXJ6bzNwcnNtZiJ9.a2f__tImpmGUDc9ERCMXpg';
+    
+    // ===== Check Token =====
     window.APP_ENVIRONMENT = 'scriptable';
     console.log('🌍 Environment: Scriptable');
     
@@ -298,7 +300,6 @@ console.log("✅ KavNav Mapbox Bundle Complete");
       console.log('✅ Mapbox token configured');
     }
   </script>
-  
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
 </body>
 </html>`;
