@@ -128,15 +128,24 @@ class BusMarkers {
     };
     
     // Add the layer to map
-    this.map.on('load', () => {
-      if (!this.map.getLayer('buses-3d-layer')) {
-        this.map.addLayer(customLayer);
+    const addLayerToMap = () => {
+      try {
+        if (!this.map.getLayer('buses-3d-layer')) {
+          this.map.addLayer(customLayer);
+          console.log("✅ Three.js layer added to map");
+        }
+      } catch (e) {
+        console.error("❌ Error adding Three.js layer:", e);
       }
-    });
+    };
     
     // If map already loaded, add immediately
     if (this.map.isStyleLoaded()) {
-      this.map.addLayer(customLayer);
+      console.log("🗺️ Map already loaded, adding layer immediately");
+      addLayerToMap();
+    } else {
+      console.log("⏳ Waiting for map to load...");
+      this.map.on('load', addLayerToMap);
     }
   }
 
