@@ -1,5 +1,5 @@
 // view.js
-// בונה HTML עם bundle מלא - גרסת Mapbox עם הודעות שגיאה
+// בונה HTML עם bundle מלא - גרסת Mapbox עם תמיכה ב-Three.js + GLB
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
@@ -12,7 +12,7 @@ module.exports.getHtml = function() {
       const fm = FileManager.local();
       const baseDir = fm.documentsDirectory();
       
-      console.log("🔧 Building modular bundle with Mapbox 3D...");
+      console.log("🔧 Building modular bundle with Mapbox 3D + Three.js...");
       
       // ===== CSS =====
       const cssFiles = [
@@ -46,7 +46,7 @@ module.exports.getHtml = function() {
       // התחלת IIFE
       allJs = '(function() {\n';
       allJs += '  "use strict";\n\n';
-      allJs += '  console.log("🔧 KavNav Mapbox Bundle Loading...");\n\n';
+      allJs += '  console.log("🔧 KavNav Mapbox + Three.js Bundle Loading...");\n\n';
       
       jsFiles.forEach((file) => {
         const path = fm.joinPath(baseDir, file);
@@ -87,7 +87,7 @@ module.exports.getHtml = function() {
   
 })();
 
-console.log("✅ KavNav Mapbox Bundle Complete");
+console.log("✅ KavNav Mapbox + Three.js Bundle Complete");
 `;
       
       // Debug output
@@ -113,7 +113,7 @@ console.log("✅ KavNav Mapbox Bundle Complete");
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>KavNav 3D</title>
+  <title>KavNav 3D Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   
   <!-- Google Fonts & Icons -->
@@ -122,6 +122,10 @@ console.log("✅ KavNav Mapbox Bundle Complete");
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
+  
+  <!-- Three.js + GLTFLoader for 3D Models -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   
   <style>
     /* Error Message Overlay */
@@ -208,7 +212,7 @@ console.log("✅ KavNav Mapbox Bundle Complete");
   <!-- Error Overlay -->
   <div id="errorOverlay">
     <div class="error-content">
-      <div class="error-icon">🔑</div>
+      <div class="error-icon">🔒</div>
       <div class="error-title">דרוש Mapbox API Key</div>
       <div class="error-message">
         לא הוגדר Mapbox Access Token.<br>
@@ -244,6 +248,12 @@ console.log("✅ KavNav Mapbox Bundle Complete");
     </div>
   </div>
 
+  <!-- Model Loading Indicator -->
+  <div id="modelLoadingIndicator" class="model-loading-indicator hidden">
+    <div class="loading-spinner"></div>
+    <span>טוען מודל תלת-מימדי...</span>
+  </div>
+
   <div id="modeToggleContainer">
     <div class="mode-toggle">
       <input type="radio" name="viewMode" id="modeDual" value="dual">
@@ -265,12 +275,13 @@ console.log("✅ KavNav Mapbox Bundle Complete");
     <div class="pane-map-wrapper">
       <div id="map">
         <button id="locateMeBtn" title="המיקום שלי">📍</button>
-        <button id="toggle3DBtn" title="מעבר בין 2D ל-3D" class="active">🏗️</button>
+        <button id="toggle3DBtn" title="מעבר בין 2D ל-3D" class="active">🗺️</button>
+        <button id="toggleFlipBtn" title="הפוך כיוון אוטובוסים">🔄</button>
       </div>
       <div id="bottomSheet">
         <div id="dragHandleArea"><div class="handle-bar"></div></div>
         <div id="routesContainer"></div>
-        <div class="footer-note-global">ETA • KavNav 3D</div>
+        <div class="footer-note-global">ETA • KavNav 3D Pro</div>
       </div>
     </div>
   </div>
@@ -284,7 +295,7 @@ console.log("✅ KavNav Mapbox Bundle Complete");
     
     // ===== Check Token =====
     window.APP_ENVIRONMENT = 'scriptable';
-    console.log('🌍 Environment: Scriptable');
+    console.log('🌐 Environment: Scriptable');
     
     if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN_HERE') {
       console.error('❌ No Mapbox token!');
@@ -299,8 +310,26 @@ console.log("✅ KavNav Mapbox Bundle Complete");
     } else {
       console.log('✅ Mapbox token configured');
     }
+    
+    // ===== Wait for Three.js to load =====
+    function waitForThreeJS(callback) {
+      if (typeof THREE !== 'undefined' && THREE.GLTFLoader) {
+        console.log('✅ Three.js loaded:', THREE.REVISION);
+        console.log('✅ GLTFLoader available');
+        callback();
+      } else {
+        console.log('⏳ Waiting for Three.js...');
+        setTimeout(() => waitForThreeJS(callback), 100);
+      }
+    }
   </script>
-  ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
+  ${isScriptable && allJs ? `<script>
+    // Wait for Three.js before running the bundle
+    waitForThreeJS(function() {
+      console.log('🎬 Starting bundle after Three.js loaded...');
+      ${allJs}
+    });
+  </script>` : ''}
 </body>
 </html>`;
 };
