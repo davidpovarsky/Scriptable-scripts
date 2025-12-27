@@ -1,5 +1,5 @@
 // web/app.js
-// נקודת הכניסה הראשית - גרסת Mapbox עם מודל GLB תלת-מימדי
+// נקודת הכניסה הראשית - גרסת Mapbox המתוקנת
 
 // ============================================
 // משתנים גלובליים
@@ -21,61 +21,43 @@ let mapIsFullyLoaded = false;
 // אתחול ראשוני
 // ============================================
 const initApp = async function() {
-  console.log("🚀 KavNav 3D GLB App Starting...");
+  console.log("🚀 KavNav Mapbox App Starting...");
 
   try {
-    // Initialize ALL components immediately (not dependent on map)
     nearbyPanel = new NearbyPanel();
     bottomSheet = new BottomSheet();
-    modeToggle = new ModeToggle(null);
-    
+    modeToggle = new ModeToggle(null); // Will set mapManager later
+
     bottomSheet.init();
-    
+
     console.log("✅ UI components initialized");
 
-    // Check for Mapbox token
     if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN_HERE') {
       console.error("❌ No Mapbox token configured!");
       alert("שגיאה: לא הוגדר Mapbox API key\n\nערוך את view.js והוסף את ה-token שלך");
       return;
     }
 
-    // Check for Three.js
-    if (typeof THREE === 'undefined') {
-      console.warn("⚠️ Three.js not loaded - 3D models will not work");
-    } else {
-      console.log("✅ Three.js loaded:", THREE.REVISION);
-    }
-
-    // Initialize map with token
     mapManager = new MapManager();
     const map = mapManager.init('map', window.MAPBOX_TOKEN);
 
-    // Wait for map to fully load
-    map.on('load', async () => {
+    map.on('load', () => {
       console.log("🗺️ Mapbox loaded successfully!");
       mapIsFullyLoaded = true;
-      
-      // Now initialize map-dependent components
+
+      // ✅ חשוב: BusMarkers אחרי שהמפה נטענה ושכבת GLB נוספה
       busMarkers = new BusMarkers(mapManager);
       userLocationManager = new UserLocationManager(mapManager);
-      
-      // Initialize 3D models
-      console.log("🎨 Initializing 3D bus models...");
-      await busMarkers.init3DModels();
-      
-      // Update modeToggle with mapManager
+
       if (modeToggle) {
         modeToggle.mapManager = mapManager;
       }
       modeToggle.init();
       userLocationManager.setupLocateButton();
       setup3DToggle();
-      setupModelToggle();
 
       console.log("✅ Map-dependent components initialized");
 
-      // Process any pending data immediately
       if (pendingStaticData) {
         console.log("📦 Processing pending static data from queue...");
         processStaticData(pendingStaticData);
@@ -88,8 +70,7 @@ const initApp = async function() {
         pendingRealtimeData = [];
       }
     });
-    
-    // Fallback: process pending data after 5 seconds
+
     setTimeout(() => {
       if (pendingStaticData) {
         console.log("⏰ Timeout: Processing pending static data (fallback)");
@@ -133,44 +114,6 @@ function setup3DToggle() {
 }
 
 // ============================================
-// Model Toggle Setup (GLB vs CSS)
-// ============================================
-function setupModelToggle() {
-  const toggleModelBtn = document.getElementById('toggleModelBtn');
-  if (!toggleModelBtn || !busMarkers) return;
-
-  const updateButtonState = () => {
-    if (busMarkers.isUsingGLBModel()) {
-      toggleModelBtn.textContent = '🚌 GLB';
-      toggleModelBtn.classList.add('active');
-      toggleModelBtn.title = 'משתמש במודל GLB תלת-מימדי';
-    } else {
-      toggleModelBtn.textContent = '🚌 CSS';
-      toggleModelBtn.classList.remove('active');
-      toggleModelBtn.title = 'משתמש במודל CSS תלת-מימדי';
-    }
-  };
-
-  toggleModelBtn.addEventListener('click', () => {
-    const currentMode = busMarkers.isUsingGLBModel();
-    busMarkers.toggle3DModelMode(!currentMode);
-    updateButtonState();
-    
-    // Redraw all buses
-    if (staticDataStore.size > 0) {
-      const lastUpdate = Array.from(staticDataStore.values());
-      if (lastUpdate.length > 0) {
-        // Trigger redraw by processing last realtime data again
-        console.log("♻️ Redrawing buses in new mode...");
-      }
-    }
-  });
-
-  // Initial state
-  updateButtonState();
-}
-
-// ============================================
 // Process Static Data
 // ============================================
 function processStaticData(payloads) {
@@ -178,16 +121,16 @@ function processStaticData(payloads) {
     console.warn("⚠️ Invalid payloads for static data");
     return;
   }
-  
+
   console.log("🔧 Processing static data for", payloads.length, "routes");
-  
+
   const allShapeCoords = [];
 
   payloads.forEach(p => {
     const routeId = p.meta.routeId;
-    
+
     console.log(`  📍 Route ${routeId}: ${p.meta.routeNumber || 'N/A'} - ${p.meta.headsign || 'N/A'}`);
-    
+
     staticDataStore.set(routeId, p);
 
     if (p.shapeCoords && p.shapeCoords.length) {
@@ -195,8 +138,7 @@ function processStaticData(payloads) {
     }
 
     const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
-    
-    // Draw route polyline
+
     if (mapManager && mapIsFullyLoaded) {
       try {
         mapManager.drawRoutePolyline(p.shapeCoords, color, routeId);
@@ -204,8 +146,7 @@ function processStaticData(payloads) {
         console.error(`  ❌ Error drawing route ${routeId}:`, e);
       }
     }
-    
-    // Create route card
+
     try {
       const card = new RouteCard(routeId, p.meta, p.stops, color);
       card.create();
@@ -215,7 +156,6 @@ function processStaticData(payloads) {
     }
   });
 
-  // Fit bounds to all routes
   if (mapManager && mapIsFullyLoaded && allShapeCoords.length) {
     try {
       mapManager.fitBoundsToShapes(allShapeCoords);
@@ -228,7 +168,7 @@ function processStaticData(payloads) {
 }
 
 // ============================================
-// Process Realtime Data
+// Process Realtime Data - FIXED (GLB)
 // ============================================
 function processRealtimeData(updates) {
   if (!Array.isArray(updates)) {
@@ -236,20 +176,17 @@ function processRealtimeData(updates) {
     return;
   }
 
+  // איסוף כל הרכבים הפעילים מכל הקווים
   const activeVehicleIds = new Set();
   let processedCount = 0;
 
   updates.forEach(u => {
     const routeId = u.routeId;
     const staticData = staticDataStore.get(routeId);
-    
-    if (!staticData) {
-      return;
-    }
+    if (!staticData) return;
 
     const color = getVariedColor(staticData.meta.operatorColor || "#1976d2", String(routeId));
 
-    // Update route card
     const card = routeCards.get(routeId);
     if (card) {
       try {
@@ -260,31 +197,21 @@ function processRealtimeData(updates) {
       }
     }
 
-    // Draw buses & collect IDs
+    // ✅ GLB: drawBuses מחזיר Set IDs אמיתי (במקום לבנות לבד)
     if (u.vehicles && u.vehicles.length && busMarkers) {
       try {
-        // Collect vehicle IDs
-        u.vehicles.forEach(v => {
-           if(v.lat && v.lon) {
-              const vId = v.vehicleId || `${v.routeNumber}-${v.tripId || ''}`;
-              activeVehicleIds.add(vId);
-           }
-        });
-        
-        // Draw/update buses
-        busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
+        const ids = busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
+        if (ids && ids.forEach) ids.forEach(id => activeVehicleIds.add(id));
       } catch (e) {
         console.error(`❌ Error drawing buses for route ${routeId}:`, e);
       }
     }
   });
 
-  // Prune inactive buses
   if (busMarkers) {
     busMarkers.pruneMarkers(activeVehicleIds);
   }
 
-  // Update nearby panel
   if (nearbyPanel) {
     try {
       nearbyPanel.updateTimes(updates);
@@ -293,23 +220,22 @@ function processRealtimeData(updates) {
     }
   }
 
-  console.log(`✅ Realtime updated: ${processedCount} routes, ${activeVehicleIds.size} buses`);
+  console.log(`✅ Realtime updated: ${processedCount} routes processed`);
 }
 
 // ============================================
 // פונקציות עזר
 // ============================================
-
 function getVariedColor(baseColor, seed) {
   if (!baseColor) return "#1976d2";
-  
+
   if (seed) {
     let hash = 0;
     for (let i = 0; i < seed.length; i++) {
       hash = ((hash << 5) - hash) + seed.charCodeAt(i);
       hash = hash & hash;
     }
-    
+
     let r, g, b;
     if (baseColor.startsWith('#')) {
       const hex = baseColor.substring(1);
@@ -328,26 +254,25 @@ function getVariedColor(baseColor, seed) {
     } else {
       return baseColor;
     }
-    
+
     const variation = (hash % 21) - 10;
     r = Math.max(0, Math.min(255, r + variation));
     g = Math.max(0, Math.min(255, g + variation));
     b = Math.max(0, Math.min(255, b + variation));
-    
+
     return `rgb(${r}, ${g}, ${b})`;
   }
-  
+
   return baseColor;
 }
 
 // ============================================
 // פונקציות גלובליות לשימוש Scriptable
 // ============================================
-
 window.initNearbyStops = function(stops) {
   if (!Array.isArray(stops)) return;
   console.log("📍 Initializing nearby stops:", stops.length);
-  
+
   if (nearbyPanel) {
     nearbyPanel.init(stops);
   } else {
@@ -357,7 +282,7 @@ window.initNearbyStops = function(stops) {
 
 window.setUserLocation = function(lat, lon) {
   console.log("👤 Setting user location:", lat, lon);
-  
+
   if (mapManager && mapIsFullyLoaded) {
     mapManager.setUserLocation(lat, lon);
   } else {
@@ -401,27 +326,4 @@ window.updateRealtimeData = function(updates) {
   }
 };
 
-// Debug helpers
-window.getBusMarkersInfo = function() {
-  if (busMarkers) {
-    const manager = busMarkers.get3DModelManager();
-    if (manager) {
-      console.log("🚌 3D Model Info:");
-      console.log("  - Model loaded:", manager.isModelLoaded());
-      console.log("  - Active buses:", manager.busInstances.size);
-      console.log("  - Config:", manager.getConfig());
-    }
-  }
-};
-
-window.toggle3DModelDebug = function() {
-  if (busMarkers && busMarkers.get3DModelManager()) {
-    const manager = busMarkers.get3DModelManager();
-    console.log("Current config:", manager.getConfig());
-    
-    // You can modify config here for testing
-    // manager.setConfig({ modelScale: 60 });
-  }
-};
-
-console.log("📱 KavNav 3D GLB Client Script Loaded");
+console.log("📱 KavNav Mapbox Client Script Loaded");
