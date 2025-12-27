@@ -1,227 +1,53 @@
-/* styles/map.css - Minimal 3D version */
+/* styles/map.css - Cleaned for Three.js integration */
 
-/* ============================================
-   Map Container
-   ============================================ */
 #map {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  height: 100%;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 100%;
 }
 
-/* ============================================
-   User Location
-   ============================================ */
-.user-location-marker {
-  position: relative;
-  width: 30px;
-  height: 30px;
-}
+/* User Location Pulse */
+.user-location-marker { position: relative; width: 30px; height: 30px; }
 
 .pulse-dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 12px;
-  height: 12px;
-  background: #2196f3;
-  border: 2px solid white;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
-  z-index: 2;
+  position: absolute; top: 50%; left: 50%;
+  width: 12px; height: 12px;
+  background: #2196f3; border: 2px solid white;
+  border-radius: 50%; transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px rgba(33, 150, 243, 0.6); z-index: 2;
 }
 
 .pulse-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 30px;
-  height: 30px;
-  background: rgba(33, 150, 243, 0.3);
-  border: 2px solid rgba(33, 150, 243, 0.5);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  animation: pulse-animation 2s infinite;
-  z-index: 1;
+  position: absolute; top: 50%; left: 50%;
+  width: 30px; height: 30px;
+  background: rgba(33, 150, 243, 0.3); border: 2px solid rgba(33, 150, 243, 0.5);
+  border-radius: 50%; transform: translate(-50%, -50%);
+  animation: pulse-animation 2s infinite; z-index: 1;
 }
 
 @keyframes pulse-animation {
-  0% {
-    transform: translate(-50%, -50%) scale(0.8);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1.5);
-    opacity: 0;
-  }
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
 }
 
-/* ============================================
-   3D Bus Markers
-   ============================================ */
-.bus-marker-3d {
-  width: 50px;
-  height: 50px;
-  cursor: pointer;
-}
-
-.bus-3d-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-.bus-3d-model {
-  position: absolute;
-  width: 30px;
-  height: 50px;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 8px 8px 4px 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-}
-
-.bus-3d-body {
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
-
-/* Front windshield */
-.bus-3d-front {
-  position: absolute;
-  top: 5px;
-  left: 4px;
-  right: 4px;
-  height: 8px;
-  background: rgba(100, 200, 255, 0.6);
-  border-radius: 3px 3px 0 0;
-}
-
-/* Windows */
-.bus-3d-body::before {
-  content: '';
-  position: absolute;
-  top: 15px;
-  left: 4px;
-  right: 4px;
-  bottom: 8px;
-  background: repeating-linear-gradient(
-    transparent,
-    transparent 6px,
-    rgba(255,255,255,0.2) 6px,
-    rgba(255,255,255,0.2) 8px
-  );
-}
-
-/* Wheels */
-.bus-3d-wheels {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 6px;
-  display: flex;
-  justify-content: space-between;
-  padding: 0 3px;
-}
-
-.wheel {
-  width: 6px;
-  height: 6px;
-  background: #333;
-  border-radius: 50%;
-  border: 1px solid #555;
-}
-
-/* Route badge */
-.route-badge-3d {
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 3px 8px;
-  background: white;
-  border: 2px solid;
-  border-radius: 10px;
-  font-weight: bold;
-  font-size: 11px;
-  white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  z-index: 10;
-}
-
-/* Shadow */
-.bus-3d-shadow {
-  position: absolute;
-  bottom: -5px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 35px;
-  height: 15px;
-  background: radial-gradient(ellipse, rgba(0,0,0,0.4), transparent);
-  border-radius: 50%;
-  filter: blur(3px);
-  z-index: -1;
-}
-
-/* ============================================
-   Buttons
-   ============================================ */
-#locateMeBtn,
-#toggle3DBtn {
-  position: absolute;
-  right: 20px;
-  width: 44px;
-  height: 44px;
-  background: white;
-  border: none;
-  border-radius: 50%;
+/* Buttons */
+#locateMeBtn, #toggle3DBtn {
+  position: absolute; right: 20px;
+  width: 44px; height: 44px;
+  background: white; border: none; border-radius: 50%;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  cursor: pointer;
-  font-size: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  transition: all 0.2s;
+  cursor: pointer; font-size: 24px;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; transition: all 0.2s;
 }
+#locateMeBtn { bottom: 100px; }
+#toggle3DBtn { bottom: 160px; }
 
-#locateMeBtn {
-  bottom: 100px;
+#locateMeBtn:hover, #toggle3DBtn:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4); transform: scale(1.05);
 }
+#toggle3DBtn.active { background: #2196f3; color: white; }
 
-#toggle3DBtn {
-  bottom: 160px;
-}
-
-#locateMeBtn:hover,
-#toggle3DBtn:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  transform: scale(1.05);
-}
-
-#toggle3DBtn.active {
-  background: #2196f3;
-  color: white;
-}
-
-/* ============================================
-   Mapbox Controls
-   ============================================ */
 .mapboxgl-ctrl-group {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-}
-
-.mapboxgl-ctrl-group button {
-  width: 36px;
-  height: 36px;
+  background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
