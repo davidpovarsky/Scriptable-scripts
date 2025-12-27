@@ -29,7 +29,7 @@ function safeImportModule(name) {
 const config = importModule('config');
 const utils = importModule('utils');
 const dataService = importModule('data');
-const viewService = importModule('view 2');
+const viewService = importModule('view');
 
 module.exports.run = async function(argsObj) {
 
