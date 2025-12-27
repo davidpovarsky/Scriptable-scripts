@@ -280,7 +280,7 @@ console.log("✅ KavNav Mapbox Bundle Complete");
   </div>
   
   <script>
-    window.MAPBOX_TOKEN = 'YOUR_MAPBOX_ACCESS_TOKEN_HERE';
+    window.MAPBOX_TOKEN = 'pk.eyJ1IjoiZGF2aWRwb3YiLCJhIjoiY21qbGNvMG1jMDkyZzNpcXJ6bzNwcnNtZiJ9.a2f__tImpmGUDc9ERCMXpg';
     window.APP_ENVIRONMENT = 'scriptable';
     console.log('🌍 Environment: Scriptable');
     
