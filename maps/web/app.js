@@ -1,185 +1,197 @@
 // web/app.js
-// נקודת הכניסה הראשית - גרסת Mapbox המתוקנת
+// Main application logic - Mapbox 3D version
 
-// ============================================
-// משתנים גלובליים
-// ============================================
-let mapManager = null;
-let busMarkers = null;
-let userLocationManager = null;
-let nearbyPanel = null;
-let bottomSheet = null;
-let modeToggle = null;
+let mapManager;
+let userLocation;
+let busMarkers;
+let bottomSheet;
+let nearbyPanel;
+let modeToggle;
 
-const staticDataStore = new Map();
 const routeCards = new Map();
-let pendingStaticData = null;
-let pendingRealtimeData = [];
-let mapIsFullyLoaded = false;
+const staticDataStore = new Map();
 
-// ============================================
-// אתחול ראשוני
-// ============================================
-const initApp = async function() {
-  console.log("🚀 KavNav Mapbox App Starting...");
+// Config
+const REFRESH_INTERVAL = 15000; // 15 seconds
+let currentMode = 'full'; // full, map, stops
 
+// Initialize app
+function initApp() {
+  console.log("🚀 Initializing KavNav app (Mapbox 3D)...");
+  
   try {
-    // Initialize ALL components immediately (not dependent on map)
-    nearbyPanel = new NearbyPanel();
-    bottomSheet = new BottomSheet();
-    modeToggle = new ModeToggle(null); // Will set mapManager later
-    
-    bottomSheet.init();
-    
-    console.log("✅ UI components initialized");
-
-    // Check for Mapbox token
-    if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN_HERE') {
-      console.error("❌ No Mapbox token configured!");
-      alert("שגיאה: לא הוגדר Mapbox API key\n\nערוך את view.js והוסף את ה-token שלך");
-      return;
-    }
-
-    // Initialize map with token
+    // Initialize map
     mapManager = new MapManager();
     const map = mapManager.init('map', window.MAPBOX_TOKEN);
-
-    // Wait for map to fully load
-    map.on('load', () => {
-      console.log("🗺️ Mapbox loaded successfully!");
-      mapIsFullyLoaded = true;
-      
-      // Now initialize map-dependent components
-      busMarkers = new BusMarkers(mapManager);
-      userLocationManager = new UserLocationManager(mapManager);
-      
-      // Update modeToggle with mapManager
-      if (modeToggle) {
-        modeToggle.mapManager = mapManager;
-      }
-      modeToggle.init();
-      userLocationManager.setupLocateButton();
-      setup3DToggle();
-
-      console.log("✅ Map-dependent components initialized");
-
-      // Process any pending data immediately
-      if (pendingStaticData) {
-        console.log("📦 Processing pending static data from queue...");
-        processStaticData(pendingStaticData);
-        pendingStaticData = null;
-      }
-
-      if (pendingRealtimeData.length > 0) {
-        console.log("🔄 Processing pending realtime data from queue...");
-        pendingRealtimeData.forEach(data => processRealtimeData(data));
-        pendingRealtimeData = [];
-      }
+    
+    // Initialize user location
+    userLocation = new UserLocation(mapManager);
+    
+    // Initialize bus markers
+    busMarkers = new BusMarkers(mapManager);
+    
+    // Initialize bottom sheet
+    bottomSheet = new BottomSheet();
+    
+    // Initialize nearby panel
+    nearbyPanel = new NearbyPanel();
+    
+    // Initialize mode toggle
+    modeToggle = new ModeToggle((mode) => {
+      currentMode = mode;
+      updateLayout();
     });
     
-    // Fallback: process pending data after 5 seconds if map load didn't trigger
-    setTimeout(() => {
-      if (pendingStaticData) {
-        console.log("⏰ Timeout: Processing pending static data (fallback)");
-        mapIsFullyLoaded = true;
-        processStaticData(pendingStaticData);
-        pendingStaticData = null;
-      }
-      if (pendingRealtimeData.length > 0) {
-        console.log("⏰ Timeout: Processing pending realtime data (fallback)");
-        pendingRealtimeData.forEach(data => processRealtimeData(data));
-        pendingRealtimeData = [];
-      }
-    }, 5000);
-
-    map.on('error', (e) => {
-      console.error("❌ Mapbox error:", e);
-      if (e.error && e.error.message) {
-        if (e.error.message.includes('401')) {
-          alert("שגיאה: Mapbox API key לא תקין\n\nבדוק את ה-token ב-view.js");
-        }
-      }
-    });
-
+    // Setup UI events
+    setupUIEvents();
+    
+    // Load initial data and start refresh
+    loadInitialData();
+    
+    console.log("✅ App initialized successfully");
   } catch (e) {
-    console.error("❌ Init error:", e);
-    alert("שגיאה באתחול: " + e.message);
+    console.error("❌ Error initializing app:", e);
+    if (typeof showError === 'function') {
+      showError(e, 'initApp');
+    }
   }
-};
-
-// ============================================
-// 3D Toggle Setup
-// ============================================
-function setup3DToggle() {
-  const toggle3DBtn = document.getElementById('toggle3DBtn');
-  if (!toggle3DBtn || !mapManager) return;
-
-  toggle3DBtn.addEventListener('click', () => {
-    mapManager.toggle3D();
-    toggle3DBtn.classList.toggle('active');
-  });
 }
 
-// ============================================
-// Process Static Data
-// ============================================
-function processStaticData(payloads) {
-  if (!Array.isArray(payloads)) {
-    console.warn("⚠️ Invalid payloads for static data");
-    return;
-  }
-  
-  console.log("🔧 Processing static data for", payloads.length, "routes");
-  
-  const allShapeCoords = [];
-
-  payloads.forEach(p => {
-    const routeId = p.meta.routeId;
-    
-    console.log(`  📍 Route ${routeId}: ${p.meta.routeNumber || 'N/A'} - ${p.meta.headsign || 'N/A'}`);
-    
-    staticDataStore.set(routeId, p);
-
-    if (p.shapeCoords && p.shapeCoords.length) {
-      allShapeCoords.push(p.shapeCoords);
-    }
-
-    const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
-    
-    // Draw route polyline
-    if (mapManager && mapIsFullyLoaded) {
+function setupUIEvents() {
+  // Locate me button
+  const locateBtn = document.getElementById('locateMeBtn');
+  if (locateBtn) {
+    locateBtn.onclick = async () => {
       try {
-        mapManager.drawRoutePolyline(p.shapeCoords, color, routeId);
+        const loc = await userLocation.requestLocation();
+        if (loc) {
+          mapManager.flyToLocation(loc.lon, loc.lat);
+          nearbyPanel.setUserLocation(loc);
+        }
       } catch (e) {
-        console.error(`  ❌ Error drawing route ${routeId}:`, e);
+        console.error("❌ Error locating user:", e);
       }
-    }
-    
-    // Create route card
-    try {
-      const card = new RouteCard(routeId, p.meta, p.stops, color);
-      card.create();
-      routeCards.set(routeId, card);
-    } catch (e) {
-      console.error(`  ❌ Error creating card for route ${routeId}:`, e);
-    }
-  });
-
-  // Fit bounds to all routes
-  if (mapManager && mapIsFullyLoaded && allShapeCoords.length) {
-    try {
-      mapManager.fitBoundsToShapes(allShapeCoords);
-    } catch (e) {
-      console.error("  ❌ Error fitting bounds:", e);
-    }
+    };
   }
-
-  console.log("✅ Static data processed:", payloads.length, "routes");
+  
+  // Toggle 3D button
+  const toggle3DBtn = document.getElementById('toggle3DBtn');
+  if (toggle3DBtn) {
+    toggle3DBtn.onclick = () => {
+      const enabled = mapManager.toggle3D();
+      toggle3DBtn.classList.toggle('active', enabled);
+    };
+  }
 }
 
-// ============================================
-// Process Realtime Data - FIXED
-// ============================================
+function updateLayout() {
+  const mapPane = document.getElementById('mapPane');
+  const routesPane = document.getElementById('routesPane');
+  const stopsPane = document.getElementById('stopsPane');
+  
+  if (!mapPane || !routesPane || !stopsPane) return;
+  
+  // Reset classes
+  mapPane.classList.remove('hidden');
+  routesPane.classList.remove('hidden');
+  stopsPane.classList.remove('hidden');
+  
+  switch (currentMode) {
+    case 'map':
+      routesPane.classList.add('hidden');
+      stopsPane.classList.add('hidden');
+      break;
+    case 'stops':
+      mapPane.classList.add('hidden');
+      routesPane.classList.add('hidden');
+      break;
+    case 'full':
+    default:
+      // Show all
+      break;
+  }
+}
+
+async function loadInitialData() {
+  try {
+    console.log("📥 Loading initial routes...");
+    
+    // Fetch routes list (example - adapt to your API)
+    const routesResponse = await fetchJsonWithCacheBuster('https://kavnav.com/api/routes?nearby=1');
+    if (!routesResponse || !Array.isArray(routesResponse.routes)) {
+      console.warn("⚠️ No routes data received");
+      return;
+    }
+    
+    // Create route cards and store static data
+    routesResponse.routes.forEach(route => {
+      try {
+        const card = new RouteCard(route, bottomSheet);
+        routeCards.set(route.routeId, card);
+        
+        // Store static route data
+        staticDataStore.set(route.routeId, {
+          meta: route,
+          shapeCoords: route.shapeCoords || []
+        });
+        
+        // Draw route on map
+        if (route.shapeCoords && route.shapeCoords.length) {
+          const color = getVariedColor(route.operatorColor || "#1976d2", String(route.routeId));
+          mapManager.drawRoute(route.routeId, route.shapeCoords, color);
+        }
+      } catch (e) {
+        console.error(`❌ Error creating route card for ${route.routeId}:`, e);
+      }
+    });
+    
+    // Fit map to all routes
+    const allCoords = [];
+    staticDataStore.forEach(data => {
+      if (data.shapeCoords) allCoords.push(...data.shapeCoords);
+    });
+    if (allCoords.length) {
+      mapManager.fitToPoints(allCoords);
+    }
+    
+    // Start realtime updates
+    startRealtimeUpdates();
+    
+    console.log("✅ Initial data loaded");
+  } catch (e) {
+    console.error("❌ Error loading initial data:", e);
+  }
+}
+
+function startRealtimeUpdates() {
+  console.log(`🔄 Starting realtime updates every ${REFRESH_INTERVAL/1000}s...`);
+  
+  // Initial update
+  updateRealtimeData();
+  
+  // Schedule updates
+  setInterval(updateRealtimeData, REFRESH_INTERVAL);
+}
+
+async function updateRealtimeData() {
+  try {
+    console.log("🔄 Fetching realtime data...");
+    
+    // Collect route IDs
+    const routeIds = Array.from(staticDataStore.keys());
+    if (!routeIds.length) return;
+    
+    // Fetch realtime updates for all routes
+    const updates = await fetchJsonWithCacheBuster(`https://kavnav.com/api/realtime?routeIds=${routeIds.join(',')}`);
+    
+    // Process updates
+    processRealtimeData(updates);
+    
+  } catch (e) {
+    console.error("❌ Error updating realtime data:", e);
+  }
+}
+
 function processRealtimeData(updates) {
   if (!Array.isArray(updates)) {
     console.warn("⚠️ Invalid updates for realtime data");
@@ -195,7 +207,6 @@ function processRealtimeData(updates) {
     const staticData = staticDataStore.get(routeId);
     
     if (!staticData) {
-      // אם אין מידע סטטי, לא נוכל לצייר, אבל לא נשבור את הלולאה
       return;
     }
 
@@ -212,19 +223,13 @@ function processRealtimeData(updates) {
       }
     }
 
-    // Draw buses & collect IDs
+    // Draw buses (GLB layer) & collect IDs from what was actually drawn
     if (u.vehicles && u.vehicles.length && busMarkers) {
       try {
-        // איסוף ה-IDs של הרכבים בקו הזה
-        u.vehicles.forEach(v => {
-           if(v.lat && v.lon) {
-              const vId = v.vehicleId || `${v.routeNumber}-${v.tripId || ''}`;
-              activeVehicleIds.add(vId);
-           }
-        });
-        
-        // ציור/עדכון (מבלי למחוק אחרים)
-        busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
+        const drawnIds = busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
+        if (drawnIds && typeof drawnIds.forEach === 'function') {
+          drawnIds.forEach(id => activeVehicleIds.add(id));
+        }
       } catch (e) {
         console.error(`❌ Error drawing buses for route ${routeId}:`, e);
       }
@@ -245,114 +250,26 @@ function processRealtimeData(updates) {
     }
   }
 
-  console.log(`✅ Realtime updated: ${processedCount} routes processed`);
+  console.log(`✅ Realtime updated: ${processedCount}/${updates.length} routes`);
 }
 
-// ============================================
-// פונקציות עזר
-// ============================================
-
-function getVariedColor(baseColor, seed) {
-  if (!baseColor) return "#1976d2";
-  
-  // If seed is provided, vary the color slightly for visual distinction
-  if (seed) {
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) {
-      hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-      hash = hash & hash;
+// Helper: fetch JSON with cache buster
+async function fetchJsonWithCacheBuster(url) {
+  try {
+    const cacheBuster = `cb=${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const separator = url.includes('?') ? '&' : '?';
+    const finalUrl = url + separator + cacheBuster;
+    
+    const resp = await fetch(finalUrl);
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status} for ${url}`);
     }
-    
-    let r, g, b;
-    if (baseColor.startsWith('#')) {
-      const hex = baseColor.substring(1);
-      r = parseInt(hex.substring(0, 2), 16);
-      g = parseInt(hex.substring(2, 4), 16);
-      b = parseInt(hex.substring(4, 6), 16);
-    } else if (baseColor.startsWith('rgb')) {
-      const matches = baseColor.match(/\d+/g);
-      if (matches && matches.length >= 3) {
-        r = parseInt(matches[0]);
-        g = parseInt(matches[1]);
-        b = parseInt(matches[2]);
-      } else {
-        return baseColor;
-      }
-    } else {
-      return baseColor;
-    }
-    
-    // Apply slight variation (±10%)
-    const variation = (hash % 21) - 10;
-    r = Math.max(0, Math.min(255, r + variation));
-    g = Math.max(0, Math.min(255, g + variation));
-    b = Math.max(0, Math.min(255, b + variation));
-    
-    return `rgb(${r}, ${g}, ${b})`;
+    return await resp.json();
+  } catch (e) {
+    console.error("❌ fetchJson error:", e);
+    return null;
   }
-  
-  return baseColor;
 }
 
-// ============================================
-// פונקציות גלובליות לשימוש Scriptable
-// ============================================
-
-window.initNearbyStops = function(stops) {
-  if (!Array.isArray(stops)) return;
-  console.log("📍 Initializing nearby stops:", stops.length);
-  
-  if (nearbyPanel) {
-    nearbyPanel.init(stops);
-  } else {
-    console.log("⚠️ nearbyPanel not ready yet");
-  }
-};
-
-window.setUserLocation = function(lat, lon) {
-  console.log("👤 Setting user location:", lat, lon);
-  
-  if (mapManager && mapIsFullyLoaded) {
-    mapManager.setUserLocation(lat, lon);
-  } else {
-    console.log("⏳ Map not ready, will set location when loaded");
-    if (mapManager && mapManager.getMap()) {
-      mapManager.getMap().once('load', () => {
-        mapManager.setUserLocation(lat, lon);
-      });
-    }
-  }
-};
-
-window.initStaticData = function(payloads) {
-  if (!Array.isArray(payloads)) {
-    console.warn("⚠️ Invalid static data received");
-    return;
-  }
-  console.log("📦 Receiving static data:", payloads.length, "routes");
-
-  if (mapIsFullyLoaded) {
-    console.log("📦 Map ready, processing immediately");
-    processStaticData(payloads);
-  } else {
-    console.log("⏳ Map not ready, queueing static data");
-    pendingStaticData = payloads;
-  }
-};
-
-window.updateRealtimeData = function(updates) {
-  if (!Array.isArray(updates)) {
-    console.warn("⚠️ Invalid realtime data received");
-    return;
-  }
-  console.log("🔄 Receiving realtime data:", updates.length, "routes");
-
-  if (mapIsFullyLoaded && staticDataStore.size > 0) {
-    processRealtimeData(updates);
-  } else {
-    console.log("⏳ Map or static data not ready, queueing realtime data");
-    pendingRealtimeData.push(updates);
-  }
-};
-
-console.log("📱 KavNav Mapbox Client Script Loaded");
+// Expose initApp globally
+window.initApp = initApp;
