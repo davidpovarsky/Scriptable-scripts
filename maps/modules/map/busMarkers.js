@@ -4,12 +4,11 @@
 
 class BusMarkers {
   constructor(mapManager) {
-    this.MODEL_YAW_ALIGN_DEG = 90; // ⬅️ תיקון: המודל היה מסובב 90° ביחס לכביש
     this.mapManager = mapManager;
     this.map = mapManager.getMap();
     this.busMarkers = new Map();
     this.modelLoaded = false;
-    
+
     // GLB Model settings (from the HTML example)
     this.GLB_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb";
     this.MODEL_YAW_OFFSET_DEG = -51.75;
@@ -23,7 +22,14 @@ class BusMarkers {
     this.MODEL_SCALE = 1;  // הקטנתי מ-45 ל-3 (גודל נורמלי)
     this.MODEL_ALT_METERS = 0;
     this.FLIP_X_180 = false;
-    
+
+    // --- DEBUG / LOGGING (לא מציף) ---
+    this.DEBUG_PATH_LOG = true;
+    this.DEBUG_ROT_LOG = true;
+    this.DEBUG_LOG_EVERY_MS = 2000; // פעם ב-2 שניות
+    this._debugLastTs = 0;
+    this._debugLastPath = null;
+
     // Three.js components
     this.threeInitialized = false;
     this.scene = null;
@@ -31,23 +37,46 @@ class BusMarkers {
     this.renderer = null;
     this.glbModelTemplate = null; // Template model
     this.busModels = new Map(); // Individual bus models
-    
+
     // Quaternions
     this.qBase = null;
     this.qYaw = null;
     this.qOut = null;
     this.axisZ = null;
-    
+
     // Bus data for smooth animation
     this.busData = new Map();
-    
+
     // Route number badges (HTML markers for GLB models)
     this.routeBadges = new Map();
-    
+
     console.log("🚌 BusMarkers initialized (GLB + Three.js)");
-    
+
     // Check if THREE is available and initialize
     this.checkAndInitThree();
+  }
+
+  _debugMaybeLogPath(pathLabel) {
+    if (!this.DEBUG_PATH_LOG) return;
+    const now = performance.now();
+    if (this._debugLastPath !== pathLabel || (now - this._debugLastTs) > this.DEBUG_LOG_EVERY_MS) {
+      this._debugLastPath = pathLabel;
+      this._debugLastTs = now;
+      console.log(pathLabel);
+    }
+  }
+
+  _debugMaybeLogRotation(vehicleId, bearing, targetYawDeg, smoothedYawDeg) {
+    if (!this.DEBUG_ROT_LOG) return;
+    const now = performance.now();
+    if ((now - this._debugLastTs) > this.DEBUG_LOG_EVERY_MS) {
+      this._debugLastTs = now;
+      console.log(
+        `🧭 ROT(GLB) id=${vehicleId} bearing=${Number(bearing).toFixed(1)}° ` +
+        `targetYaw=${Number(targetYawDeg).toFixed(1)}° smooth=${Number(smoothedYawDeg).toFixed(1)}° ` +
+        `(offset=${this.MODEL_YAW_OFFSET_DEG}°)`
+      );
+    }
   }
 
   checkAndInitThree(attempt = 1, maxAttempts = 20) {
@@ -64,16 +93,16 @@ class BusMarkers {
 
   initThreeLayer() {
     if (this.threeInitialized || !this.map) return;
-    
+
     console.log("🎨 Initializing Three.js Custom Layer...");
-    
+
     const self = this;
-    
+
     const customLayer = {
       id: 'buses-3d-layer',
       type: 'custom',
       renderingMode: '3d',
-      
+
       onAdd: function(map, gl) {
         // Initialize Three.js scene
         self.scene = new THREE.Scene();
@@ -84,20 +113,20 @@ class BusMarkers {
           antialias: true
         });
         self.renderer.autoClear = false;
-        
+
         // Add lights
         self.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
         const dir = new THREE.DirectionalLight(0xffffff, 0.9);
         dir.position.set(10, -10, 20);
         self.scene.add(dir);
-        
+
         // Initialize quaternions
         self.qBase = new THREE.Quaternion();
         self.qYaw = new THREE.Quaternion();
         self.qOut = new THREE.Quaternion();
         self.axisZ = new THREE.Vector3(0, 0, 1);
         self.updateBaseQuaternion();
-        
+
         // Load GLB template model
         const loader = new THREE.GLTFLoader();
         loader.load(
@@ -113,77 +142,77 @@ class BusMarkers {
             self.modelLoaded = false;
           }
         );
-        
+
         self.threeInitialized = true;
         console.log("✅ Three.js layer initialized");
       },
-      
+
       render: function(gl, matrix) {
         if (!self.scene || !self.camera || !self.renderer) return;
-        
+
         // Animate all bus models
         const now = performance.now();
         self.busModels.forEach((busModel, vehicleId) => {
           if (!busModel.userData) return;
-          
+
           const data = busModel.userData;
-          
+
           // Check if animation is active
           if (data.animationStartTime && data.startLon && data.startLat && data.targetLon && data.targetLat) {
             const elapsed = now - data.animationStartTime;
             const progress = Math.min(elapsed / data.animationDuration, 1);
-            
+
             // Easing function (Ease Out Quad) - same as original
             const eased = progress * (2 - progress);
-            
+
             // Interpolate position
             const currentLon = data.startLon + (data.targetLon - data.startLon) * eased;
             const currentLat = data.startLat + (data.targetLat - data.startLat) * eased;
-            
+
             // Update current position
             data.currentLon = currentLon;
             data.currentLat = currentLat;
-            
+
             // Convert to Mercator and update model position
             const mc = mapboxgl.MercatorCoordinate.fromLngLat(
               { lng: currentLon, lat: currentLat },
               self.MODEL_ALT_METERS
             );
             const s = mc.meterInMercatorCoordinateUnits();
-            
+
             busModel.position.set(
               mc.x + self.OFFSET_EAST_M * s,
               mc.y - self.OFFSET_NORTH_M * s,
               mc.z + self.OFFSET_UP_M * s
             );
-            
+
             // Update scale
             const finalScale = self.MODEL_SCALE * s * self.SCALE_MUL;
             busModel.scale.set(finalScale, finalScale, finalScale);
-            
+
             // Update badge position
             const badge = self.routeBadges.get(vehicleId);
             if (badge) {
               badge.setLngLat([currentLon, currentLat]);
             }
-            
+
             // Clear animation when complete
             if (progress >= 1) {
               data.animationStartTime = null;
             }
           }
         });
-        
+
         // Update camera matrix
         self.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix);
-        
+
         // Render scene
         self.renderer.state.reset();
         self.renderer.render(self.scene, self.camera);
         self.map.triggerRepaint();
       }
     };
-    
+
     // Add the layer to map immediately
     // The onAdd callback will be called automatically when the layer is added
     try {
@@ -196,7 +225,7 @@ class BusMarkers {
     } catch (e) {
       console.error("❌ Error adding Three.js layer:", e);
       console.log("Will retry when map style is fully loaded...");
-      
+
       // Fallback: wait for styledata event
       this.map.once('styledata', () => {
         try {
@@ -213,12 +242,12 @@ class BusMarkers {
 
   updateBaseQuaternion() {
     if (!this.qBase) return;
-    
+
     const deg2rad = Math.PI / 180;
     let rxDeg = this.MODEL_BASE_ROT_X_DEG + (this.FLIP_X_180 ? 180 : 0);
     let ryDeg = this.MODEL_BASE_ROT_Y_DEG;
     let rzDeg = this.MODEL_BASE_ROT_Z_DEG;
-    
+
     const e = new THREE.Euler(rxDeg * deg2rad, ryDeg * deg2rad, rzDeg * deg2rad, "XYZ");
     this.qBase.setFromEuler(e);
   }
@@ -228,12 +257,12 @@ class BusMarkers {
     if (!Array.isArray(vehicles)) return;
 
     const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : [];
-    
+
     vehicles.forEach(v => {
       try {
         let lon = v.lon;
         let lat = v.lat;
-        
+
         // אם אין מיקום מדויק, נשתמש ב-positionOnLine
         if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
           const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
@@ -243,16 +272,16 @@ class BusMarkers {
             lat = point[1];
           }
         }
-        
+
         if (lat && lon) {
           const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId || Math.random()}`;
           let bearing = v.bearing || 0;
-          
+
           // חישוב bearing מהמסלול אם אין
           if (!v.bearing && shapeLatLngs.length > 1 && v.positionOnLine) {
             bearing = this.calculateBearing(shapeLatLngs, v.positionOnLine);
           }
-          
+
           // Store/update bus data
           const existingData = this.busData.get(vehicleId);
           this.busData.set(vehicleId, {
@@ -260,7 +289,7 @@ class BusMarkers {
             routeNumber: v.routeNumber,
             yawDegSmoothed: existingData?.yawDegSmoothed || null
           });
-          
+
           // Draw with GLB if available, otherwise fallback
           if (this.modelLoaded && this.glbModelTemplate && this.threeInitialized) {
             this.updateGLBBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
@@ -275,36 +304,39 @@ class BusMarkers {
   }
 
   updateGLBBus(vehicleId, lon, lat, bearing, color, routeNumber) {
+    // ✅ DEBUG: confirm path
+    this._debugMaybeLogPath("✅ GLB path (Three.js/GLB models)");
+
     if (!this.scene || !this.glbModelTemplate) return;
-    
+
     let busModel = this.busModels.get(vehicleId);
-    
+
     // Create new model if doesn't exist
     if (!busModel) {
       busModel = this.glbModelTemplate.clone();
       this.scene.add(busModel);
       this.busModels.set(vehicleId, busModel);
       console.log(`🚌 Created GLB model for bus ${vehicleId}`);
-      
+
       // Store initial position
       const mc = mapboxgl.MercatorCoordinate.fromLngLat(
         { lng: lon, lat: lat },
         this.MODEL_ALT_METERS
       );
       const s = mc.meterInMercatorCoordinateUnits();
-      
+
       busModel.position.set(
         mc.x + this.OFFSET_EAST_M * s,
         mc.y - this.OFFSET_NORTH_M * s,
         mc.z + this.OFFSET_UP_M * s
       );
-      
+
       const finalScale = this.MODEL_SCALE * s * this.SCALE_MUL;
       busModel.scale.set(finalScale, finalScale, finalScale);
-      
+
       // Store userData for animation
-      busModel.userData = { 
-        routeNumber, 
+      busModel.userData = {
+        routeNumber,
         color,
         targetLon: lon,
         targetLat: lat,
@@ -313,18 +345,18 @@ class BusMarkers {
         animationStartTime: null
       };
     }
-    
+
     // Get bus data for smoothing
     const data = this.busData.get(vehicleId);
     if (!data) return;
-    
+
     // Check if position changed significantly
     const oldLon = busModel.userData.currentLon || lon;
     const oldLat = busModel.userData.currentLat || lat;
     const distance = Math.sqrt(
       Math.pow(lon - oldLon, 2) + Math.pow(lat - oldLat, 2)
     );
-    
+
     // Only animate if moved significantly (> 0.00001 degrees)
     if (distance > 0.00001) {
       // Start new animation
@@ -335,29 +367,48 @@ class BusMarkers {
       busModel.userData.animationStartTime = performance.now();
       busModel.userData.animationDuration = 2000; // 2 seconds like original
     }
-    
+
+    // ✅ FIX: bearing (0=N,90=E) -> yaw for Mapbox/Three axes (0=E, +90=S)
+    // Three yaw around Z: 0 means +X (east). So:
+    // bearing 90 (east) -> yaw 0
+    // bearing 0  (north) -> yaw -90
+    const bearingToYawDeg = (b) => (b - 90);
+
     // Update rotation with quaternion (smooth, no flips)
-let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DEG;
-    
+    let targetYawDeg = bearingToYawDeg(bearing) + this.MODEL_YAW_OFFSET_DEG;
+
     if (data.yawDegSmoothed == null) {
       data.yawDegSmoothed = targetYawDeg;
     } else {
       // Unwrap to prevent 359->0 jumps
       data.yawDegSmoothed = this.unwrapToNearest(data.yawDegSmoothed, targetYawDeg);
     }
-    
+
     const deg2rad = Math.PI / 180;
     const yawRad = data.yawDegSmoothed * deg2rad;
-    
-    // Quaternion composition: qOut = qYaw * qBase
-    this.qYaw.setFromAxisAngle(this.axisZ, -yawRad);
-    this.qOut.copy(this.qYaw).multiply(this.qBase);
+
+    // Quaternion composition:
+    // Default: qOut = qYaw * qBase
+    // אם עדיין לא מיושר אצלך (מודל "לרוחב"), נסה להפוך סדר ל: qOut = qBase * qYaw
+    const USE_BASE_THEN_YAW = false;
+
+    this.qYaw.setFromAxisAngle(this.axisZ, yawRad); // ✅ בלי מינוס
+
+    if (USE_BASE_THEN_YAW) {
+      this.qOut.copy(this.qBase).multiply(this.qYaw);
+    } else {
+      this.qOut.copy(this.qYaw).multiply(this.qBase);
+    }
+
     busModel.quaternion.copy(this.qOut);
-    
+
+    // ✅ DEBUG rotation (throttled)
+    this._debugMaybeLogRotation(vehicleId, bearing, targetYawDeg, data.yawDegSmoothed);
+
     // Create/update HTML badge marker for route number
     if (routeNumber) {
       let badge = this.routeBadges.get(vehicleId);
-      
+
       if (!badge) {
         // Create badge element
         const badgeEl = document.createElement('div');
@@ -375,7 +426,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
           pointer-events: none;
         `;
         badgeEl.textContent = routeNumber;
-        
+
         // Create marker
         badge = new mapboxgl.Marker({
           element: badgeEl,
@@ -384,7 +435,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
         })
           .setLngLat([lon, lat])
           .addTo(this.map);
-        
+
         this.routeBadges.set(vehicleId, badge);
       }
       // Badge position will be updated in animation loop
@@ -392,13 +443,16 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
   }
 
   draw3DBusFallback(vehicleId, lon, lat, bearing, color, routeNumber) {
+    // ✅ DEBUG: confirm path
+    this._debugMaybeLogPath("⚠️ FALLBACK path (2D/CSS markers)");
+
     // Fallback to 2D markers if GLB not loaded
     let marker = this.busMarkers.get(vehicleId);
-    
+
     if (marker) {
       // Animate to new position
       this.animateBusTo(vehicleId, lon, lat, 2000);
-      
+
       const el = marker.getElement();
       if (el) {
         const model = el.querySelector('.bus-3d-container');
@@ -408,7 +462,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
       }
     } else {
       const el = this._create3DBusElement(bearing, color, routeNumber);
-      
+
       marker = new mapboxgl.Marker({
         element: el,
         anchor: 'center',
@@ -417,7 +471,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
       })
         .setLngLat([lon, lat])
         .addTo(this.map);
-      
+
       this.busMarkers.set(vehicleId, marker);
     }
   }
@@ -425,7 +479,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
   _create3DBusElement(bearing, color, routeNumber) {
     const el = document.createElement('div');
     el.className = 'bus-marker-3d';
-    
+
     el.innerHTML = `
       <div class="bus-3d-container" style="transform: rotateZ(${bearing}deg);">
         <div class="bus-3d-model" style="background: ${color};">
@@ -450,7 +504,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
       </div>
       <div class="bus-3d-shadow"></div>
     `;
-    
+
     return el;
   }
 
@@ -488,7 +542,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
         }
       }
     });
-    
+
     // Remove 3D models
     this.busModels.forEach((model, id) => {
       if (!activeVehicleIds.has(id)) {
@@ -502,7 +556,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
         }
       }
     });
-    
+
     // Remove route badges
     this.routeBadges.forEach((badge, id) => {
       if (!activeVehicleIds.has(id)) {
@@ -516,7 +570,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
         }
       }
     });
-    
+
     // Clean bus data
     this.busData.forEach((data, id) => {
       if (!activeVehicleIds.has(id)) {
@@ -537,7 +591,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
       }
     });
     this.busMarkers.clear();
-    
+
     // Clear 3D models
     this.busModels.forEach(model => {
       try {
@@ -549,7 +603,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
       }
     });
     this.busModels.clear();
-    
+
     // Clear route badges
     this.routeBadges.forEach(badge => {
       try {
@@ -561,7 +615,7 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
       }
     });
     this.routeBadges.clear();
-    
+
     this.busData.clear();
     console.log("🗑️ All buses cleared");
   }
@@ -573,29 +627,29 @@ let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DE
     try {
       const start = marker.getLngLat();
       const end = [newLon, newLat];
-      
+
       if (Math.abs(start.lng - end[0]) < 0.00001 && Math.abs(start.lat - end[1]) < 0.00001) {
         return;
       }
-      
+
       let startTime = null;
-      
+
       const animate = (timestamp) => {
         if (!startTime) startTime = timestamp;
         const progress = Math.min((timestamp - startTime) / duration, 1);
-        
+
         const eased = progress * (2 - progress);
-        
+
         const currentLng = start.lng + (end[0] - start.lng) * eased;
         const currentLat = start.lat + (end[1] - start.lat) * eased;
-        
+
         marker.setLngLat([currentLng, currentLat]);
-        
+
         if (progress < 1) {
           requestAnimationFrame(animate);
         }
       };
-      
+
       requestAnimationFrame(animate);
     } catch (e) {
       console.error("❌ Error animating bus:", e);
