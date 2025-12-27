@@ -1,276 +1,264 @@
 // modules/map/busModelLayer.js
-// שכבת Custom Layer ל-Mapbox שמציירת מודל GLB (Three.js) לכל הרכבים (ללא DOM markers)
-//
-// משתמש ב:
-// - Mapbox Custom Layer API (renderingMode: '3d')
-// - Three.js r128 + GLTFLoader (נטען דרך <script> ב-view.js)
-//
-// ⚙️ כיוונון מודל (כמו בקובץ הניסוי):
-const BUS_GLB_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb";
+// שכבת 3D (Custom Layer) שמציגה GLB על Mapbox GL JS עבור *הרבה רכבים*.
+// מבוסס על דף הניסוי שלך, כולל הכיוונון:
+// MODEL_YAW_OFFSET_DEG = -51.75 וכו'.
+// שימוש: map.addLayer(new BusModelLayer({...}), beforeLabelLayerId)
 
-// יחידות/קנה מידה: MODEL_SCALE הוא בערך "מטרים" לפני המרה ל-mercator-units
-const MODEL_SCALE = 45;
-const MODEL_ALT_METERS = 0;
-
-// ✅ MODEL TUNING (touch editor)
-const MODEL_YAW_OFFSET_DEG = -51.75;
-const MODEL_BASE_ROT_X_DEG = 88.25;
-const MODEL_BASE_ROT_Y_DEG = 0;
-const MODEL_BASE_ROT_Z_DEG = 0;
-
-const OFFSET_EAST_M  = 0;
-const OFFSET_NORTH_M = 0;
-const OFFSET_UP_M    = 0;
-const SCALE_MUL      = 1;
-
-// ------------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------------
-function wrap180(deg){
-  let d = ((deg + 180) % 360 + 360) % 360 - 180;
-  return d;
-}
-function unwrapToNearest(prevDeg, targetDeg){
-  const diff = wrap180(targetDeg - prevDeg);
-  return prevDeg + diff;
-}
-
-function deepCloneObject3D(obj){
-  // לרוב GLB כזה אינו skinned, clone(true) מספיק.
-  // אם בעתיד תופיע בעיה של bones/skins - נוסיף SkeletonUtils.
-  return obj.clone(true);
-}
-
-// ------------------------------------------------------------------
-// BusModelLayer
-// ------------------------------------------------------------------
 class BusModelLayer {
-  constructor(map, opts = {}) {
-    this.map = map;
+  constructor(options = {}) {
+    // Mapbox layer contract
+    this.id = options.id || 'bus-glb-layer';
+    this.type = 'custom';
+    this.renderingMode = '3d';
 
-    this.layerId = opts.layerId || 'bus-glb-layer';
-    this.glbUrl = opts.glbUrl || BUS_GLB_URL;
+    // GLB + tuning
+    this.glbUrl = options.glbUrl || (window.BUS_GLB_URL || "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb");
 
-    this.scene = null;
-    this.camera = null;
-    this.renderer = null;
+    this.modelAltMeters = (typeof options.modelAltMeters === 'number')
+      ? options.modelAltMeters
+      : (typeof window.MODEL_ALT_METERS === 'number' ? window.MODEL_ALT_METERS : 0);
 
-    this.baseModel = null;
-    this.baseModelLoaded = false;
+    // ===== tuning from your snippet / defaults =====
+    this.MODEL_YAW_OFFSET_DEG = (typeof options.MODEL_YAW_OFFSET_DEG === 'number')
+      ? options.MODEL_YAW_OFFSET_DEG
+      : (typeof window.MODEL_YAW_OFFSET_DEG === 'number' ? window.MODEL_YAW_OFFSET_DEG : -51.75);
 
-    // id -> { obj, yawDegSmoothed, lastLngLat, prevLngLat }
-    this.vehicles = new Map();
+    this.MODEL_BASE_ROT_X_DEG = (typeof options.MODEL_BASE_ROT_X_DEG === 'number')
+      ? options.MODEL_BASE_ROT_X_DEG
+      : (typeof window.MODEL_BASE_ROT_X_DEG === 'number' ? window.MODEL_BASE_ROT_X_DEG : 88.25);
 
-    // prebuilt quaternions reused
-    this.qBase = new THREE.Quaternion();
-    this.qYaw  = new THREE.Quaternion();
-    this.qOut  = new THREE.Quaternion();
-    this.axisZ = new THREE.Vector3(0, 0, 1);
+    this.MODEL_BASE_ROT_Y_DEG = (typeof options.MODEL_BASE_ROT_Y_DEG === 'number')
+      ? options.MODEL_BASE_ROT_Y_DEG
+      : (typeof window.MODEL_BASE_ROT_Y_DEG === 'number' ? window.MODEL_BASE_ROT_Y_DEG : 0);
 
-    this._updateBaseQuaternion();
+    this.MODEL_BASE_ROT_Z_DEG = (typeof options.MODEL_BASE_ROT_Z_DEG === 'number')
+      ? options.MODEL_BASE_ROT_Z_DEG
+      : (typeof window.MODEL_BASE_ROT_Z_DEG === 'number' ? window.MODEL_BASE_ROT_Z_DEG : 0);
 
-    // Custom Layer object (Mapbox API)
-    this.layer = {
-      id: this.layerId,
-      type: 'custom',
-      renderingMode: '3d',
+    this.FLIP_X_180 = (typeof options.FLIP_X_180 === 'boolean')
+      ? options.FLIP_X_180
+      : (typeof window.FLIP_X_180 === 'boolean' ? window.FLIP_X_180 : false);
 
-      onAdd: (map, gl) => {
-        try {
-          this.scene = new THREE.Scene();
-          this.camera = new THREE.Camera();
-          this.renderer = new THREE.WebGLRenderer({
-            canvas: map.getCanvas(),
-            context: gl,
-            antialias: true
-          });
-          this.renderer.autoClear = false;
+    this.OFFSET_EAST_M = (typeof options.OFFSET_EAST_M === 'number')
+      ? options.OFFSET_EAST_M
+      : (typeof window.OFFSET_EAST_M === 'number' ? window.OFFSET_EAST_M : 0);
 
-          // Lights
-          this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-          const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-          dir.position.set(10, -10, 20);
-          this.scene.add(dir);
+    this.OFFSET_NORTH_M = (typeof options.OFFSET_NORTH_M === 'number')
+      ? options.OFFSET_NORTH_M
+      : (typeof window.OFFSET_NORTH_M === 'number' ? window.OFFSET_NORTH_M : 0);
 
-          // Load GLB
-          if (!THREE.GLTFLoader) {
-            console.error("❌ THREE.GLTFLoader לא נטען. בדוק שב-view.js יש <script> ל-GLTFLoader.");
-            return;
-          }
+    this.OFFSET_UP_M = (typeof options.OFFSET_UP_M === 'number')
+      ? options.OFFSET_UP_M
+      : (typeof window.OFFSET_UP_M === 'number' ? window.OFFSET_UP_M : 0);
 
-          console.log("📦 Loading GLB:", this.glbUrl);
-          new THREE.GLTFLoader().load(
-            this.glbUrl,
-            (gltf) => {
-              this.baseModel = gltf.scene;
-              this.baseModelLoaded = true;
+    this.SCALE_MUL = (typeof options.SCALE_MUL === 'number')
+      ? options.SCALE_MUL
+      : (typeof window.SCALE_MUL === 'number' ? window.SCALE_MUL : 1);
 
-              // אם כבר קיבלת רכבים לפני הטעינה - צור להם instances עכשיו
-              this.vehicles.forEach((entry) => {
-                if (!entry.obj) entry.obj = this._createModelInstance();
-              });
+    this.MODEL_SCALE = (typeof options.MODEL_SCALE === 'number')
+      ? options.MODEL_SCALE
+      : (typeof window.MODEL_SCALE === 'number' ? window.MODEL_SCALE : 1);
 
-              console.log("✅ GLB loaded");
-              map.triggerRepaint();
-            },
-            undefined,
-            (err) => {
-              console.error("❌ Failed loading GLB:", err);
-            }
-          );
-        } catch (e) {
-          console.error("❌ BusModelLayer onAdd error:", e);
-        }
-      },
+    // Three.js objects
+    this._map = null;
+    this._renderer = null;
+    this._scene = null;
+    this._camera = null;
 
-      render: (gl, matrix) => {
-        try {
-          if (!this.scene || !this.camera || !this.renderer) return;
+    this._template = null;
+    this._templateReady = false;
+    this._loadError = null;
 
-          // camera projection matrix from Mapbox
-          this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix);
+    // Per vehicle state
+    this._vehicles = new Map(); // id -> THREE.Object3D
+    this._yawSmoothed = new Map(); // id -> smoothed yaw deg
 
-          this.renderer.state.reset();
-          this.renderer.render(this.scene, this.camera);
+    // Reusable quaternions/vectors
+    this._qBase = null;
+    this._qYaw = null;
+    this._qOut = null;
+    this._axisZ = null;
 
-          this.map.triggerRepaint();
-        } catch (e) {
-          console.error("❌ BusModelLayer render error:", e);
-        }
-      }
-    };
+    this._debugOnce = false;
   }
 
-  addToMap() {
-    if (!this.map) return;
-    if (this.map.getLayer(this.layerId)) return;
-
-    try {
-      this.map.addLayer(this.layer);
-      console.log("🧩 Bus GLB layer added:", this.layerId);
-    } catch (e) {
-      console.error("❌ Failed to add Bus GLB layer:", e);
-    }
+  // ===== utils for yaw smoothing =====
+  _wrap180(deg) {
+    return ((deg + 180) % 360 + 360) % 360 - 180;
+  }
+  _unwrapToNearest(prevDeg, targetDeg) {
+    const delta = this._wrap180(targetDeg - prevDeg);
+    return prevDeg + delta;
   }
 
   _updateBaseQuaternion() {
     const deg2rad = Math.PI / 180;
-    const e = new THREE.Euler(
-      MODEL_BASE_ROT_X_DEG * deg2rad,
-      MODEL_BASE_ROT_Y_DEG * deg2rad,
-      MODEL_BASE_ROT_Z_DEG * deg2rad,
-      "XYZ"
-    );
-    this.qBase.setFromEuler(e);
+
+    let rxDeg = this.MODEL_BASE_ROT_X_DEG + (this.FLIP_X_180 ? 180 : 0);
+    let ryDeg = this.MODEL_BASE_ROT_Y_DEG;
+    let rzDeg = this.MODEL_BASE_ROT_Z_DEG;
+
+    const e = new THREE.Euler(rxDeg * deg2rad, ryDeg * deg2rad, rzDeg * deg2rad, "XYZ");
+    this._qBase.setFromEuler(e);
   }
 
-  _createModelInstance() {
-    if (!this.baseModelLoaded || !this.baseModel) return null;
-    const obj = deepCloneObject3D(this.baseModel);
-    this.scene.add(obj);
+  onAdd(map, gl) {
+    this._map = map;
+
+    if (typeof THREE === 'undefined' || typeof THREE.GLTFLoader === 'undefined') {
+      console.error("❌ Three.js או GLTFLoader לא נטענו. ודא שהוספת <script> של three + GLTFLoader ב-view.js");
+      return;
+    }
+
+    this._scene = new THREE.Scene();
+    this._camera = new THREE.Camera();
+    this._renderer = new THREE.WebGLRenderer({
+      canvas: map.getCanvas(),
+      context: gl,
+      antialias: true
+    });
+    this._renderer.autoClear = false;
+
+    // Lights
+    this._scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(10, -10, 20);
+    this._scene.add(dir);
+
+    // Prebuilt
+    this._qBase = new THREE.Quaternion();
+    this._qYaw = new THREE.Quaternion();
+    this._qOut = new THREE.Quaternion();
+    this._axisZ = new THREE.Vector3(0, 0, 1);
+    this._updateBaseQuaternion();
+
+    // Load template GLB
+    const loader = new THREE.GLTFLoader();
+    loader.load(
+      this.glbUrl,
+      (gltf) => {
+        this._template = gltf.scene;
+        this._templateReady = true;
+        console.log("✅ GLB loaded:", this.glbUrl);
+      },
+      undefined,
+      (err) => {
+        this._loadError = err;
+        console.error("❌ GLB load error:", err);
+      }
+    );
+  }
+
+  // Create or get instance for a vehicle
+  _getOrCreateVehicle(id) {
+    let obj = this._vehicles.get(id);
+    if (obj) return obj;
+
+    if (!this._templateReady || !this._template) return null;
+
+    obj = this._template.clone(true);
+    this._scene.add(obj);
+    this._vehicles.set(id, obj);
     return obj;
   }
 
-  upsertVehicles(vehicleStates) {
-    // vehicleStates: Array<{id, lon, lat, bearingDeg?}>
-    if (!Array.isArray(vehicleStates)) return;
+  // Public: upsert many vehicles
+  // vehicles: [{ id, lon, lat, bearingDeg }]
+  upsertVehicles(vehicles = []) {
+    if (!Array.isArray(vehicles) || !vehicles.length) return;
 
-    vehicleStates.forEach(v => {
-      if (!v || !v.id || !isFinite(v.lon) || !isFinite(v.lat)) return;
+    for (const v of vehicles) {
+      if (!v || !v.id) continue;
+      if (typeof v.lon !== 'number' || typeof v.lat !== 'number') continue;
 
-      let entry = this.vehicles.get(v.id);
-      if (!entry) {
-        entry = { obj: null, yawDegSmoothed: null, lastLngLat: null, prevLngLat: null };
-        this.vehicles.set(v.id, entry);
-      }
+      const obj = this._getOrCreateVehicle(v.id);
+      if (!obj) continue;
 
-      // create model instance if possible
-      if (!entry.obj && this.baseModelLoaded) {
-        entry.obj = this._createModelInstance();
-      }
+      const mc = mapboxgl.MercatorCoordinate.fromLngLat(
+        { lng: v.lon, lat: v.lat },
+        this.modelAltMeters
+      );
+      const s = mc.meterInMercatorCoordinateUnits();
 
-      // update pose even if model not yet loaded (we'll apply later when created)
-      entry.lastLngLat = [v.lon, v.lat];
+      obj.position.set(
+        mc.x + this.OFFSET_EAST_M * s,
+        mc.y - this.OFFSET_NORTH_M * s,
+        mc.z + this.OFFSET_UP_M * s
+      );
 
-      // Bearing: אם אין – נחשב מהתנועה האחרונה (אם קיימת)
-      let brng = (typeof v.bearingDeg === 'number' && isFinite(v.bearingDeg)) ? v.bearingDeg : null;
-      if (brng == null && entry.prevLngLat && Array.isArray(entry.prevLngLat)) {
-        brng = this._getBearing(entry.prevLngLat, entry.lastLngLat);
-      }
-      if (brng == null) brng = 0;
+      const finalScale = this.MODEL_SCALE * s * this.SCALE_MUL;
+      obj.scale.set(finalScale, finalScale, finalScale);
 
-      entry.prevLngLat = entry.lastLngLat;
+      // bearing -> yaw (with your offset + smoothing/unwrap)
+      const brng = (typeof v.bearingDeg === 'number') ? v.bearingDeg : 0;
+      let targetYawDeg = brng + this.MODEL_YAW_OFFSET_DEG;
 
-      // Yaw unwrap (מונע 359->0)
-      const targetYawDeg = brng + MODEL_YAW_OFFSET_DEG;
-      if (entry.yawDegSmoothed == null) entry.yawDegSmoothed = targetYawDeg;
-      entry.yawDegSmoothed = unwrapToNearest(entry.yawDegSmoothed, targetYawDeg);
+      let sm = this._yawSmoothed.get(v.id);
+      if (sm == null) sm = targetYawDeg;
+      sm = this._unwrapToNearest(sm, targetYawDeg);
+      this._yawSmoothed.set(v.id, sm);
 
-      // Apply if model exists
-      if (entry.obj) {
-        this._applyTransform(entry.obj, v.lon, v.lat, entry.yawDegSmoothed);
-      }
-    });
+      const yawRad = sm * (Math.PI / 180);
 
-    if (this.map) this.map.triggerRepaint();
+      // qOut = qYaw(world Z, -yawRad) * qBase
+      this._qYaw.setFromAxisAngle(this._axisZ, -yawRad);
+      this._qOut.copy(this._qYaw).multiply(this._qBase);
+
+      obj.quaternion.copy(this._qOut);
+    }
   }
 
-  pruneVehicles(activeIdsSet) {
-    if (!(activeIdsSet instanceof Set)) return;
+  // Public: remove by ids
+  removeVehicles(ids = []) {
+    if (!Array.isArray(ids) || !ids.length) return;
 
-    this.vehicles.forEach((entry, id) => {
-      if (!activeIdsSet.has(id)) {
-        try {
-          if (entry.obj) {
-            this.scene.remove(entry.obj);
-            // NOTE: לא עושים dispose לגיאומטריה/חומרים כדי לא לשבור שיתופים בין clones.
-          }
-        } catch (e) {
-          console.error("❌ Error removing 3D vehicle:", e);
-        }
-        this.vehicles.delete(id);
-      }
-    });
+    for (const id of ids) {
+      const obj = this._vehicles.get(id);
+      if (!obj) continue;
 
-    if (this.map) this.map.triggerRepaint();
+      try {
+        this._scene.remove(obj);
+      } catch (e) {}
+      this._vehicles.delete(id);
+      this._yawSmoothed.delete(id);
+    }
   }
 
-  _applyTransform(obj, lon, lat, yawDegSmoothed) {
-    // Position in mercator
-    const mc = mapboxgl.MercatorCoordinate.fromLngLat({ lng: lon, lat: lat }, MODEL_ALT_METERS);
-    const s = mc.meterInMercatorCoordinateUnits();
-
-    obj.position.set(
-      mc.x + OFFSET_EAST_M  * s,
-      mc.y - OFFSET_NORTH_M * s,
-      mc.z + OFFSET_UP_M    * s
-    );
-
-    // Scale
-    const finalScale = MODEL_SCALE * s * SCALE_MUL;
-    obj.scale.set(finalScale, finalScale, finalScale);
-
-    // Quaternion composition: qOut = qYaw(world Z, -yawRad) * qBase
-    const deg2rad = Math.PI / 180;
-    const yawRad = yawDegSmoothed * deg2rad;
-
-    this.qYaw.setFromAxisAngle(this.axisZ, -yawRad);
-    this.qOut.copy(this.qYaw).multiply(this.qBase);
-    obj.quaternion.copy(this.qOut);
+  clearAll() {
+    const ids = Array.from(this._vehicles.keys());
+    this.removeVehicles(ids);
   }
 
-  _getBearing(startLngLat, endLngLat) {
-    const startLat = startLngLat[1] * Math.PI / 180;
-    const startLng = startLngLat[0] * Math.PI / 180;
-    const endLat = endLngLat[1] * Math.PI / 180;
-    const endLng = endLngLat[0] * Math.PI / 180;
+  render(gl, matrix) {
+    if (!this._renderer || !this._scene || !this._camera) return;
 
-    const dLng = endLng - startLng;
-    const y = Math.sin(dLng) * Math.cos(endLat);
-    const x = Math.cos(startLat) * Math.sin(endLat) -
-              Math.sin(startLat) * Math.cos(endLat) * Math.cos(dLng);
+    // אם GLB לא נטען עדיין — פשוט נרנדר מפה בלי מודלים
+    if (!this._templateReady) {
+      try {
+        if (this._renderer.state && this._renderer.state.reset) this._renderer.state.reset();
+        if (this._renderer.resetState) this._renderer.resetState();
+      } catch (e) {}
+      return;
+    }
 
-    const bearing = Math.atan2(y, x) * 180 / Math.PI;
-    return (bearing + 360) % 360;
+    // Mapbox passes projection matrix
+    this._camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix);
+
+    try {
+      if (this._renderer.state && this._renderer.state.reset) this._renderer.state.reset();
+      if (this._renderer.resetState) this._renderer.resetState();
+    } catch (e) {}
+
+    this._renderer.render(this._scene, this._camera);
+
+    // repaint loop
+    try {
+      this._map && this._map.triggerRepaint && this._map.triggerRepaint();
+    } catch (e) {}
+
+    if (!this._debugOnce) {
+      this._debugOnce = true;
+      console.log(`🧩 BusModelLayer ready. vehicles=${this._vehicles.size}`);
+    }
   }
 }
