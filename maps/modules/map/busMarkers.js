@@ -4,6 +4,7 @@
 
 class BusMarkers {
   constructor(mapManager) {
+    this.MODEL_YAW_ALIGN_DEG = 90; // ⬅️ תיקון: המודל היה מסובב 90° ביחס לכביש
     this.mapManager = mapManager;
     this.map = mapManager.getMap();
     this.busMarkers = new Map();
@@ -336,7 +337,7 @@ class BusMarkers {
     }
     
     // Update rotation with quaternion (smooth, no flips)
-    let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG;
+let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DEG;
     
     if (data.yawDegSmoothed == null) {
       data.yawDegSmoothed = targetYawDeg;
