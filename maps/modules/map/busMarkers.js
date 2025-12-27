@@ -19,7 +19,7 @@ class BusMarkers {
     this.OFFSET_NORTH_M = 0;
     this.OFFSET_UP_M = 0;
     this.SCALE_MUL = 1;
-    this.MODEL_SCALE = 3;
+    this.MODEL_SCALE = 3;  // הקטנתי מ-45 ל-3 (גודל נורמלי)
     this.MODEL_ALT_METERS = 0;
     this.FLIP_X_180 = false;
     
@@ -39,6 +39,9 @@ class BusMarkers {
     
     // Bus data for smooth animation
     this.busData = new Map();
+    
+    // Route number badges (HTML markers for GLB models)
+    this.routeBadges = new Map();
     
     console.log("🚌 BusMarkers initialized (GLB + Three.js)");
     
@@ -228,6 +231,10 @@ class BusMarkers {
       this.scene.add(busModel);
       this.busModels.set(vehicleId, busModel);
       console.log(`🚌 Created GLB model for bus ${vehicleId}`);
+      
+      // Add route number badge as a sprite/HTML element overlay
+      // We'll store the route number in userData for display
+      busModel.userData = { routeNumber, color };
     }
     
     // Get bus data for smoothing
@@ -241,12 +248,23 @@ class BusMarkers {
     );
     const s = mc.meterInMercatorCoordinateUnits();
     
-    // Position
-    busModel.position.set(
-      mc.x + this.OFFSET_EAST_M * s,
-      mc.y - this.OFFSET_NORTH_M * s,
-      mc.z + this.OFFSET_UP_M * s
-    );
+    // Target position
+    const targetX = mc.x + this.OFFSET_EAST_M * s;
+    const targetY = mc.y - this.OFFSET_NORTH_M * s;
+    const targetZ = mc.z + this.OFFSET_UP_M * s;
+    
+    // Smooth animation (lerp) instead of instant position
+    const lerpFactor = 0.15; // Smoothing factor (0.1 = very smooth, 0.5 = fast)
+    
+    if (busModel.position.x === 0 && busModel.position.y === 0) {
+      // First time - set position immediately
+      busModel.position.set(targetX, targetY, targetZ);
+    } else {
+      // Animate smoothly to new position
+      busModel.position.x += (targetX - busModel.position.x) * lerpFactor;
+      busModel.position.y += (targetY - busModel.position.y) * lerpFactor;
+      busModel.position.z += (targetZ - busModel.position.z) * lerpFactor;
+    }
     
     // Scale
     const finalScale = this.MODEL_SCALE * s * this.SCALE_MUL;
@@ -270,8 +288,47 @@ class BusMarkers {
     this.qOut.copy(this.qYaw).multiply(this.qBase);
     busModel.quaternion.copy(this.qOut);
     
-    // Optional: Apply color (if model supports it)
-    // You can traverse the model and change material colors here if needed
+    // Note: Route number badge will need to be added as HTML overlay
+    // since Three.js doesn't easily support text on 3D models
+    // We'll handle this in the render loop or with a separate marker
+    
+    // Create/update HTML badge marker for route number
+    if (routeNumber) {
+      let badge = this.routeBadges.get(vehicleId);
+      
+      if (!badge) {
+        // Create badge element
+        const badgeEl = document.createElement('div');
+        badgeEl.className = 'route-badge-3d-glb';
+        badgeEl.style.cssText = `
+          background: white;
+          color: ${color};
+          border: 2px solid ${color};
+          padding: 2px 8px;
+          border-radius: 10px;
+          font-weight: bold;
+          font-size: 11px;
+          white-space: nowrap;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          pointer-events: none;
+        `;
+        badgeEl.textContent = routeNumber;
+        
+        // Create marker
+        badge = new mapboxgl.Marker({
+          element: badgeEl,
+          anchor: 'bottom',
+          offset: [0, -10]
+        })
+          .setLngLat([lon, lat])
+          .addTo(this.map);
+        
+        this.routeBadges.set(vehicleId, badge);
+      } else {
+        // Update position
+        badge.setLngLat([lon, lat]);
+      }
+    }
   }
 
   draw3DBusFallback(vehicleId, lon, lat, bearing, color, routeNumber) {
@@ -386,6 +443,20 @@ class BusMarkers {
       }
     });
     
+    // Remove route badges
+    this.routeBadges.forEach((badge, id) => {
+      if (!activeVehicleIds.has(id)) {
+        try {
+          if (badge.remove) {
+            badge.remove();
+          }
+          this.routeBadges.delete(id);
+        } catch (e) {
+          console.error("❌ Error removing badge:", e);
+        }
+      }
+    });
+    
     // Clean bus data
     this.busData.forEach((data, id) => {
       if (!activeVehicleIds.has(id)) {
@@ -418,6 +489,18 @@ class BusMarkers {
       }
     });
     this.busModels.clear();
+    
+    // Clear route badges
+    this.routeBadges.forEach(badge => {
+      try {
+        if (badge && badge.remove) {
+          badge.remove();
+        }
+      } catch (e) {
+        console.error("❌ Error clearing badge:", e);
+      }
+    });
+    this.routeBadges.clear();
     
     this.busData.clear();
     console.log("🗑️ All buses cleared");
