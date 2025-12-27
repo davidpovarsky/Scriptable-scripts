@@ -1,290 +1,262 @@
 // modules/map/busMarkers.js
-// מימוש Three.js GLB Layer מלא עבור Mapbox
-// מחליף את busMarkers הישן לחלוטין
+// אחראי על ציור אוטובוסים תלת-מימדיים על המפה - גרסה משולבת
+// תמיכה ב-CSS 3D + GLB Model
 
 class BusMarkers {
   constructor(mapManager) {
-    this.id = 'three-bus-layer';
-    this.type = 'custom';
-    this.renderingMode = '3d';
-    
     this.mapManager = mapManager;
-    this.map = null; // יוזן ב-onAdd
+    this.map = mapManager.getMap();
+    this.busMarkers = new Map();
+    this.use3DModel = true; // Toggle between CSS 3D and GLB model
+    this.model3DManager = null;
     
-    // Three.js objects
-    this.camera = null;
-    this.scene = null;
-    this.renderer = null;
-    this.baseModel = null; // המודל הנטען
+    console.log("🚌 BusMarkers initialized");
+  }
+
+  async init3DModels() {
+    if (!window.Bus3DModelManager) {
+      console.warn("⚠️ Bus3DModelManager not available, using CSS 3D fallback");
+      this.use3DModel = false;
+      return;
+    }
+
+    try {
+      this.model3DManager = new Bus3DModelManager(this.mapManager);
+      const success = await this.model3DManager.init();
+      
+      if (success) {
+        console.log("✅ 3D GLB models enabled");
+        this.use3DModel = true;
+      } else {
+        console.warn("⚠️ 3D model initialization failed, using CSS fallback");
+        this.use3DModel = false;
+      }
+    } catch (e) {
+      console.error("❌ Error initializing 3D models:", e);
+      this.use3DModel = false;
+    }
+  }
+
+  drawBuses(vehicles, color, shapeCoords) {
+    if (!this.map) {
+      return; // Map not ready
+    }
+
+    if (!Array.isArray(vehicles)) {
+      return;
+    }
+
+    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : [];
     
-    // ניהול רכבים
-    // key: vehicleId, value: { mesh: THREE.Group, targetPos: [lng,lat], currentPos: [lng,lat], targetBearing: deg, currentYaw: deg }
-    this.vehicles = new Map();
-    
-    // ===== הגדרות מודל =====
-    this.GLB_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb";
-    this.MODEL_SCALE = 45;
-    this.MODEL_ALT_METERS = 0;
-    
-    // Tuning offsets - כיוונון המודל
-    this.MODEL_YAW_OFFSET_DEG = -51.75;
-    this.MODEL_BASE_ROT_X_DEG = 88.25;
-    this.MODEL_BASE_ROT_Y_DEG = 0;
-    this.MODEL_BASE_ROT_Z_DEG = 0;
-    
-    this.OFFSET_EAST_M = 0;
-    this.OFFSET_NORTH_M = 0;
-    this.OFFSET_UP_M = 0;
-    
-    // Quaternions reused for calculations (חיסכון בזיכרון)
-    if (typeof THREE !== 'undefined') {
-        this.qBase = new THREE.Quaternion();
-        this.qYaw = new THREE.Quaternion();
-        this.qOut = new THREE.Quaternion();
-        this.axisZ = new THREE.Vector3(0, 0, 1);
+    vehicles.forEach(v => {
+      try {
+        let lon = v.lon;
+        let lat = v.lat;
         
-        // אתחול כיוון בסיס
-        this.updateBaseQuaternion(false);
-    }
-    
-    console.log("🚌 BusMarkers (Three.js GLB) initialized");
-  }
-
-  // חישוב האוריינטציה הבסיסית של המודל
-  updateBaseQuaternion(flipX180) {
-    if (typeof THREE === 'undefined') return;
-    
-    const deg2rad = Math.PI / 180;
-    let rxDeg = this.MODEL_BASE_ROT_X_DEG + (flipX180 ? 180 : 0);
-    let ryDeg = this.MODEL_BASE_ROT_Y_DEG;
-    let rzDeg = this.MODEL_BASE_ROT_Z_DEG;
-
-    const e = new THREE.Euler(rxDeg * deg2rad, ryDeg * deg2rad, rzDeg * deg2rad, "XYZ");
-    this.qBase.setFromEuler(e);
-  }
-
-  // ================= Mapbox Custom Layer Methods =================
-
-  onAdd(map, gl) {
-    this.map = map;
-    
-    if (typeof THREE === 'undefined') {
-        console.error("❌ Three.js not loaded!");
-        return;
-    }
-
-    // אתחול סצנת Three.js
-    this.camera = new THREE.Camera();
-    this.scene = new THREE.Scene();
-    
-    // תאורה
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    dirLight.position.set(10, -10, 20);
-    this.scene.add(dirLight);
-
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: map.getCanvas(),
-      context: gl,
-      antialias: true
+        // אם אין מיקום מדויק, נשתמש ב-positionOnLine
+        if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
+          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+          const point = shapeLatLngs[idx];
+          if (point) {
+            lon = point[0];
+            lat = point[1];
+          }
+        }
+        
+        if (lat && lon) {
+          const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId || Math.random()}`;
+          const bearing = v.bearing || this.calculateBearing(v, shapeLatLngs);
+          
+          if (this.use3DModel && this.model3DManager && this.model3DManager.isModelLoaded()) {
+            // Use GLB 3D model
+            this.model3DManager.addOrUpdateBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
+          } else {
+            // Fallback to CSS 3D
+            this.drawCSS3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
+          }
+        }
+      } catch (e) {
+        console.error("❌ Error drawing bus:", e);
+      }
     });
-    this.renderer.autoClear = false;
-
-    // טעינת המודל
-    const loader = new THREE.GLTFLoader();
-    loader.load(
-      this.GLB_URL,
-      (gltf) => {
-        this.baseModel = gltf.scene;
-        console.log("🚌 GLB Model Loaded successfully!");
-        // יצירת רכבים שחיכו לטעינה
-        this.syncMeshes(); 
-      },
-      undefined,
-      (err) => console.error("❌ GLB load error:", err)
-    );
   }
 
-  render(gl, matrix) {
-    if (!this.scene || !this.renderer || !this.map) return;
+  calculateBearing(vehicle, shapeLatLngs) {
+    // Try to calculate bearing from position on line
+    if (typeof vehicle.positionOnLine === "number" && shapeLatLngs.length > 1) {
+      const idx = Math.floor(vehicle.positionOnLine * (shapeLatLngs.length - 1));
+      
+      if (idx < shapeLatLngs.length - 1) {
+        const p1 = shapeLatLngs[idx];
+        const p2 = shapeLatLngs[idx + 1];
+        return this.mapManager.getBearing(p1, p2);
+      }
+    }
     
-    // סנכרון המצלמה למטריצה של Mapbox
-    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix);
-    
-    // עדכון מיקום וסיבוב לכל אוטובוס (אנימציה)
-    this.animateVehicles();
+    return vehicle.bearing || 0;
+  }
 
-    this.renderer.resetState();
-    this.renderer.render(this.scene, this.camera);
-    
-    // דרישת פריים נוסף כל עוד יש רכבים
-    if (this.vehicles.size > 0) {
-      this.map.triggerRepaint();
+  drawCSS3DBus(vehicleId, lon, lat, bearing, color, routeNumber) {
+    try {
+      let marker = this.busMarkers.get(vehicleId);
+      
+      if (marker) {
+        // Update existing CSS marker
+        this.animateBusTo(vehicleId, lon, lat, 2000);
+        
+        // Update rotation
+        const el = marker.getElement();
+        if (el) {
+          const model = el.querySelector('.bus-3d-container');
+          if (model) {
+            model.style.transform = `rotateZ(${bearing}deg)`;
+          }
+        }
+      } else {
+        // Create new CSS 3D marker
+        const el = this._createCSS3DBusElement(bearing, color, routeNumber);
+        
+        marker = new mapboxgl.Marker({
+          element: el,
+          anchor: 'center',
+          rotationAlignment: 'map',
+          pitchAlignment: 'map'
+        })
+          .setLngLat([lon, lat])
+          .addTo(this.map);
+        
+        this.busMarkers.set(vehicleId, marker);
+      }
+    } catch (e) {
+      console.error(`❌ Error drawing CSS 3D bus ${vehicleId}:`, e);
     }
   }
 
-  onRemove() {
-    if (this.scene) {
-      this.scene.traverse(obj => {
-        if (obj.isMesh) {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) {
-             if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-             else obj.material.dispose();
+  _createCSS3DBusElement(bearing, color, routeNumber) {
+    const el = document.createElement('div');
+    el.className = 'bus-marker-3d';
+    
+    el.innerHTML = `
+      <div class="bus-3d-container" style="transform: rotateZ(${bearing}deg);">
+        <div class="bus-3d-model" style="background: ${color};">
+          <div class="bus-3d-body">
+            <div class="bus-3d-front"></div>
+            <div class="bus-3d-top"></div>
+            <div class="bus-3d-side-left"></div>
+            <div class="bus-3d-side-right"></div>
+          </div>
+          <div class="bus-3d-wheels">
+            <div class="wheel wheel-fl"></div>
+            <div class="wheel wheel-fr"></div>
+            <div class="wheel wheel-rl"></div>
+            <div class="wheel wheel-rr"></div>
+          </div>
+        </div>
+        ${routeNumber ? `
+          <div class="route-badge-3d" style="background: white; color: ${color}; border-color: ${color};">
+            ${routeNumber}
+          </div>
+        ` : ''}
+      </div>
+      <div class="bus-3d-shadow"></div>
+    `;
+    
+    return el;
+  }
+
+  pruneMarkers(activeVehicleIds) {
+    if (!activeVehicleIds || !(activeVehicleIds instanceof Set)) return;
+
+    if (this.use3DModel && this.model3DManager) {
+      // Prune 3D models
+      this.model3DManager.pruneMarkers(activeVehicleIds);
+    } else {
+      // Prune CSS markers
+      this.busMarkers.forEach((marker, id) => {
+        if (!activeVehicleIds.has(id)) {
+          try {
+            if (marker.remove) marker.remove();
+            this.busMarkers.delete(id);
+          } catch (e) {
+            console.error("❌ Error removing marker:", e);
           }
         }
       });
     }
-    this.vehicles.clear();
-    this.baseModel = null;
-    this.renderer = null;
   }
 
-  // ================= Logic & Animation =================
-
-  // פונקציה ראשית שמקבלת עדכונים
-  updateVehicles(updates, shapeCoords) {
-    if (!Array.isArray(updates)) return;
-
-    // סימון IDs פעילים לניקוי מאוחר יותר
-    const activeIds = new Set();
-
-    updates.forEach(u => {
-      let lat = u.lat;
-      let lon = u.lon;
-      const vehicleId = u.vehicleId || `${u.routeNumber}-${u.tripId || Math.random()}`;
-      activeIds.add(vehicleId);
-      
-      // Fallback למיקום אם חסר
-      if ((!lat || !lon) && typeof u.positionOnLine === "number" && shapeCoords && shapeCoords.length > 1) {
-         const idx = Math.floor(u.positionOnLine * (shapeCoords.length - 1));
-         const pt = shapeCoords[idx];
-         if (pt) { lon = pt[0]; lat = pt[1]; }
-      }
-
-      if (!lat || !lon) return;
-
-      const bearing = u.bearing || 0;
-
-      let vehicle = this.vehicles.get(vehicleId);
-
-      if (vehicle) {
-        // עדכון יעד לאנימציה
-        vehicle.targetPos = [lon, lat];
-        vehicle.targetBearing = bearing;
-      } else {
-        // רכב חדש
-        this.vehicles.set(vehicleId, {
-          id: vehicleId,
-          mesh: null,
-          currentPos: [lon, lat], // התחלה מיידית במיקום החדש
-          targetPos: [lon, lat],
-          currentYaw: bearing + this.MODEL_YAW_OFFSET_DEG,
-          targetBearing: bearing,
-          color: u.color || '#ffffff'
-        });
-      }
-    });
-
-    // הסרת רכבים שנעלמו מהעדכון הנוכחי
-    this.vehicles.forEach((val, key) => {
-      if (!activeIds.has(key)) {
-        if (val.mesh && this.scene) this.scene.remove(val.mesh);
-        this.vehicles.delete(key);
-      }
-    });
-
-    // יצירת מודלים חסרים
-    this.syncMeshes();
-  }
-
-  syncMeshes() {
-    if (!this.baseModel || !this.scene) return; 
-
-    this.vehicles.forEach(v => {
-      if (!v.mesh) {
-        // שכפול המודל
-        v.mesh = this.baseModel.clone();
-        this.scene.add(v.mesh);
-      }
-    });
-  }
-
-  animateVehicles() {
-    if (!this.map || typeof THREE === 'undefined') return;
-    
-    const lerpFactor = 0.08; // מהירות החלקה
-    const deg2rad = Math.PI / 180;
-
-    this.vehicles.forEach(v => {
-      if (!v.mesh) return;
-
-      // 1. אינטרפולציה של מיקום (Lerp)
-      const curr = v.currentPos;
-      const target = v.targetPos;
-      
-      // אם הקפיצה גדולה מדי (למשל טעינה ראשונית), נקפוץ מיד
-      if (Math.abs(curr[0] - target[0]) > 0.01 || Math.abs(curr[1] - target[1]) > 0.01) {
-        v.currentPos = [...target];
-      } else {
-        v.currentPos[0] += (target[0] - curr[0]) * lerpFactor;
-        v.currentPos[1] += (target[1] - curr[1]) * lerpFactor;
-      }
-
-      // 2. המרה לקואורדינטות Three.js
-      const mc = mapboxgl.MercatorCoordinate.fromLngLat(
-        { lng: v.currentPos[0], lat: v.currentPos[1] },
-        this.MODEL_ALT_METERS
-      );
-      
-      const s = mc.meterInMercatorCoordinateUnits();
-      
-      v.mesh.position.set(
-        mc.x + this.OFFSET_EAST_M * s,
-        mc.y - this.OFFSET_NORTH_M * s,
-        mc.z + this.OFFSET_UP_M * s
-      );
-
-      // סקייל
-      const finalScale = this.MODEL_SCALE * s;
-      v.mesh.scale.set(finalScale, finalScale, finalScale);
-
-      // 3. חישוב רוטציה (Quaternion)
-      const targetYawDeg = v.targetBearing + this.MODEL_YAW_OFFSET_DEG;
-      
-      // Unwrap logic
-      v.currentYaw = this.unwrapToNearest(v.currentYaw, targetYawDeg);
-      
-      // החלקה
-      v.currentYaw += (targetYawDeg - v.currentYaw) * lerpFactor;
-      
-      const yawRad = v.currentYaw * deg2rad;
-
-      // qYaw * qBase
-      this.qYaw.setFromAxisAngle(this.axisZ, -yawRad);
-      this.qOut.copy(this.qYaw).multiply(this.qBase);
-      
-      v.mesh.quaternion.copy(this.qOut);
-    });
-  }
-
-  // עזרים מתמטיים
-  wrap180(deg) {
-    return ((deg + 180) % 360 + 360) % 360 - 180;
-  }
-  
-  unwrapToNearest(prevDeg, targetDeg) {
-    let delta = this.wrap180(targetDeg - prevDeg);
-    return prevDeg + delta;
-  }
-  
   clearAll() {
-    if (this.scene) {
-        this.vehicles.forEach(v => {
-          if(v.mesh) this.scene.remove(v.mesh);
-        });
+    // Clear CSS markers
+    this.busMarkers.forEach(marker => {
+      try {
+        if (marker && marker.remove) {
+          marker.remove();
+        }
+      } catch (e) {
+        console.error("❌ Error clearing marker:", e);
+      }
+    });
+    this.busMarkers.clear();
+
+    // Clear 3D models
+    if (this.model3DManager) {
+      this.model3DManager.clearAll();
     }
-    this.vehicles.clear();
+    
+    console.log("🗑️ All buses cleared");
+  }
+
+  animateBusTo(vehicleId, newLon, newLat, duration = 2000) {
+    const marker = this.busMarkers.get(vehicleId);
+    if (!marker) return;
+
+    try {
+      const start = marker.getLngLat();
+      const end = [newLon, newLat];
+      
+      // אם המרחק קטן מאוד, לא צריך אנימציה
+      if (Math.abs(start.lng - end[0]) < 0.00001 && Math.abs(start.lat - end[1]) < 0.00001) {
+        return;
+      }
+      
+      let startTime = null;
+      
+      const animate = (timestamp) => {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        
+        // Easing function (Ease Out Quad)
+        const eased = progress * (2 - progress);
+        
+        const currentLng = start.lng + (end[0] - start.lng) * eased;
+        const currentLat = start.lat + (end[1] - start.lat) * eased;
+        
+        marker.setLngLat([currentLng, currentLat]);
+        
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      };
+      
+      requestAnimationFrame(animate);
+    } catch (e) {
+      console.error("❌ Error animating bus:", e);
+    }
+  }
+
+  toggle3DModelMode(enable) {
+    this.use3DModel = enable && this.model3DManager && this.model3DManager.isModelLoaded();
+    console.log(`🎨 3D Model mode: ${this.use3DModel ? 'GLB' : 'CSS'}`);
+    
+    // Clear and redraw all buses
+    this.clearAll();
+  }
+
+  get3DModelManager() {
+    return this.model3DManager;
+  }
+
+  isUsingGLBModel() {
+    return this.use3DModel && this.model3DManager && this.model3DManager.isModelLoaded();
   }
 }
