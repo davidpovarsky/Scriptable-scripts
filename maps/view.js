@@ -14,11 +14,11 @@ module.exports.getHtml = function() {
       
       console.log("🔧 Building modular bundle with Mapbox 3D...");
       
-      // ===== CSS =====
+      // CSS
       const cssFiles = [
-        'styles/base.css', 
-        'styles/map.css', 
-        'styles/stops.css', 
+        'styles/base.css',
+        'styles/map.css',
+        'styles/stops.css',
         'styles/routes.css'
       ];
       
@@ -26,281 +26,224 @@ module.exports.getHtml = function() {
         const p = fm.joinPath(baseDir, f);
         if (fm.fileExists(p)) {
           allCss += fm.readString(p) + '\n';
-          console.log(`✅ CSS: ${f}`);
+          console.log("✅ Loaded CSS:", f);
+        } else {
+          console.warn("⚠️ Missing CSS:", f);
         }
       });
       
-      // ===== JS =====
+      // JS - בסדר הנכון!
       const jsFiles = [
-        'modules/ui/utils.js',
-        'modules/map/mapManager.js',
-        'modules/map/busMarkers.js',
-        'modules/map/userLocation.js',
-        'modules/stops/nearbyPanel.js',
-        'modules/routes/bottomSheet.js',
-        'modules/routes/routeCard.js',
-        'modules/ui/modeToggle.js',
-        'web/app.js'
+        'modules/ui/utils.js',          // 1. פונקציות עזר (getVariedColor)
+        'modules/map/busModelLayer.js', // ✅ 3D GLB layer (must be BEFORE mapManager/busMarkers)
+        'modules/map/mapManager.js',    // 2. מנהל מפה
+        'modules/map/userLocation.js',  // 3. מיקום משתמש
+        'modules/map/busMarkers.js',    // 4. רכבים (GLB)
+        'modules/routes/bottomSheet.js',// 5. bottom sheet
+        'modules/routes/routeCard.js',  // 6. כרטיסי קו
+        'modules/stops/nearbyPanel.js', // 7. פאנל תחנות
+        'modules/ui/modeToggle.js',     // 8. החלפת מצבים
+        'web/app.js'                    // 9. אפליקציה ראשית
       ];
       
-      // התחלת IIFE
-      allJs = '(function() {\n';
-      allJs += '  "use strict";\n\n';
-      allJs += '  console.log("🔧 KavNav Mapbox Bundle Loading...");\n\n';
-      
-      jsFiles.forEach((file) => {
-        const path = fm.joinPath(baseDir, file);
-        if (fm.fileExists(path)) {
-          let code = fm.readString(path);
+      jsFiles.forEach(f => {
+        const p = fm.joinPath(baseDir, f);
+        if (fm.fileExists(p)) {
+          let code = fm.readString(p);
           
-          // ניקוי imports/exports
-          code = code
-            .replace(/^import\s+.*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-            .replace(/^import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"];?\s*$/gm, '')
-            .replace(/^export\s+(class|function|const|let|var)\s+/gm, '$1 ')
-            .replace(/^export\s+default\s+/gm, '')
-            .replace(/^export\s+\{[^}]+\};?\s*$/gm, '')
-            .replace(/\n{3,}/g, '\n\n');
+          // Remove module.exports and require statements for browser
+          code = code.replace(/module\.exports\s*=\s*/g, '');
+          code = code.replace(/require\([^)]+\)/g, 'null');
+          code = code.replace(/export\s+/g, '');
+          code = code.replace(/import\s+.*?;?\n/g, '');
           
-          allJs += `  // ===== ${file} =====\n`;
-          allJs += code.split('\n').map(line => '  ' + line).join('\n');
-          allJs += '\n\n';
-          
-          console.log(`✅ JS: ${file}`);
+          allJs += '\n// ===== ' + f + ' =====\n' + code + '\n';
+          console.log("✅ Loaded JS:", f);
         } else {
-          console.log(`⚠️ Missing: ${file}`);
+          console.warn("⚠️ Missing JS:", f);
         }
       });
       
-      // סגירת IIFE + קריאה לאתחול
-      allJs += `
-  // ===== Auto-initialization =====
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', async function() {
-      console.log("📋 DOM loaded via event");
-      await initApp();
-    });
-  } else {
-    console.log("📋 DOM already ready");
-    initApp().catch(e => console.error("Init error:", e));
-  }
-  
-})();
-
-console.log("✅ KavNav Mapbox Bundle Complete");
-`;
-      
-      // Debug output
-      const debugPathLocal = fm.joinPath(baseDir, 'debug-bundle.js');
-      fm.writeString(debugPathLocal, allJs);
-      console.log(`📝 Debug (local): debug-bundle.js (${allJs.length} chars)`);
-      
-      try {
-        const fmCloud = FileManager.iCloud();
-        const debugPathCloud = fmCloud.joinPath(fmCloud.documentsDirectory(), 'debug-bundle.js');
-        fmCloud.writeString(debugPathCloud, allJs);
-        console.log(`📝 Debug (iCloud): debug-bundle.js saved`);
-      } catch (e) {
-        console.log(`⚠️ iCloud save failed: ${e}`);
-      }
-      
+      console.log("✅ Bundle complete");
     } catch (e) {
-      console.error('❌ Bundle error:', e);
+      console.error("❌ Bundle error:", e);
     }
   }
-  
-  return `<!DOCTYPE html>
+
+  return `
+<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>KavNav 3D</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  
-  <!-- Google Fonts & Icons -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>KavNav Mapbox 3D</title>
   
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
   
+  <!-- Three.js + GLTFLoader (for GLB buses) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  
   <style>
-    /* Error Message Overlay */
+    ${allCss}
+    
+    /* Error overlay */
     #errorOverlay {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0,0,0,0.95);
+      background: rgba(0,0,0,0.9);
       color: white;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 99999;
       padding: 20px;
-      text-align: center;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    #errorOverlay.show {
-      display: flex;
-    }
-    .error-content {
-      max-width: 500px;
-      background: #1a1a1a;
-      padding: 30px;
-      border-radius: 12px;
-      border: 2px solid #ff4444;
-    }
-    .error-icon {
-      font-size: 60px;
-      margin-bottom: 20px;
-    }
-    .error-title {
-      font-size: 24px;
-      font-weight: bold;
-      margin-bottom: 15px;
-      color: #ff4444;
-    }
-    .error-message {
-      font-size: 16px;
-      line-height: 1.6;
-      margin-bottom: 20px;
-      color: #ccc;
-    }
-    .error-steps {
-      text-align: right;
-      direction: rtl;
-      background: #2a2a2a;
-      padding: 20px;
-      border-radius: 8px;
-      margin-top: 20px;
-    }
-    .error-steps ol {
-      margin: 0;
-      padding-right: 20px;
-    }
-    .error-steps li {
-      margin: 10px 0;
-      color: #fff;
-    }
-    .error-code {
-      background: #000;
-      padding: 10px;
-      border-radius: 4px;
       font-family: monospace;
-      font-size: 12px;
-      margin: 10px 0;
-      color: #0f0;
-      text-align: left;
-      direction: ltr;
-      overflow-x: auto;
+      font-size: 14px;
+      overflow: auto;
+      z-index: 9999;
+      display: none;
     }
-    .error-link {
-      color: #4af;
-      text-decoration: none;
+    
+    #errorOverlay h2 {
+      color: #ff6b6b;
+      margin-top: 0;
+    }
+    
+    #errorOverlay pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    
+    #closeError {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #ff6b6b;
+      border: none;
+      color: white;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
       font-weight: bold;
     }
   </style>
-  
-  ${isScriptable && allCss ? `<style>${allCss}</style>` : ''}
 </head>
-<body class="mode-map-only">
-  <!-- Error Overlay -->
-  <div id="errorOverlay">
-    <div class="error-content">
-      <div class="error-icon">🔑</div>
-      <div class="error-title">דרוש Mapbox API Key</div>
-      <div class="error-message">
-        לא הוגדר Mapbox Access Token.<br>
-        המפה לא יכולה להיטען ללא מפתח API.
+<body>
+  <div id="app">
+    <div class="container">
+      <!-- Top bar -->
+      <div class="top-bar">
+        <div class="mode-toggle-container" id="modeToggleContainer">
+          <!-- Mode toggle will be inserted here -->
+        </div>
       </div>
-      <div class="error-steps">
-        <strong>איך לתקן? (5 דקות):</strong>
-        <ol>
-          <li>
-            הירשם ל-Mapbox:<br>
-            <a href="https://account.mapbox.com/auth/signup/" class="error-link" target="_blank">
-              account.mapbox.com/auth/signup
-            </a>
-          </li>
-          <li>
-            צור Access Token (לחץ "Create a token")
-          </li>
-          <li>
-            העתק את ה-Token (מתחיל ב-<code>pk.eyJ...</code>)
-          </li>
-          <li>
-            פתח את <code>view.js</code> ומצא:
-            <div class="error-code">window.MAPBOX_TOKEN = 'YOUR_...';</div>
-          </li>
-          <li>
-            החלף ב-Token שלך והעלה לגיטהאב
-          </li>
-        </ol>
-      </div>
-      <div style="margin-top: 20px; font-size: 14px; color: #888;">
-        💡 50,000 קריאות בחינם בחודש!
-      </div>
-    </div>
-  </div>
-
-  <div id="modeToggleContainer">
-    <div class="mode-toggle">
-      <input type="radio" name="viewMode" id="modeDual" value="dual">
-      <label for="modeDual">תצוגה כפולה</label>
-      <input type="radio" name="viewMode" id="modeMap" value="map" checked>
-      <label for="modeMap">מפה בלבד</label>
-      <div class="toggle-bg"></div>
-    </div>
-  </div>
-
-  <div class="main-split-container">
-    <div class="pane-nearby">
-      <div class="nearby-header">תחנות קרובות</div>
-      <div id="nearbyStopsList" class="nearby-list">
-        <div style="padding:20px; text-align:center; color:#888;">טוען תחנות...</div>
-      </div>
-    </div>
-
-    <div class="pane-map-wrapper">
-      <div id="map">
-        <button id="locateMeBtn" title="המיקום שלי">📍</button>
-        <button id="toggle3DBtn" title="מעבר בין 2D ל-3D" class="active">🏗️</button>
-      </div>
-      <div id="bottomSheet">
-        <div id="dragHandleArea"><div class="handle-bar"></div></div>
-        <div id="routesContainer"></div>
-        <div class="footer-note-global">ETA • KavNav 3D</div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    // ===== MAPBOX ACCESS TOKEN =====
-    // 🔑 שים כאן את ה-API key שלך מ-Mapbox!
-    // הירשם ב: https://account.mapbox.com/auth/signup/
-    
-    window.MAPBOX_TOKEN = 'pk.eyJ1IjoiZGF2aWRwb3YiLCJhIjoiY21qbGNvMG1jMDkyZzNpcXJ6bzNwcnNtZiJ9.a2f__tImpmGUDc9ERCMXpg';
-    
-    // ===== Check Token =====
-    window.APP_ENVIRONMENT = 'scriptable';
-    console.log('🌍 Environment: Scriptable');
-    
-    if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN_HERE') {
-      console.error('❌ No Mapbox token!');
       
-      // Show error overlay after 2 seconds if map doesn't load
-      setTimeout(() => {
-        const errorOverlay = document.getElementById('errorOverlay');
-        if (errorOverlay) {
-          errorOverlay.classList.add('show');
-        }
-      }, 2000);
-    } else {
-      console.log('✅ Mapbox token configured');
+      <!-- Main content -->
+      <div class="main-content">
+        <!-- Map panel -->
+        <div class="pane pane-map" id="mapPane">
+          <div class="pane-header">
+            <span>🗺️ מפה</span>
+          </div>
+          <div class="pane-content pane-map-content">
+            <div id="map" class="map-container"></div>
+            <button id="locateMeBtn" title="מיקום שלי">📍</button>
+            <button id="toggle3DBtn" title="החלף 3D">🏢</button>
+          </div>
+        </div>
+        
+        <!-- Routes panel -->
+        <div class="pane pane-routes" id="routesPane">
+          <div class="pane-header">
+            <span>🚌 קווים</span>
+          </div>
+          <div class="pane-content">
+            <div id="routeCards" class="route-cards"></div>
+          </div>
+        </div>
+        
+        <!-- Stops panel -->
+        <div class="pane pane-stops" id="stopsPane">
+          <div class="pane-header">
+            <span>🚏 תחנות</span>
+          </div>
+          <div class="pane-content">
+            <div id="nearbyPanel" class="nearby-panel"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Bottom sheet -->
+  <div id="bottomSheet" class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <div id="bottomSheetContent" class="bottom-sheet-content"></div>
+  </div>
+  
+  <!-- Error overlay -->
+  <div id="errorOverlay">
+    <button id="closeError">✕ סגור</button>
+    <h2>❌ שגיאה</h2>
+    <pre id="errorContent"></pre>
+  </div>
+  
+  <script>
+    // Global config
+    window.IS_SCRIPTABLE = ${isScriptable};
+    window.MAPBOX_TOKEN = "pk.eyJ1IjoiZGF2aWRwb3ZhcnNreSIsImEiOiJjbXhpMHVwZGUwMGMzMndvOW8xYWxkZ3hxIn0.m6tzqC4Nt51iIwSpNCeUQg";
+    
+    // Error handling
+    function showError(err, context = '') {
+      console.error("❌ Error:", err);
+      
+      const overlay = document.getElementById('errorOverlay');
+      const content = document.getElementById('errorContent');
+      
+      let errorText = '';
+      if (context) errorText += `Context: ${context}\n\n`;
+      errorText += `Error: ${err.message || err}\n\n`;
+      if (err.stack) errorText += `Stack:\n${err.stack}`;
+      
+      content.textContent = errorText;
+      overlay.style.display = 'block';
+    }
+    
+    window.onerror = function(msg, url, line, col, error) {
+      showError(error || msg, `${url}:${line}:${col}`);
+      return true;
+    };
+    
+    window.addEventListener('unhandledrejection', function(event) {
+      showError(event.reason, 'Unhandled Promise Rejection');
+    });
+    
+    document.getElementById('closeError').onclick = function() {
+      document.getElementById('errorOverlay').style.display = 'none';
+    };
+    
+    // Load bundled code
+    try {
+      (function() {
+        ${allJs}
+      })();
+      
+      console.log("✅ All modules loaded");
+      
+      // Initialize app when DOM ready
+      if (typeof initApp === 'function') {
+        document.addEventListener('DOMContentLoaded', initApp);
+      } else {
+        throw new Error("initApp function not found!");
+      }
+      
+    } catch (e) {
+      showError(e, 'Bundle execution');
     }
   </script>
-  ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
 </body>
-</html>`;
+</html>
+`;
 };
