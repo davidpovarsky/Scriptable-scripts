@@ -1,168 +1,190 @@
 // modules/map/busMarkers.js
-// אחראי על ציור רכבים כ-GLB על Mapbox באמצעות BusModelLayer
-// ✅ עובד לכל הרכבים: שכבת GLB אחת + אינסטנסים לכל vehicleId
-// כולל: fallback positionOnLine + חישוב bearing אם חסר
+// אחראי על ציור אוטובוסים תלת-מימדיים על המפה - Mapbox version
+// גרסה מתוקנת: אנימציה חלקה + מניעת הבהובים
 
 class BusMarkers {
   constructor(mapManager) {
     this.mapManager = mapManager;
     this.map = mapManager.getMap();
-
-    // ✅ שכבת GLB
-    this.busLayer = mapManager.getBusModelLayer ? mapManager.getBusModelLayer() : null;
-
-    // מעקב IDs פעילים + מיקום קודם לחישוב bearing
-    this.knownIds = new Set();
-    this.lastPosById = new Map(); // id -> {lon,lat}
-
-    console.log("🚌 BusMarkers initialized (GLB layer)");
-  }
-
-  _makeVehicleId(v, fallbackIndex) {
-    // חייב להיות עקבי עם prune + set
-    if (v.vehicleId != null) return String(v.vehicleId);
-    if (v.tripId != null && v.routeNumber != null) return `${v.routeNumber}-${v.tripId}`;
-    if (v.plate != null) return String(v.plate);
-    return `veh-${fallbackIndex}`;
-  }
-
-  _bearingFrom2Points(lon1, lat1, lon2, lat2) {
-    const toRad = (d) => d * Math.PI / 180;
-    const toDeg = (r) => r * 180 / Math.PI;
-
-    const φ1 = toRad(lat1);
-    const φ2 = toRad(lat2);
-    const λ1 = toRad(lon1);
-    const λ2 = toRad(lon2);
-
-    const y = Math.sin(λ2 - λ1) * Math.cos(φ2);
-    const x = Math.cos(φ1) * Math.sin(φ2) -
-              Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
-
-    return (toDeg(Math.atan2(y, x)) + 360) % 360;
-  }
-
-  _bearingFromShape(shapeLatLngs, idx) {
-    if (!shapeLatLngs || shapeLatLngs.length < 2) return 0;
-    const i = Math.max(0, Math.min(shapeLatLngs.length - 2, idx));
-    const a = shapeLatLngs[i];
-    const b = shapeLatLngs[i + 1];
-    return this._bearingFrom2Points(a[0], a[1], b[0], b[1]);
+    this.busMarkers = new Map();
+    this.modelLoaded = true;
+    
+    console.log("🚌 BusMarkers initialized (Mapbox Fixed)");
   }
 
   drawBuses(vehicles, color, shapeCoords) {
-    if (!this.map || !Array.isArray(vehicles)) return new Set();
-
-    // אם שכבת GLB לא קיימת (לא נטענה) – לא ניפול
-    this.busLayer = this.busLayer || (this.mapManager.getBusModelLayer ? this.mapManager.getBusModelLayer() : null);
-    if (!this.busLayer || !this.busLayer.upsertVehicles) {
-      console.warn("⚠️ busLayer (GLB) not ready yet");
-      return new Set();
+    if (!this.map) {
+      return; // Map not ready
     }
 
-    const activeIds = new Set();
-    const updates = [];
+    if (!Array.isArray(vehicles)) {
+      return;
+    }
 
     const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : [];
-
-    vehicles.forEach((v, idx) => {
+    
+    vehicles.forEach(v => {
       try {
         let lon = v.lon;
         let lat = v.lat;
-
-        // fallback: positionOnLine -> shape
+        
+        // אם אין מיקום מדויק, נשתמש ב-positionOnLine
         if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
-          const sIdx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-          const p = shapeLatLngs[sIdx];
-          if (p) {
-            lon = p[0];
-            lat = p[1];
+          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+          const point = shapeLatLngs[idx];
+          if (point) {
+            lon = point[0];
+            lat = point[1];
           }
         }
-
-        if (typeof lon !== 'number' || typeof lat !== 'number') return;
-
-        const id = this._makeVehicleId(v, idx);
-        activeIds.add(id);
-
-        // bearing priority:
-        // 1) v.bearing אם קיים
-        // 2) מחישוב נקודה קודמת
-        // 3) מה-shape segment
-        let bearing = (typeof v.bearing === 'number') ? v.bearing : null;
-
-        if (bearing == null) {
-          const prev = this.lastPosById.get(id);
-          if (prev) {
-            bearing = this._bearingFrom2Points(prev.lon, prev.lat, lon, lat);
-          } else if (typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
-            const sIdx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-            bearing = this._bearingFromShape(shapeLatLngs, sIdx);
-          } else {
-            bearing = 0;
-          }
+        
+        if (lat && lon) {
+          const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId || Math.random()}`;
+          const bearing = v.bearing || 0;
+          
+          this.draw3DBus(vehicleId, lon, lat, bearing, color, v.routeNumber);
         }
-
-        // שמירת prev
-        this.lastPosById.set(id, { lon, lat });
-
-        updates.push({
-          id,
-          lon,
-          lat,
-          bearingDeg: bearing,
-          routeNumber: v.routeNumber
-        });
-
       } catch (e) {
-        console.error("❌ Error preparing bus GLB update:", e);
+        console.error("❌ Error drawing bus:", e);
       }
     });
 
-    // upsert לכולם במכה אחת
-    try {
-      this.busLayer.upsertVehicles(updates);
-    } catch (e) {
-      console.error("❌ Error upserting GLB buses:", e);
-    }
-
-    // עדכון knownIds
-    activeIds.forEach(id => this.knownIds.add(id));
-    return activeIds;
+    // הערה: הסרנו מכאן את לוגיקת המחיקה. המחיקה מתבצעת כעת ב-pruneMarkers
   }
 
+  // פונקציה חדשה לניקוי רכבים שלא קיימים יותר
   pruneMarkers(activeVehicleIds) {
     if (!activeVehicleIds || !(activeVehicleIds instanceof Set)) return;
 
-    this.busLayer = this.busLayer || (this.mapManager.getBusModelLayer ? this.mapManager.getBusModelLayer() : null);
-    if (!this.busLayer || !this.busLayer.removeVehicles) return;
-
-    const toRemove = [];
-    this.knownIds.forEach((id) => {
+    this.busMarkers.forEach((marker, id) => {
       if (!activeVehicleIds.has(id)) {
-        toRemove.push(id);
-        this.knownIds.delete(id);
-        this.lastPosById.delete(id);
+        try {
+          if (marker.remove) marker.remove();
+          this.busMarkers.delete(id);
+        } catch (e) {
+          console.error("❌ Error removing marker:", e);
+        }
       }
     });
+  }
 
-    if (toRemove.length) {
-      try {
-        this.busLayer.removeVehicles(toRemove);
-      } catch (e) {
-        console.error("❌ Error removing GLB vehicles:", e);
+  draw3DBus(vehicleId, lon, lat, bearing, color, routeNumber) {
+    try {
+      let marker = this.busMarkers.get(vehicleId);
+      
+      if (marker) {
+        // === שינוי: שימוש באנימציה במקום קפיצה ===
+        this.animateBusTo(vehicleId, lon, lat, 2000); // 2 שניות אנימציה
+        
+        // עדכון רוטציה
+        const el = marker.getElement();
+        if (el) {
+          const model = el.querySelector('.bus-3d-container');
+          if (model) {
+            model.style.transform = `rotateZ(${bearing}deg)`;
+          }
+        }
+      } else {
+        // Create new 3D marker
+        const el = this._create3DBusElement(bearing, color, routeNumber);
+        
+        marker = new mapboxgl.Marker({
+          element: el,
+          anchor: 'center',
+          rotationAlignment: 'map',
+          pitchAlignment: 'map'
+        })
+          .setLngLat([lon, lat])
+          .addTo(this.map);
+        
+        this.busMarkers.set(vehicleId, marker);
       }
+    } catch (e) {
+      console.error(`❌ Error drawing 3D bus ${vehicleId}:`, e);
     }
   }
 
-  clearAll() {
-    try {
-      this.busLayer = this.busLayer || (this.mapManager.getBusModelLayer ? this.mapManager.getBusModelLayer() : null);
-      if (this.busLayer && this.busLayer.clearAll) this.busLayer.clearAll();
-    } catch (e) {}
+  _create3DBusElement(bearing, color, routeNumber) {
+    const el = document.createElement('div');
+    el.className = 'bus-marker-3d';
+    
+    el.innerHTML = `
+      <div class="bus-3d-container" style="transform: rotateZ(${bearing}deg);">
+        <div class="bus-3d-model" style="background: ${color};">
+          <div class="bus-3d-body">
+            <div class="bus-3d-front"></div>
+            <div class="bus-3d-top"></div>
+            <div class="bus-3d-side-left"></div>
+            <div class="bus-3d-side-right"></div>
+          </div>
+          <div class="bus-3d-wheels">
+            <div class="wheel wheel-fl"></div>
+            <div class="wheel wheel-fr"></div>
+            <div class="wheel wheel-rl"></div>
+            <div class="wheel wheel-rr"></div>
+          </div>
+        </div>
+        ${routeNumber ? `
+          <div class="route-badge-3d" style="background: white; color: ${color}; border-color: ${color};">
+            ${routeNumber}
+          </div>
+        ` : ''}
+      </div>
+      <div class="bus-3d-shadow"></div>
+    `;
+    
+    return el;
+  }
 
-    this.knownIds.clear();
-    this.lastPosById.clear();
-    console.log("🗑️ All GLB buses cleared");
+  clearAll() {
+    this.busMarkers.forEach(marker => {
+      try {
+        if (marker && marker.remove) {
+          marker.remove();
+        }
+      } catch (e) {
+        console.error("❌ Error clearing marker:", e);
+      }
+    });
+    this.busMarkers.clear();
+    console.log("🗑️ All buses cleared");
+  }
+
+  animateBusTo(vehicleId, newLon, newLat, duration = 2000) {
+    const marker = this.busMarkers.get(vehicleId);
+    if (!marker) return;
+
+    try {
+      const start = marker.getLngLat();
+      const end = [newLon, newLat];
+      
+      // אם המרחק קטן מאוד, לא צריך אנימציה (מונע רעידות בעמידה)
+      if (Math.abs(start.lng - end[0]) < 0.00001 && Math.abs(start.lat - end[1]) < 0.00001) {
+        return;
+      }
+      
+      let startTime = null;
+      
+      const animate = (timestamp) => {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        
+        // Easing function (Ease Out Quad) - מתחיל מהר ומאיט בסוף
+        const eased = progress * (2 - progress);
+        
+        const currentLng = start.lng + (end[0] - start.lng) * eased;
+        const currentLat = start.lat + (end[1] - start.lat) * eased;
+        
+        marker.setLngLat([currentLng, currentLat]);
+        
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      };
+      
+      requestAnimationFrame(animate);
+    } catch (e) {
+      console.error("❌ Error animating bus:", e);
+    }
   }
 }
