@@ -9,18 +9,14 @@ class MapManager {
     this.userLocationMarker = null;
     this.didInitialFit = false;
     this.is3DEnabled = true;
+    this.busModelLayer = null; // שכבת GLB לכל הרכבים
   }
 
   init(elementId = 'map', accessToken = null) {
     try {
       console.log("🗺️ Initializing Mapbox GL JS...");
       
-      // Check if Mapbox is available
-      if (typeof mapboxgl === 'undefined') {
-        throw new Error("Mapbox GL JS not loaded!");
-      }
-
-      // Set access token
+      // Set Mapbox access token
       if (accessToken) {
         mapboxgl.accessToken = accessToken;
         console.log("✅ Mapbox token set");
@@ -38,15 +34,13 @@ class MapManager {
         center: [34.78, 32.08], // lon, lat (Tel Aviv)
         zoom: 13,
         pitch: 45, // 3D tilt
-        bearing: 0,
-        antialias: true
+        bearing: -17.6,
+        antialias: true // Required for 3D models
       });
 
       // Add navigation controls
-      this.map.addControl(new mapboxgl.NavigationControl({
-        visualizePitch: true
-      }), 'top-right');
-
+      this.map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+      
       // Add scale control
       this.map.addControl(new mapboxgl.ScaleControl(), 'bottom-right');
 
@@ -55,6 +49,7 @@ class MapManager {
         console.log('✅ Mapbox map loaded successfully');
         this.enable3DBuildings();
         this.initializeSources();
+        this.enableBusGLBLayer();
       });
 
       this.map.on('error', (e) => {
@@ -62,10 +57,10 @@ class MapManager {
       });
 
       console.log("✅ Mapbox initialized");
+      
       return this.map;
-
     } catch (e) {
-      console.error("❌ Failed to initialize Mapbox:", e);
+      console.error("❌ Error initializing map:", e);
       throw e;
     }
   }
@@ -118,9 +113,27 @@ class MapManager {
     }
   }
 
+  toggle3D() {
+    try {
+      this.is3DEnabled = !this.is3DEnabled;
+      
+      if (this.is3DEnabled) {
+        this.map.easeTo({ pitch: 45, duration: 1000 });
+      } else {
+        this.map.easeTo({ pitch: 0, duration: 1000 });
+      }
+      
+      console.log(this.is3DEnabled ? '🏢 3D enabled' : '🗺️ 2D enabled');
+      return this.is3DEnabled;
+    } catch (e) {
+      console.error('❌ Error toggling 3D:', e);
+      return this.is3DEnabled;
+    }
+  }
+
   initializeSources() {
     try {
-      // Source for route polylines
+      // Route lines source
       if (!this.map.getSource('routes')) {
         this.map.addSource('routes', {
           type: 'geojson',
@@ -129,181 +142,134 @@ class MapManager {
             features: []
           }
         });
-      }
 
-      // Source for buses
-      if (!this.map.getSource('buses')) {
-        this.map.addSource('buses', {
-          type: 'geojson',
-          data: {
-            type: 'FeatureCollection',
-            features: []
+        // Add route lines layer
+        this.map.addLayer({
+          id: 'route-lines',
+          type: 'line',
+          source: 'routes',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+          },
+          paint: {
+            'line-color': ['get', 'color'],
+            'line-width': 4,
+            'line-opacity': 0.7
           }
         });
-      }
 
-      console.log('📍 Map sources initialized');
+        console.log('✅ Route sources initialized');
+      }
     } catch (e) {
       console.error('❌ Error initializing sources:', e);
     }
   }
 
-  setUserLocation(lat, lon) {
-    if (!this.map) return;
-    
+  drawRoute(routeId, coordinates, color = '#1976d2') {
     try {
-      // Remove old marker
-      if (this.userLocationMarker) {
-        this.userLocationMarker.remove();
-      }
-      
-      // Create pulsing dot for user location
-      const el = document.createElement('div');
-      el.className = 'user-location-marker';
-      el.innerHTML = `
-        <div class="pulse-ring"></div>
-        <div class="pulse-dot"></div>
-      `;
-      
-      this.userLocationMarker = new mapboxgl.Marker({
-        element: el,
-        anchor: 'center'
-      })
-        .setLngLat([lon, lat])
-        .addTo(this.map);
-
-      console.log('👤 User location set:', lat, lon);
-    } catch (e) {
-      console.error('❌ Error setting user location:', e);
-    }
-  }
-
-  centerOnUser() {
-    if (this.userLocationMarker && this.map) {
-      const lngLat = this.userLocationMarker.getLngLat();
-      this.map.flyTo({
-        center: [lngLat.lng, lngLat.lat],
-        zoom: 16,
-        pitch: 60,
-        bearing: 0,
-        duration: 2000
-      });
-    }
-  }
-
-  clearBuses() {
-    // Clear all bus markers
-    this.busMarkers.forEach(marker => {
-      if (marker && marker.remove) {
-        marker.remove();
-      }
-    });
-    this.busMarkers.clear();
-
-    // Clear buses source
-    if (this.map && this.map.getSource('buses')) {
-      this.map.getSource('buses').setData({
-        type: 'FeatureCollection',
-        features: []
-      });
-    }
-  }
-
-  drawRoutePolyline(shapeCoords, color, routeId) {
-    if (!this.map || !shapeCoords || !shapeCoords.length) return;
-    
-    try {
-      // Convert to GeoJSON LineString
-      const coordinates = shapeCoords.map(c => [c[0], c[1]]); // lon, lat
-
-      const layerId = `route-${routeId}`;
-      const sourceId = `route-source-${routeId}`;
-
-      // Add source
-      if (!this.map.getSource(sourceId)) {
-        this.map.addSource(sourceId, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: coordinates
-            }
-          }
-        });
+      if (!this.map || !coordinates || coordinates.length < 2) {
+        return;
       }
 
-      // Add 3D line layer
-      if (!this.map.getLayer(layerId)) {
-        this.map.addLayer({
-          id: layerId,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': color,
-            'line-width': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              10, 3,
-              15, 6,
-              18, 12
-            ],
-            'line-opacity': 0.8
-          }
+      // Create GeoJSON feature
+      const feature = {
+        type: 'Feature',
+        properties: {
+          routeId: routeId,
+          color: color
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: coordinates // [lon, lat] pairs
+        }
+      };
+
+      // Update routes source data
+      const source = this.map.getSource('routes');
+      if (source) {
+        // Get current features
+        const currentData = source._data || { type: 'FeatureCollection', features: [] };
+        
+        // Remove existing route with same ID
+        const filteredFeatures = currentData.features.filter(f => f.properties.routeId !== routeId);
+        
+        // Add new feature
+        filteredFeatures.push(feature);
+        
+        // Set updated data
+        source.setData({
+          type: 'FeatureCollection',
+          features: filteredFeatures
         });
 
-        // Add glow effect
-        this.map.addLayer({
-          id: `${layerId}-glow`,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': color,
-            'line-width': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              10, 6,
-              15, 12,
-              18, 20
-            ],
-            'line-opacity': 0.2,
-            'line-blur': 4
-          }
-        }, layerId);
+        this.routeLines.set(routeId, feature);
+        console.log(`✅ Route ${routeId} drawn`);
       }
-
-      this.routeLines.set(routeId, layerId);
-      console.log(`✅ Route ${routeId} drawn`);
     } catch (e) {
       console.error(`❌ Error drawing route ${routeId}:`, e);
     }
   }
 
-  fitBoundsToShapes(allShapeCoords) {
-    if (!this.map || !allShapeCoords || !allShapeCoords.length) return;
-    if (this.didInitialFit) return;
-
+  clearRoutes() {
     try {
-      const allPoints = [];
-      allShapeCoords.forEach(coords => {
-        if (Array.isArray(coords)) {
-          coords.forEach(c => {
-            if (Array.isArray(c) && c.length === 2) {
-              allPoints.push([c[0], c[1]]); // lon, lat
-            }
-          });
-        }
+      const source = this.map.getSource('routes');
+      if (source) {
+        source.setData({
+          type: 'FeatureCollection',
+          features: []
+        });
+      }
+      this.routeLines.clear();
+      console.log('🧹 Routes cleared');
+    } catch (e) {
+      console.error('❌ Error clearing routes:', e);
+    }
+  }
+
+  fitToPoints(points) {
+    try {
+      if (!this.map || !points || points.length === 0) {
+        return;
+      }
+
+      const bounds = points.reduce(
+        (bounds, coord) => bounds.extend(coord),
+        new mapboxgl.LngLatBounds(points[0], points[0])
+      );
+
+      this.map.fitBounds(bounds, {
+        padding: { top: 50, bottom: 50, left: 50, right: 50 },
+        pitch: this.is3DEnabled ? 45 : 0,
+        duration: 1000
       });
+    } catch (e) {
+      console.error('❌ Error fitting bounds:', e);
+    }
+  }
+
+  fitToRouteAndBuses(routeId, busPositions) {
+    try {
+      if (this.didInitialFit) return;
+      
+      const routeFeature = this.routeLines.get(routeId);
+      if (!routeFeature) return;
+
+      const allPoints = [];
+      
+      // Add route coordinates
+      if (routeFeature.geometry && routeFeature.geometry.coordinates) {
+        allPoints.push(...routeFeature.geometry.coordinates);
+      }
+      
+      // Add bus positions
+      if (Array.isArray(busPositions)) {
+        busPositions.forEach(pos => {
+          if (pos && pos.length === 2) {
+            allPoints.push(pos);
+          }
+        });
+      }
 
       if (allPoints.length > 1) {
         const bounds = allPoints.reduce(
@@ -318,16 +284,59 @@ class MapManager {
         });
 
         this.didInitialFit = true;
-        console.log('✅ Bounds fitted');
+        console.log('✅ Initial fit to route and buses completed');
       }
     } catch (e) {
-      console.error('❌ Error fitting bounds:', e);
+      console.error('❌ Error fitting to route and buses:', e);
     }
   }
 
-  invalidateSize() {
-    if (this.map) {
-      this.map.resize();
+  setUserLocation(lon, lat) {
+    try {
+      if (!this.map || !isFinite(lon) || !isFinite(lat)) {
+        return;
+      }
+
+      const lngLat = [lon, lat];
+
+      if (!this.userLocationMarker) {
+        // Create user location marker
+        const el = document.createElement('div');
+        el.className = 'user-location-marker';
+        el.innerHTML = '📍';
+
+        this.userLocationMarker = new mapboxgl.Marker(el)
+          .setLngLat(lngLat)
+          .addTo(this.map);
+
+        console.log('📍 User location marker created');
+      } else {
+        this.userLocationMarker.setLngLat(lngLat);
+      }
+
+      return lngLat;
+    } catch (e) {
+      console.error('❌ Error setting user location:', e);
+      return null;
+    }
+  }
+
+  flyToLocation(lon, lat, zoom = 15) {
+    try {
+      if (!this.map || !isFinite(lon) || !isFinite(lat)) {
+        return;
+      }
+
+      this.map.flyTo({
+        center: [lon, lat],
+        zoom: zoom,
+        pitch: this.is3DEnabled ? 45 : 0,
+        duration: 1500
+      });
+
+      console.log('✈️ Flying to location:', lon, lat);
+    } catch (e) {
+      console.error('❌ Error flying to location:', e);
     }
   }
 
@@ -335,16 +344,32 @@ class MapManager {
     return this.map;
   }
 
-  toggle3D() {
-    this.is3DEnabled = !this.is3DEnabled;
-    
-    this.map.easeTo({
-      pitch: this.is3DEnabled ? 60 : 0,
-      bearing: this.is3DEnabled ? -17 : 0,
-      duration: 1000
-    });
-    
-    console.log(`🏗️ 3D mode: ${this.is3DEnabled ? 'ON' : 'OFF'}`);
+  // ============================================
+  // Bus GLB Layer (Three.js Custom Layer)
+  // ============================================
+  enableBusGLBLayer() {
+    try {
+      if (!this.map) return;
+      if (typeof THREE === 'undefined') {
+        console.warn("⚠️ THREE לא נטען - שכבת GLB לא תופעל (בדוק view.js)");
+        return;
+      }
+      if (typeof BusModelLayer === 'undefined') {
+        console.warn("⚠️ BusModelLayer לא קיים - בדוק שהקובץ modules/map/busModelLayer.js נטען לפני mapManager.js");
+        return;
+      }
+
+      if (!this.busModelLayer) {
+        this.busModelLayer = new BusModelLayer(this.map);
+      }
+      this.busModelLayer.addToMap();
+    } catch (e) {
+      console.error("❌ Error enabling Bus GLB Layer:", e);
+    }
+  }
+
+  getBusModelLayer() {
+    return this.busModelLayer;
   }
 
   getBearing(start, end) {
