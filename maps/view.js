@@ -1,27 +1,27 @@
 // view.js
-// בונה HTML עם bundle מלא - גרסת Mapbox עם GLB 3D Models
+// בונה HTML עם bundle מלא - גרסת Mapbox עם הודעות שגיאה
 
 module.exports.getHtml = function() {
   const isScriptable = typeof FileManager !== 'undefined';
-  
+
   let allCss = '';
   let allJs = '';
-  
+
   if (isScriptable) {
     try {
       const fm = FileManager.local();
       const baseDir = fm.documentsDirectory();
-      
-      console.log("🔧 Building modular bundle with 3D GLB models...");
-      
+
+      console.log("🔧 Building modular bundle with Mapbox 3D...");
+
       // ===== CSS =====
       const cssFiles = [
-        'styles/base.css', 
-        'styles/map.css', 
-        'styles/stops.css', 
+        'styles/base.css',
+        'styles/map.css',
+        'styles/stops.css',
         'styles/routes.css'
       ];
-      
+
       cssFiles.forEach(f => {
         const p = fm.joinPath(baseDir, f);
         if (fm.fileExists(p)) {
@@ -29,12 +29,15 @@ module.exports.getHtml = function() {
           console.log(`✅ CSS: ${f}`);
         }
       });
-      
+
       // ===== JS =====
       const jsFiles = [
         'modules/ui/utils.js',
+
+        // ✅ חדש: שכבת GLB חייבת להיטען לפני mapManager
+        'modules/map/busModelLayer.js',
+
         'modules/map/mapManager.js',
-        'modules/map/bus3DModelManager.js',
         'modules/map/busMarkers.js',
         'modules/map/userLocation.js',
         'modules/stops/nearbyPanel.js',
@@ -43,18 +46,16 @@ module.exports.getHtml = function() {
         'modules/ui/modeToggle.js',
         'web/app.js'
       ];
-      
-      // התחלת IIFE
+
       allJs = '(function() {\n';
       allJs += '  "use strict";\n\n';
-      allJs += '  console.log("🔧 KavNav 3D GLB Bundle Loading...");\n\n';
-      
+      allJs += '  console.log("🔧 KavNav Mapbox Bundle Loading...");\n\n';
+
       jsFiles.forEach((file) => {
         const path = fm.joinPath(baseDir, file);
         if (fm.fileExists(path)) {
           let code = fm.readString(path);
-          
-          // ניקוי imports/exports
+
           code = code
             .replace(/^import\s+.*?from\s+['"][^'"]+['"];?\s*$/gm, '')
             .replace(/^import\s+\{[^}]+\}\s+from\s+['"][^'"]+['"];?\s*$/gm, '')
@@ -62,72 +63,72 @@ module.exports.getHtml = function() {
             .replace(/^export\s+default\s+/gm, '')
             .replace(/^export\s+\{[^}]+\};?\s*$/gm, '')
             .replace(/\n{3,}/g, '\n\n');
-          
+
           allJs += `  // ===== ${file} =====\n`;
           allJs += code.split('\n').map(line => '  ' + line).join('\n');
           allJs += '\n\n';
-          
+
           console.log(`✅ JS: ${file}`);
         } else {
           console.log(`⚠️ Missing: ${file}`);
         }
       });
-      
-      // סגירת IIFE + קריאה לאתחול
+
       allJs += `
   // ===== Auto-initialization =====
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', async function() {
       console.log("📋 DOM loaded via event");
-      await initApp();
+      try {
+        if (typeof initApp === 'function') {
+          await initApp();
+        } else {
+          console.error("❌ initApp not found");
+        }
+      } catch (e) {
+        console.error("❌ initApp error:", e);
+      }
     });
   } else {
-    console.log("📋 DOM already ready");
-    initApp().catch(e => console.error("Init error:", e));
-  }
-  
-})();
-
-console.log("✅ KavNav 3D GLB Bundle Complete");
-`;
-      
-      // Debug output
-      const debugPathLocal = fm.joinPath(baseDir, 'debug-bundle.js');
-      fm.writeString(debugPathLocal, allJs);
-      console.log(`🔍 Debug (local): debug-bundle.js (${allJs.length} chars)`);
-      
+    (async function() {
+      console.log("📋 DOM already loaded");
       try {
-        const fmCloud = FileManager.iCloud();
-        const debugPathCloud = fmCloud.joinPath(fmCloud.documentsDirectory(), 'debug-bundle.js');
-        fmCloud.writeString(debugPathCloud, allJs);
-        console.log(`🔍 Debug (iCloud): debug-bundle.js saved`);
+        if (typeof initApp === 'function') {
+          await initApp();
+        } else {
+          console.error("❌ initApp not found");
+        }
       } catch (e) {
-        console.log(`⚠️ iCloud save failed: ${e}`);
+        console.error("❌ initApp error:", e);
       }
-      
+    })();
+  }
+})();\n`;
+
+      console.log("✅ Bundle built successfully");
     } catch (e) {
-      console.error('❌ Bundle error:', e);
+      console.error("❌ Error building bundle:", e);
     }
   }
-  
+
   return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>KavNav 3D GLB</title>
+  <title>KavNav 3D</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  
+
   <!-- Google Fonts & Icons -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,600,1,0" />
-  
+
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
-  
-  <!-- Three.js + GLTFLoader -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-  
+
+  <!-- ✅ Three.js + GLTFLoader (נדרש ל-GLB Layer) -->
+  <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
+
   <style>
     /* Error Message Overlay */
     #errorOverlay {
@@ -206,7 +207,7 @@ console.log("✅ KavNav 3D GLB Bundle Complete");
       font-weight: bold;
     }
   </style>
-  
+
   ${isScriptable && allCss ? `<style>${allCss}</style>` : ''}
 </head>
 <body class="mode-map-only">
@@ -270,55 +271,48 @@ console.log("✅ KavNav 3D GLB Bundle Complete");
     <div class="pane-map-wrapper">
       <div id="map">
         <button id="locateMeBtn" title="המיקום שלי">📍</button>
-        <button id="toggle3DBtn" title="מעבר בין 2D ל-3D" class="active">🗺️</button>
-        <button id="toggleModelBtn" title="החלף בין GLB ל-CSS" class="active">🚌</button>
+        <button id="toggle3DBtn" title="מעבר בין 2D ל-3D" class="active">🏗️</button>
       </div>
       <div id="bottomSheet">
         <div id="dragHandleArea"><div class="handle-bar"></div></div>
         <div id="routesContainer"></div>
-        <div class="footer-note-global">ETA • KavNav 3D GLB</div>
+        <div class="footer-note-global">ETA • KavNav 3D</div>
       </div>
     </div>
   </div>
 
   <script>
     // ===== MAPBOX ACCESS TOKEN =====
-    // 🔑 שנה כאן את ה-API key שלך מ-Mapbox!
-    // הירשם ב: https://account.mapbox.com/auth/signup/
-    
     window.MAPBOX_TOKEN = 'pk.eyJ1IjoiZGF2aWRwb3YiLCJhIjoiY21qbGNvMG1jMDkyZzNpcXJ6bzNwcnNtZiJ9.a2f__tImpmGUDc9ERCMXpg';
-    
-    // ===== Check Token =====
+
+    // ===== GLB defaults (אפשר לשנות כאן אם תרצה) =====
+    window.BUS_GLB_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb";
+
+    // הכיוונון שלך:
+    window.MODEL_YAW_OFFSET_DEG = -51.75;
+    window.MODEL_BASE_ROT_X_DEG = 88.25;
+    window.MODEL_BASE_ROT_Y_DEG = 0;
+    window.MODEL_BASE_ROT_Z_DEG = 0;
+
+    window.OFFSET_EAST_M  = 0;
+    window.OFFSET_NORTH_M = 0;
+    window.OFFSET_UP_M    = 0;
+    window.SCALE_MUL      = 1;
+
     window.APP_ENVIRONMENT = 'scriptable';
-    console.log('🌐 Environment: Scriptable with 3D GLB Models');
-    
+    console.log('🌍 Environment: Scriptable');
+
     if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN_HERE') {
       console.error('❌ No Mapbox token!');
-      
       setTimeout(() => {
         const errorOverlay = document.getElementById('errorOverlay');
-        if (errorOverlay) {
-          errorOverlay.classList.add('show');
-        }
+        if (errorOverlay) errorOverlay.classList.add('show');
       }, 2000);
     } else {
       console.log('✅ Mapbox token configured');
     }
-    
-    // Check Three.js
-    if (typeof THREE === 'undefined') {
-      console.error('❌ Three.js not loaded!');
-    } else {
-      console.log('✅ Three.js loaded: r' + THREE.REVISION);
-    }
-    
-    // Check GLTFLoader
-    if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader === 'undefined') {
-      console.error('❌ GLTFLoader not loaded!');
-    } else if (typeof THREE !== 'undefined') {
-      console.log('✅ GLTFLoader ready');
-    }
   </script>
+
   ${isScriptable && allJs ? `<script>${allJs}</script>` : ''}
 </body>
 </html>`;
