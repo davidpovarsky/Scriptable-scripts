@@ -1,198 +1,142 @@
-/* styles/map.css - Enhanced 3D version with GLB support */
+/* styles/map.css
+   Map specific styles
+*/
 
 /* ============================================
    Map Container
    ============================================ */
+.pane-map-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.map-container {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f0f0f0;
+}
+
+/* Ensure map takes full space */
 #map {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  width: 100%;
-  height: 100%;
 }
 
 /* ============================================
-   User Location
+   User Location Marker
    ============================================ */
 .user-location-marker {
-  position: relative;
   width: 30px;
   height: 30px;
-}
-
-.pulse-dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 12px;
-  height: 12px;
-  background: #2196f3;
-  border: 2px solid white;
+  background: rgba(33, 150, 243, 0.9);
+  border: 3px solid white;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
-  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-.pulse-ring {
+/* Pulse animation */
+.user-location-marker::after {
+  content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 30px;
-  height: 30px;
-  background: rgba(33, 150, 243, 0.3);
-  border: 2px solid rgba(33, 150, 243, 0.5);
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  animation: pulse-animation 2s infinite;
-  z-index: 1;
+  background: rgba(33, 150, 243, 0.4);
+  animation: pulse 2s infinite;
+  z-index: -1;
 }
 
-@keyframes pulse-animation {
+@keyframes pulse {
   0% {
-    transform: translate(-50%, -50%) scale(0.8);
+    transform: scale(1);
     opacity: 1;
   }
   100% {
-    transform: translate(-50%, -50%) scale(1.5);
+    transform: scale(2.5);
     opacity: 0;
   }
 }
 
 /* ============================================
-   3D Bus Markers (CSS Fallback)
+   Bus Marker (legacy - not used when GLB layer active)
    ============================================ */
 .bus-marker-3d {
-  width: 50px;
-  height: 50px;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.bus-3d-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  transition: transform 0.3s ease-out;
-}
-
-.bus-3d-model {
-  position: absolute;
-  width: 30px;
-  height: 50px;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 8px 8px 4px 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  transition: box-shadow 0.2s;
-}
-
-.bus-3d-model:hover {
-  box-shadow: 0 6px 20px rgba(0,0,0,0.7);
-}
-
-.bus-3d-body {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  background: inherit;
-  border-radius: inherit;
-}
-
-/* Front windshield */
-.bus-3d-front {
-  position: absolute;
-  top: 5px;
-  left: 4px;
-  right: 4px;
-  height: 10px;
-  background: linear-gradient(180deg, 
-    rgba(100, 200, 255, 0.7) 0%,
-    rgba(100, 200, 255, 0.4) 100%
-  );
-  border-radius: 4px 4px 0 0;
-  box-shadow: inset 0 1px 2px rgba(255,255,255,0.3);
-}
-
-/* Side windows */
-.bus-3d-body::before {
-  content: '';
-  position: absolute;
-  top: 16px;
-  left: 4px;
-  right: 4px;
-  bottom: 10px;
-  background: repeating-linear-gradient(
-    transparent,
-    transparent 7px,
-    rgba(255,255,255,0.25) 7px,
-    rgba(255,255,255,0.25) 9px
-  );
-  border-radius: 2px;
-}
-
-/* Wheels */
-.bus-3d-wheels {
-  position: absolute;
-  bottom: 2px;
-  left: 0;
-  right: 0;
-  height: 8px;
+  width: 24px;
+  height: 24px;
+  background: #ff5722;
+  border: 2px solid white;
+  border-radius: 6px;
   display: flex;
-  justify-content: space-between;
-  padding: 0 4px;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  transform-origin: center;
+  transition: transform 0.3s ease;
 }
 
-.wheel {
-  width: 7px;
-  height: 7px;
-  background: radial-gradient(circle, #222 0%, #000 70%);
-  border-radius: 50%;
-  border: 1.5px solid #444;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-}
-
-/* Route badge */
-.route-badge-3d {
-  position: absolute;
-  top: -22px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 10px;
-  background: white;
-  border: 2px solid;
-  border-radius: 12px;
-  font-weight: 900;
-  font-size: 12px;
-  white-space: nowrap;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.4);
-  z-index: 10;
-  letter-spacing: 0.3px;
-}
-
-/* Shadow */
-.bus-3d-shadow {
-  position: absolute;
-  bottom: -6px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 38px;
-  height: 16px;
-  background: radial-gradient(ellipse, rgba(0,0,0,0.5), transparent);
-  border-radius: 50%;
-  filter: blur(4px);
-  z-index: -1;
+.bus-marker-3d::before {
+  content: '🚌';
 }
 
 /* ============================================
-   Control Buttons
+   Route Line Popup
+   ============================================ */
+.route-popup {
+  background: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+/* ============================================
+   Map Loading Overlay
+   ============================================ */
+.map-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255,255,255,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.map-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #2196f3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Buttons
    ============================================ */
 #locateMeBtn,
-#toggle3DBtn,
-#toggleModelBtn {
+#toggle3DBtn {
   position: absolute;
   right: 20px;
   width: 44px;
@@ -207,8 +151,7 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  transition: all 0.2s ease;
-  user-select: none;
+  transition: all 0.2s;
 }
 
 #locateMeBtn {
@@ -219,23 +162,10 @@
   bottom: 160px;
 }
 
-#toggleModelBtn {
-  bottom: 220px;
-  font-size: 20px;
-  font-weight: bold;
-}
-
 #locateMeBtn:hover,
-#toggle3DBtn:hover,
-#toggleModelBtn:hover {
+#toggle3DBtn:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  transform: scale(1.08);
-}
-
-#locateMeBtn:active,
-#toggle3DBtn:active,
-#toggleModelBtn:active {
-  transform: scale(0.98);
+  transform: scale(1.05);
 }
 
 #toggle3DBtn.active {
@@ -243,154 +173,24 @@
   color: white;
 }
 
-#toggleModelBtn.active {
-  background: #4caf50;
-  color: white;
-}
-
-/* Button labels on hover */
-#locateMeBtn::after,
-#toggle3DBtn::after,
-#toggleModelBtn::after {
-  content: attr(title);
-  position: absolute;
-  right: 55px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(0,0,0,0.85);
-  color: white;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-#locateMeBtn:hover::after,
-#toggle3DBtn:hover::after,
-#toggleModelBtn:hover::after {
-  opacity: 1;
-}
-
 /* ============================================
-   Mapbox Controls Styling
+   Mapbox Controls
    ============================================ */
 .mapboxgl-ctrl-group {
   background: white;
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
-  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
-.mapboxgl-ctrl-group button {
+.mapboxgl-ctrl button {
   width: 36px;
   height: 36px;
-  border: none;
 }
 
-.mapboxgl-ctrl-group button:hover {
-  background: #f5f5f5;
-}
-
-.mapboxgl-ctrl-compass {
-  background-image: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"%3E%3Cpath d="M14.5 2L18 10l8 3.5-8 3.5-3.5 8-3.5-8L3 13.5l8-3.5z" fill="%23333"/%3E%3C/svg%3E');
-}
-
-/* Scale bar */
-.mapboxgl-ctrl-scale {
-  background: rgba(255, 255, 255, 0.9);
-  font-size: 11px;
-  font-weight: 600;
-  border: 2px solid rgba(0, 0, 0, 0.1);
-  border-top: none;
-  padding: 2px 6px;
-  border-radius: 0 0 4px 4px;
-}
-
-/* ============================================
-   Loading indicator
-   ============================================ */
-.mapboxgl-ctrl-logo {
-  pointer-events: none;
-}
-
-/* Hide Mapbox attribution when not needed */
-.mapboxgl-ctrl-attrib-inner {
+/* Fix Mapbox attribution */
+.mapboxgl-ctrl-attrib {
   font-size: 10px;
-}
-
-/* ============================================
-   Performance optimizations
-   ============================================ */
-.bus-marker-3d,
-.bus-3d-container,
-.bus-3d-model {
-  will-change: transform;
-}
-
-/* Reduce animations on low-end devices */
-@media (prefers-reduced-motion: reduce) {
-  .pulse-ring,
-  .bus-3d-container,
-  #locateMeBtn,
-  #toggle3DBtn,
-  #toggleModelBtn {
-    animation: none;
-    transition: none;
-  }
-}
-
-/* ============================================
-   Mobile optimizations
-   ============================================ */
-@media (max-width: 768px) {
-  #locateMeBtn,
-  #toggle3DBtn,
-  #toggleModelBtn {
-    width: 40px;
-    height: 40px;
-    font-size: 22px;
-    right: 15px;
-  }
-  
-  #locateMeBtn {
-    bottom: 90px;
-  }
-  
-  #toggle3DBtn {
-    bottom: 145px;
-  }
-  
-  #toggleModelBtn {
-    bottom: 200px;
-  }
-  
-  .route-badge-3d {
-    font-size: 11px;
-    padding: 3px 8px;
-  }
-  
-  /* Hide tooltips on mobile */
-  #locateMeBtn::after,
-  #toggle3DBtn::after,
-  #toggleModelBtn::after {
-    display: none;
-  }
-}
-
-/* ============================================
-   Dark mode support
-   ============================================ */
-@media (prefers-color-scheme: dark) {
-  .route-badge-3d {
-    box-shadow: 0 3px 8px rgba(0,0,0,0.7);
-  }
-  
-  .bus-3d-model {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.8);
-  }
+  background: rgba(255,255,255,0.8);
+  border-radius: 4px;
+  padding: 2px 4px;
 }
