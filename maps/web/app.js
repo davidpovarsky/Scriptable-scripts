@@ -24,31 +24,36 @@ const initApp = async function() {
   console.log("🚀 KavNav Mapbox App Starting...");
 
   try {
+    // Initialize ALL components immediately (not dependent on map)
     nearbyPanel = new NearbyPanel();
     bottomSheet = new BottomSheet();
     modeToggle = new ModeToggle(null); // Will set mapManager later
-
+    
     bottomSheet.init();
-
+    
     console.log("✅ UI components initialized");
 
+    // Check for Mapbox token
     if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN_HERE') {
       console.error("❌ No Mapbox token configured!");
       alert("שגיאה: לא הוגדר Mapbox API key\n\nערוך את view.js והוסף את ה-token שלך");
       return;
     }
 
+    // Initialize map with token
     mapManager = new MapManager();
     const map = mapManager.init('map', window.MAPBOX_TOKEN);
 
+    // Wait for map to fully load
     map.on('load', () => {
       console.log("🗺️ Mapbox loaded successfully!");
       mapIsFullyLoaded = true;
-
-      // ✅ חשוב: BusMarkers אחרי שהמפה נטענה ושכבת GLB נוספה
+      
+      // Now initialize map-dependent components
       busMarkers = new BusMarkers(mapManager);
       userLocationManager = new UserLocationManager(mapManager);
-
+      
+      // Update modeToggle with mapManager
       if (modeToggle) {
         modeToggle.mapManager = mapManager;
       }
@@ -58,6 +63,7 @@ const initApp = async function() {
 
       console.log("✅ Map-dependent components initialized");
 
+      // Process any pending data immediately
       if (pendingStaticData) {
         console.log("📦 Processing pending static data from queue...");
         processStaticData(pendingStaticData);
@@ -70,7 +76,8 @@ const initApp = async function() {
         pendingRealtimeData = [];
       }
     });
-
+    
+    // Fallback: process pending data after 5 seconds if map load didn't trigger
     setTimeout(() => {
       if (pendingStaticData) {
         console.log("⏰ Timeout: Processing pending static data (fallback)");
@@ -121,16 +128,16 @@ function processStaticData(payloads) {
     console.warn("⚠️ Invalid payloads for static data");
     return;
   }
-
+  
   console.log("🔧 Processing static data for", payloads.length, "routes");
-
+  
   const allShapeCoords = [];
 
   payloads.forEach(p => {
     const routeId = p.meta.routeId;
-
+    
     console.log(`  📍 Route ${routeId}: ${p.meta.routeNumber || 'N/A'} - ${p.meta.headsign || 'N/A'}`);
-
+    
     staticDataStore.set(routeId, p);
 
     if (p.shapeCoords && p.shapeCoords.length) {
@@ -138,7 +145,8 @@ function processStaticData(payloads) {
     }
 
     const color = getVariedColor(p.meta.operatorColor || "#1976d2", String(routeId));
-
+    
+    // Draw route polyline
     if (mapManager && mapIsFullyLoaded) {
       try {
         mapManager.drawRoutePolyline(p.shapeCoords, color, routeId);
@@ -146,7 +154,8 @@ function processStaticData(payloads) {
         console.error(`  ❌ Error drawing route ${routeId}:`, e);
       }
     }
-
+    
+    // Create route card
     try {
       const card = new RouteCard(routeId, p.meta, p.stops, color);
       card.create();
@@ -156,6 +165,7 @@ function processStaticData(payloads) {
     }
   });
 
+  // Fit bounds to all routes
   if (mapManager && mapIsFullyLoaded && allShapeCoords.length) {
     try {
       mapManager.fitBoundsToShapes(allShapeCoords);
@@ -168,7 +178,7 @@ function processStaticData(payloads) {
 }
 
 // ============================================
-// Process Realtime Data - FIXED (GLB)
+// Process Realtime Data - FIXED
 // ============================================
 function processRealtimeData(updates) {
   if (!Array.isArray(updates)) {
@@ -176,17 +186,22 @@ function processRealtimeData(updates) {
     return;
   }
 
-  // איסוף כל הרכבים הפעילים מכל הקווים
+  // Set לאיסוף כל הרכבים הפעילים בכל הקווים בעדכון הנוכחי
   const activeVehicleIds = new Set();
   let processedCount = 0;
 
   updates.forEach(u => {
     const routeId = u.routeId;
     const staticData = staticDataStore.get(routeId);
-    if (!staticData) return;
+    
+    if (!staticData) {
+      // אם אין מידע סטטי, לא נוכל לצייר, אבל לא נשבור את הלולאה
+      return;
+    }
 
     const color = getVariedColor(staticData.meta.operatorColor || "#1976d2", String(routeId));
 
+    // Update route card
     const card = routeCards.get(routeId);
     if (card) {
       try {
@@ -197,21 +212,31 @@ function processRealtimeData(updates) {
       }
     }
 
-    // ✅ GLB: drawBuses מחזיר Set IDs אמיתי (במקום לבנות לבד)
+    // Draw buses & collect IDs
     if (u.vehicles && u.vehicles.length && busMarkers) {
       try {
-        const ids = busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
-        if (ids && ids.forEach) ids.forEach(id => activeVehicleIds.add(id));
+        // איסוף ה-IDs של הרכבים בקו הזה
+        u.vehicles.forEach(v => {
+           if(v.lat && v.lon) {
+              const vId = v.vehicleId || `${v.routeNumber}-${v.tripId || ''}`;
+              activeVehicleIds.add(vId);
+           }
+        });
+        
+        // ציור/עדכון (מבלי למחוק אחרים)
+        busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
       } catch (e) {
         console.error(`❌ Error drawing buses for route ${routeId}:`, e);
       }
     }
   });
 
+  // כעת, כשיש לנו את כל הרכבים הפעילים מכל הקווים, ננקה את השאר
   if (busMarkers) {
     busMarkers.pruneMarkers(activeVehicleIds);
   }
 
+  // Update nearby panel
   if (nearbyPanel) {
     try {
       nearbyPanel.updateTimes(updates);
@@ -226,16 +251,18 @@ function processRealtimeData(updates) {
 // ============================================
 // פונקציות עזר
 // ============================================
+
 function getVariedColor(baseColor, seed) {
   if (!baseColor) return "#1976d2";
-
+  
+  // If seed is provided, vary the color slightly for visual distinction
   if (seed) {
     let hash = 0;
     for (let i = 0; i < seed.length; i++) {
       hash = ((hash << 5) - hash) + seed.charCodeAt(i);
       hash = hash & hash;
     }
-
+    
     let r, g, b;
     if (baseColor.startsWith('#')) {
       const hex = baseColor.substring(1);
@@ -254,25 +281,27 @@ function getVariedColor(baseColor, seed) {
     } else {
       return baseColor;
     }
-
+    
+    // Apply slight variation (±10%)
     const variation = (hash % 21) - 10;
     r = Math.max(0, Math.min(255, r + variation));
     g = Math.max(0, Math.min(255, g + variation));
     b = Math.max(0, Math.min(255, b + variation));
-
+    
     return `rgb(${r}, ${g}, ${b})`;
   }
-
+  
   return baseColor;
 }
 
 // ============================================
 // פונקציות גלובליות לשימוש Scriptable
 // ============================================
+
 window.initNearbyStops = function(stops) {
   if (!Array.isArray(stops)) return;
   console.log("📍 Initializing nearby stops:", stops.length);
-
+  
   if (nearbyPanel) {
     nearbyPanel.init(stops);
   } else {
@@ -282,7 +311,7 @@ window.initNearbyStops = function(stops) {
 
 window.setUserLocation = function(lat, lon) {
   console.log("👤 Setting user location:", lat, lon);
-
+  
   if (mapManager && mapIsFullyLoaded) {
     mapManager.setUserLocation(lat, lon);
   } else {
