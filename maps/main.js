@@ -1,6 +1,31 @@
 // main.js
 // נקודת הכניסה שמנהלת את הכל - Scriptable בלבד
+// --- importModule polyfill (למקרה שמריצים דרך eval / סביבה בלי importModule) ---
+function safeImportModule(name) {
+  if (typeof importModule === 'function') return importModule(name);
 
+  // fallback: לטעון מהקובץ ולהריץ כ-CommonJS
+  if (typeof FileManager === 'undefined') {
+    throw new Error("importModule is not available and FileManager is not available.");
+  }
+
+  const fm = FileManager.local();
+  const baseDir = fm.documentsDirectory();
+  const path = fm.joinPath(baseDir, name.endsWith('.js') ? name : (name + '.js'));
+
+  if (!fm.fileExists(path)) {
+    throw new Error("Module file not found: " + path);
+  }
+
+  const code = fm.readString(path);
+  const module = { exports: {} };
+  const exports = module.exports;
+
+  const fn = new Function('module', 'exports', code);
+  fn(module, exports);
+
+  return module.exports;
+}
 const config = importModule('config');
 const utils = importModule('utils');
 const dataService = importModule('data');
