@@ -120,6 +120,59 @@ class BusMarkers {
       render: function(gl, matrix) {
         if (!self.scene || !self.camera || !self.renderer) return;
         
+        // Animate all bus models
+        const now = performance.now();
+        self.busModels.forEach((busModel, vehicleId) => {
+          if (!busModel.userData) return;
+          
+          const data = busModel.userData;
+          
+          // Check if animation is active
+          if (data.animationStartTime && data.startLon && data.startLat && data.targetLon && data.targetLat) {
+            const elapsed = now - data.animationStartTime;
+            const progress = Math.min(elapsed / data.animationDuration, 1);
+            
+            // Easing function (Ease Out Quad) - same as original
+            const eased = progress * (2 - progress);
+            
+            // Interpolate position
+            const currentLon = data.startLon + (data.targetLon - data.startLon) * eased;
+            const currentLat = data.startLat + (data.targetLat - data.startLat) * eased;
+            
+            // Update current position
+            data.currentLon = currentLon;
+            data.currentLat = currentLat;
+            
+            // Convert to Mercator and update model position
+            const mc = mapboxgl.MercatorCoordinate.fromLngLat(
+              { lng: currentLon, lat: currentLat },
+              self.MODEL_ALT_METERS
+            );
+            const s = mc.meterInMercatorCoordinateUnits();
+            
+            busModel.position.set(
+              mc.x + self.OFFSET_EAST_M * s,
+              mc.y - self.OFFSET_NORTH_M * s,
+              mc.z + self.OFFSET_UP_M * s
+            );
+            
+            // Update scale
+            const finalScale = self.MODEL_SCALE * s * self.SCALE_MUL;
+            busModel.scale.set(finalScale, finalScale, finalScale);
+            
+            // Update badge position
+            const badge = self.routeBadges.get(vehicleId);
+            if (badge) {
+              badge.setLngLat([currentLon, currentLat]);
+            }
+            
+            // Clear animation when complete
+            if (progress >= 1) {
+              data.animationStartTime = null;
+            }
+          }
+        });
+        
         // Update camera matrix
         self.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix);
         
@@ -232,45 +285,57 @@ class BusMarkers {
       this.busModels.set(vehicleId, busModel);
       console.log(`🚌 Created GLB model for bus ${vehicleId}`);
       
-      // Add route number badge as a sprite/HTML element overlay
-      // We'll store the route number in userData for display
-      busModel.userData = { routeNumber, color };
+      // Store initial position
+      const mc = mapboxgl.MercatorCoordinate.fromLngLat(
+        { lng: lon, lat: lat },
+        this.MODEL_ALT_METERS
+      );
+      const s = mc.meterInMercatorCoordinateUnits();
+      
+      busModel.position.set(
+        mc.x + this.OFFSET_EAST_M * s,
+        mc.y - this.OFFSET_NORTH_M * s,
+        mc.z + this.OFFSET_UP_M * s
+      );
+      
+      const finalScale = this.MODEL_SCALE * s * this.SCALE_MUL;
+      busModel.scale.set(finalScale, finalScale, finalScale);
+      
+      // Store userData for animation
+      busModel.userData = { 
+        routeNumber, 
+        color,
+        targetLon: lon,
+        targetLat: lat,
+        currentLon: lon,
+        currentLat: lat,
+        animationStartTime: null
+      };
     }
     
     // Get bus data for smoothing
     const data = this.busData.get(vehicleId);
     if (!data) return;
     
-    // Convert to Mercator coordinates
-    const mc = mapboxgl.MercatorCoordinate.fromLngLat(
-      { lng: lon, lat: lat },
-      this.MODEL_ALT_METERS
+    // Check if position changed significantly
+    const oldLon = busModel.userData.currentLon || lon;
+    const oldLat = busModel.userData.currentLat || lat;
+    const distance = Math.sqrt(
+      Math.pow(lon - oldLon, 2) + Math.pow(lat - oldLat, 2)
     );
-    const s = mc.meterInMercatorCoordinateUnits();
     
-    // Target position
-    const targetX = mc.x + this.OFFSET_EAST_M * s;
-    const targetY = mc.y - this.OFFSET_NORTH_M * s;
-    const targetZ = mc.z + this.OFFSET_UP_M * s;
-    
-    // Smooth animation (lerp) instead of instant position
-    const lerpFactor = 0.15; // Smoothing factor (0.1 = very smooth, 0.5 = fast)
-    
-    if (busModel.position.x === 0 && busModel.position.y === 0) {
-      // First time - set position immediately
-      busModel.position.set(targetX, targetY, targetZ);
-    } else {
-      // Animate smoothly to new position
-      busModel.position.x += (targetX - busModel.position.x) * lerpFactor;
-      busModel.position.y += (targetY - busModel.position.y) * lerpFactor;
-      busModel.position.z += (targetZ - busModel.position.z) * lerpFactor;
+    // Only animate if moved significantly (> 0.00001 degrees)
+    if (distance > 0.00001) {
+      // Start new animation
+      busModel.userData.startLon = oldLon;
+      busModel.userData.startLat = oldLat;
+      busModel.userData.targetLon = lon;
+      busModel.userData.targetLat = lat;
+      busModel.userData.animationStartTime = performance.now();
+      busModel.userData.animationDuration = 2000; // 2 seconds like original
     }
     
-    // Scale
-    const finalScale = this.MODEL_SCALE * s * this.SCALE_MUL;
-    busModel.scale.set(finalScale, finalScale, finalScale);
-    
-    // Rotation with quaternion (smooth, no flips)
+    // Update rotation with quaternion (smooth, no flips)
     let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG;
     
     if (data.yawDegSmoothed == null) {
@@ -287,10 +352,6 @@ class BusMarkers {
     this.qYaw.setFromAxisAngle(this.axisZ, -yawRad);
     this.qOut.copy(this.qYaw).multiply(this.qBase);
     busModel.quaternion.copy(this.qOut);
-    
-    // Note: Route number badge will need to be added as HTML overlay
-    // since Three.js doesn't easily support text on 3D models
-    // We'll handle this in the render loop or with a separate marker
     
     // Create/update HTML badge marker for route number
     if (routeNumber) {
@@ -324,10 +385,8 @@ class BusMarkers {
           .addTo(this.map);
         
         this.routeBadges.set(vehicleId, badge);
-      } else {
-        // Update position
-        badge.setLngLat([lon, lat]);
       }
+      // Badge position will be updated in animation loop
     }
   }
 
