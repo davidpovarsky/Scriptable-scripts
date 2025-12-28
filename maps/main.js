@@ -211,22 +211,32 @@ module.exports.run = async function(argsObj) {
   // 🆕 6. רענון זמן אמת - כעת מבוסס על תחנות!
   // ===================================================================
   
+
+
+
+
+
+
+
+
+  
   let keepRefreshing = true;
+  let refreshCount = 0;
 
   async function pushRealtimeUpdate() {
+    refreshCount++;
+    const startTime = Date.now();
+    
     try {
-      // 🔹 במקום לקרוא ל-fetchRealtimeForRoutes (הישנה),
-      //    נקרא ל-fetchRealtimeForRoutesFromStops (החדשה)
+      console.log(`🔄 Refresh #${refreshCount} starting...`);
       
       let fullData;
-      
       if (nearestStops && nearestStops.length > 0) {
-        // 🆕 יש תחנות קרובות - נשתמש בהן
-        console.log("Fetching realtime from stops:", nearestStops.map(s => s.stopCode).join(', '));
+        console.log(`   Fetching from ${nearestStops.length} stops:`, 
+                    nearestStops.map(s => s.stopCode).join(', '));
         fullData = await dataService.fetchRealtimeForRoutesFromStops(routesStatic, nearestStops);
       } else {
-        // 🔄 fallback: אין תחנות (התראה?) - נשתמש בשיטה הישנה
-        console.log("No stops available, using old method (routeCode)");
+        console.log(`   Using old method (routeCode)`);
         fullData = await dataService.fetchRealtimeForRoutes(routesStatic);
       }
       
@@ -239,27 +249,50 @@ module.exports.run = async function(argsObj) {
       const jsUpdate = `window.updateRealtimeData(${JSON.stringify(lightPayload)})`;
       await wv.evaluateJavaScript(jsUpdate, false);
       
+      const elapsed = Date.now() - startTime;
+      console.log(`✅ Refresh #${refreshCount} completed in ${elapsed}ms`);
+      
     } catch (e) {
-      console.error("Error on realtime refresh:", e);
+      console.error(`❌ Refresh #${refreshCount} error:`, e);
     }
   }
 
   async function refreshLoop() {
+    console.log(`🔁 Refresh loop started (interval: ${config.REFRESH_INTERVAL_MS}ms)`);
+    
+    let iteration = 0;
     while (keepRefreshing) {
+      iteration++;
+      console.log(`\n--- Loop iteration #${iteration} ---`);
+      
       await pushRealtimeUpdate();
-      if (!keepRefreshing) break;
+      
+      if (!keepRefreshing) {
+        console.log("🛑 Stopping (keepRefreshing = false)");
+        break;
+      }
+      
+      console.log(`⏳ Sleeping for ${config.REFRESH_INTERVAL_MS}ms...`);
       await utils.sleep(config.REFRESH_INTERVAL_MS);
+      console.log(`⏰ Sleep ended, starting next refresh`);
     }
+    
+    console.log("🏁 Refresh loop ended");
   }
 
-  // התחלת הלולאה
-  await pushRealtimeUpdate();
-  const loopPromise = refreshLoop();
-
+  // 🔥 תיקון: רענון ראשוני רק אחרי הצגת ה-WebView!
   if (FROM_NOTIFICATION) await wv.present();
   else await wv.present(true);
 
+  // עכשיו מתחילים את הרענונים
+  await pushRealtimeUpdate();  // רענון ראשוני
+  const loopPromise = refreshLoop();  // לולאה
+
+  // המתן לסגירת החלון (זה חוסם עד שהמשתמש סוגר)
+  // כשהמשתמש סוגר, המשתנה keepRefreshing נשאר true!
+  
   // סיום
   keepRefreshing = false;
+  console.log("👋 App window closed, stopping refresh loop");
   try { await loopPromise; } catch (e) {}
 };
