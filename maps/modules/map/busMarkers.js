@@ -12,7 +12,7 @@ class BusMarkers {
     this.GLB_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb";
 
     // הגדרות כיוון המודל
-    this.MODEL_YAW_OFFSET_DEG = 90; // התאם לפי הצורך: 0, 90, 180, 270
+    this.MODEL_YAW_OFFSET_DEG = 0; // התאם לפי הצורך: 0, 90, 180, 270
 
     // הגדרות סיבוב בסיס (roll, pitch, yaw) במעלות
     this.MODEL_BASE_ORIENTATION = [0, 0, 0]; // [roll, pitch, yaw]
