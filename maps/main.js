@@ -26,10 +26,10 @@ function safeImportModule(name) {
 
   return module.exports;
 }
-const config = importModule('config');
-const utils = importModule('utils');
-const dataService = importModule('data');
-const viewService = importModule('view');
+const config = safeImportModule('config');
+const utils = safeImportModule('utils');
+const dataService = safeImportModule('data');
+const viewService = safeImportModule('view');
 
 // main.js - תיקון סופי (הפעם באמת!)
 
