@@ -217,11 +217,15 @@ function processRealtimeData(updates) {
       try {
         // איסוף ה-IDs של הרכבים בקו הזה
         u.vehicles.forEach(v => {
-  const hasRealPos = (v.lat && v.lon);
-  const hasLinePos = (typeof v.positionOnLine === "number");
+  const hasRealPos = (v && v.lat && v.lon);
+  const hasLinePos = (v && typeof v.positionOnLine === "number");
+
   if (hasRealPos || hasLinePos) {
-    const vId = (v.vehicleId ?? v.vid ?? v.tripId ?? `${v.routeNumber}-${v.tripId || ''}`);
-    activeVehicleIds.add(String(vId));
+    const vId = (busMarkers && typeof busMarkers.getVehicleId === "function")
+      ? busMarkers.getVehicleId(v)
+      : (v.vehicleId ?? v.tripId ?? `${v.routeNumber}-${v.tripId || ''}`);
+
+    if (vId != null) activeVehicleIds.add(String(vId));
   }
 });
         
