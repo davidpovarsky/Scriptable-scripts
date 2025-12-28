@@ -253,16 +253,26 @@ module.exports.run = async function(argsObj) {
   console.log("🏁 Refresh loop ended");
 }
   // ===================================================================
-  // 🎯 הסדר הנכון: הפעלת רענונים לפני present()
+  // 🎯 הסדר המתוקן: רענון ראשוני → present() → לולאה ברקע
   // ===================================================================
   
-  // התחל את הרענון הראשוני (אסינכרונית - לא ממתין!)
+  // 1. רענון ראשוני לפני הצגת החלון
   await pushRealtimeUpdate();
-const loopPromise = refreshLoop();
-  // עכשיו הצג את החלון (זה חוסם עד סגירה)
-  if (FROM_NOTIFICATION) await wv.present();
-  else await wv.present(true);
-
+  
+  // 2. הצג את החלון (לא חוסם!)
+  let presentPromise;
+  if (FROM_NOTIFICATION) {
+    presentPromise = wv.present();
+  } else {
+    presentPromise = wv.present(true);
+  }
+  
+  // 3. התחל לולאת רענון ברקע (עם המתנה של 10 שניות לפני הרענון הבא)
+  const loopPromise = refreshLoop();
+  
+  // 4. חכה לסגירת החלון
+  await presentPromise;
+  
   // כשמגיעים לכאן, המשתמש סגר את החלון
   keepRefreshing = false;
   console.log("👋 App window closed, stopping refresh loop...");
