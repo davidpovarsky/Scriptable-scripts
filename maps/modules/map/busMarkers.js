@@ -72,16 +72,16 @@ class BusMarkers {
     // Wait for map to be fully loaded
     const initSource = () => {
       try {
-        // Add model source if it doesn't exist
+        // Add model source - like the airplane example
         if (!this.map.getSource('buses-3d-source')) {
           this.map.addSource('buses-3d-source', {
             type: 'model',
-            models: {} // Start with empty models, will add buses dynamically
+            models: {} // Start with empty, will add buses dynamically
           });
           console.log("✅ Model source 'buses-3d-source' added");
         }
 
-        // Add model layer if it doesn't exist
+        // Add model layer with proper scaling like airplane
         if (!this.map.getLayer('buses-3d-layer')) {
           this.map.addLayer({
             id: 'buses-3d-layer',
@@ -96,7 +96,6 @@ class BusMarkers {
                 15, ['literal', [5.0, 5.0, 5.0]],
                 18, ['literal', [1.0, 1.0, 1.0]]
               ],
-              'model-rotation': [0, 0, 0], // Will be updated per bus
               'model-opacity': 1.0
             }
           });
@@ -197,7 +196,6 @@ class BusMarkers {
       }
 
       // Calculate target yaw (bearing + offsets)
-      // bearing is already 0=North, 90=East
       let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DEG;
 
       // Smooth yaw rotation
@@ -214,12 +212,27 @@ class BusMarkers {
         Math.pow(lon - oldLon, 2) + Math.pow(lat - oldLat, 2)
       );
 
+      // Only start animation if position actually changed
       if (distance > 0.00001) {
         data.startLon = oldLon;
         data.startLat = oldLat;
         data.targetLon = lon;
         data.targetLat = lat;
         data.animationStartTime = performance.now();
+        
+        // Start animation loop ONLY when there's actual movement
+        if (!this._animationFrameId) {
+          this.startAnimationLoop();
+        }
+      } else {
+        // No movement - just update the model position once
+        const currentModels = modelSource._data?.models || {};
+        currentModels[vehicleId] = {
+          uri: this.GLB_URL,
+          position: [data.currentLon, data.currentLat],
+          orientation: [0, 0, data.yawDegSmoothed]
+        };
+        modelSource.setModels(currentModels);
       }
 
       this._debugMaybeLogRotation(vehicleId, bearing, targetYawDeg, data.yawDegSmoothed);
@@ -257,18 +270,14 @@ class BusMarkers {
         }
       }
 
-      // Start animation loop if not already running
-      if (!this._animationFrameId) {
-        this.startAnimationLoop();
-      }
-
     } catch (e) {
       console.error("❌ Error drawing 3D bus model:", e);
     }
   }
 
   startAnimationLoop() {
-    const animate = () => {
+    // Animation loop - only runs when there are active animations
+    const frame = () => {
       const now = performance.now();
       const modelSource = this.map.getSource('buses-3d-source');
       
@@ -277,13 +286,12 @@ class BusMarkers {
         return;
       }
 
-      const currentModels = modelSource._data?.models || {};
-      const updatedModels = {};
       let hasActiveAnimations = false;
+      const currentModels = modelSource._data?.models || {};
 
+      // Update ONLY buses that are currently animating
       this.busData.forEach((data, vehicleId) => {
-        // Animate position if needed
-        if (data.animationStartTime && data.startLon && data.startLat && data.targetLon && data.targetLat) {
+        if (data.animationStartTime) {
           const elapsed = now - data.animationStartTime;
           const progress = Math.min(elapsed / data.animationDuration, 1);
           const eased = progress * (2 - progress); // ease-out
@@ -297,35 +305,34 @@ class BusMarkers {
             badge.setLngLat([data.currentLon, data.currentLat]);
           }
 
+          // Update model position
+          currentModels[vehicleId] = {
+            uri: this.GLB_URL,
+            position: [data.currentLon, data.currentLat],
+            orientation: [0, 0, data.yawDegSmoothed || 0]
+          };
+
           if (progress >= 1) {
             data.animationStartTime = null;
           } else {
             hasActiveAnimations = true;
           }
         }
-
-        // Always update model position (even when not animating)
-        updatedModels[vehicleId] = {
-          uri: this.GLB_URL,
-          position: [data.currentLon, data.currentLat],
-          orientation: [0, 0, data.yawDegSmoothed || 0]
-        };
       });
 
-      // Update all models at once
-      if (Object.keys(updatedModels).length > 0) {
-        modelSource.setModels(updatedModels);
-      }
+      // Update models only if we modified them
+      modelSource.setModels(currentModels);
 
-      // Continue loop if there are buses (always run when buses exist)
-      if (this.busData.size > 0) {
-        this._animationFrameId = requestAnimationFrame(animate);
+      // Continue ONLY if there are active animations
+      if (hasActiveAnimations) {
+        this._animationFrameId = requestAnimationFrame(frame);
       } else {
         this._animationFrameId = null;
       }
     };
 
-    this._animationFrameId = requestAnimationFrame(animate);
+    // Start the frame loop
+    this._animationFrameId = requestAnimationFrame(frame);
   }
 
   draw2DBusFallback(vehicleId, lon, lat, bearing, color, routeNumber) {
