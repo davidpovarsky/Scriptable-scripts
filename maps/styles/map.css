@@ -1,4 +1,4 @@
-/* styles/map.css - 3D version with Mapbox Model Source support */
+/* styles/map.css - Minimal 3D version */
 
 /* ============================================
    Map Container
@@ -62,7 +62,7 @@
 }
 
 /* ============================================
-   3D Bus Markers (2D Fallback)
+   3D Bus Markers
    ============================================ */
 .bus-marker-3d {
   width: 50px;
@@ -140,7 +140,7 @@
   border: 1px solid #555;
 }
 
-/* Route badge for 2D fallback */
+/* Route badge */
 .route-badge-3d {
   position: absolute;
   top: -20px;
@@ -157,7 +157,7 @@
   z-index: 10;
 }
 
-/* Shadow for 2D fallback */
+/* Shadow */
 .bus-3d-shadow {
   position: absolute;
   bottom: -5px;
@@ -169,22 +169,6 @@
   border-radius: 50%;
   filter: blur(3px);
   z-index: -1;
-}
-
-/* ============================================
-   Route badges for 3D Model buses
-   ============================================ */
-.route-badge-3d-model {
-  /* Styles are set inline in JS, but this provides defaults */
-  background: white;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-weight: bold;
-  font-size: 11px;
-  white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  pointer-events: none;
-  user-select: none;
 }
 
 /* ============================================
@@ -240,24 +224,4 @@
 .mapboxgl-ctrl-group button {
   width: 36px;
   height: 36px;
-}
-
-/* ============================================
-   Loading Indicator
-   ============================================ */
-.bus-loading {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
-  padding: 20px;
-  border-radius: 8px;
-  z-index: 10000;
-  display: none;
-}
-
-.bus-loading.show {
-  display: block;
 }
