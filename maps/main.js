@@ -31,21 +31,19 @@ const utils = importModule('utils');
 const dataService = importModule('data');
 const viewService = importModule('view');
 
-module.exports.run = async function(argsObj) {
+// main.js - תיקון סופי (הפעם באמת!)
 
+module.exports.run = async function(argsObj) {
   const FROM_NOTIFICATION = !!(argsObj && argsObj.notification);
   const routeDate = utils.isoDateTodayLocal();
 
-  // 1. קביעת מסלולים ראשונית
   let ROUTES = Array.isArray(config.DEFAULT_ROUTES)
     ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
     : [];
 
-  // אם הגיעה התראה עם מסלולים → נכבד אותה
   if (argsObj && argsObj.notification && argsObj.notification.userInfo) {
     try {
       const ui = argsObj.notification.userInfo;
-
       if (Array.isArray(ui.routes) && ui.routes.length) {
         ROUTES = ui.routes
           .map((r) => {
@@ -67,19 +65,14 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // נשמור מיקום משתמש + תחנות קרובות
   let userLat = null;
   let userLon = null;
-  let nearestStops = []; // 🆕 מערך התחנות הקרובות
+  let nearestStops = [];
 
-  // 2. קווים סביבי אוטומטית
   if (!FROM_NOTIFICATION) {
-
-    // ניסיון מהמכשיר
     try {
       Location.setAccuracyToBest();
       const loc = await Location.current();
-
       if (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number") {
         userLat = loc.latitude;
         userLon = loc.longitude;
@@ -89,7 +82,6 @@ module.exports.run = async function(argsObj) {
       console.error("Device location failed:", e);
     }
 
-    // fallback לשרת
     if (userLat === null || userLon === null) {
       console.log("Using fallback location…");
       const fallback = await utils.loadFallbackLocation();
@@ -98,10 +90,9 @@ module.exports.run = async function(argsObj) {
       console.log("Server location:", fallback);
     }
 
-    // אם עדיין אין מיקום — דילוג
     if (userLat != null && userLon != null) {
       try {
-        nearestStops = await dataService.findNearestStops(userLat, userLon, 3); // 🆕 שמירת התחנות
+        nearestStops = await dataService.findNearestStops(userLat, userLon, 3);
         const stopCodes = nearestStops
           .map((s) => (s && s.stopCode ? String(s.stopCode) : ""))
           .filter(Boolean);
@@ -122,22 +113,18 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // אם עדיין אין מסלולים — ברירת מחדל
   if (!Array.isArray(ROUTES) || !ROUTES.length) {
     ROUTES = Array.isArray(config.DEFAULT_ROUTES)
       ? config.DEFAULT_ROUTES.map(r => ({ routeId: r.routeId }))
       : [];
   }
 
-  // 3. יצירת WebView
   const wv = new WebView();
   const html = viewService.getHtml();
   await wv.loadHTML(html);
   
-  // --- הוספה חדשה: הזרקת התחנות הקרובות לתצוגה הדואלית ---
   if (nearestStops && nearestStops.length) {
     try {
-      // מעבירים את המערך כמו שהוא ל-View כדי ליצור את הבועות
       const jsStops = `window.initNearbyStops && window.initNearbyStops(${JSON.stringify(nearestStops)});`;
       await wv.evaluateJavaScript(jsStops, false);
       console.log("Injected nearby stops to View");
@@ -146,7 +133,6 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // העברת מיקום המשתמש (אם קיים) ל-HTML
   if (userLat != null && userLon != null) {
     try {
       const jsUserLoc = `window.setUserLocation && window.setUserLocation(${userLat}, ${userLon});`;
@@ -156,7 +142,6 @@ module.exports.run = async function(argsObj) {
     }
   }
 
-  // 4. הזרקת stops.json
   try {
     const fm = FileManager.iCloud();
     const stopsFile = fm.joinPath(fm.documentsDirectory(), "stops.json");
@@ -170,7 +155,6 @@ module.exports.run = async function(argsObj) {
     console.error("Failed injecting stops.json:", e);
   }
 
-  // 5. נתוני בסיס (סטטיים)
   let routesStatic = [];
   try {
     routesStatic = await dataService.fetchStaticRoutes(ROUTES, routeDate);
@@ -178,14 +162,12 @@ module.exports.run = async function(argsObj) {
     console.error("Error fetching static routes:", e);
   }
 
-  // אם אין מסלולים כלל - יציאה
   if (!routesStatic.length) {
     if (FROM_NOTIFICATION) await wv.present();
     else await wv.present(true);
     return;
   }
 
-  // --- שליחת הנתונים הכבדים (מפה ותחנות) פעם אחת בלבד ---
   try {
     const staticPayload = routesStatic.map(r => ({
       meta: {
@@ -208,22 +190,15 @@ module.exports.run = async function(argsObj) {
   }
 
   // ===================================================================
-  // 🆕 6. רענון זמן אמת - כעת מבוסס על תחנות!
+  // 🔥 לולאת רענון - גרסה מתוקנת סופית!
   // ===================================================================
-  
-
-
-
-
-
-
-
-
   
   let keepRefreshing = true;
   let refreshCount = 0;
 
   async function pushRealtimeUpdate() {
+    if (!keepRefreshing) return;
+    
     refreshCount++;
     const startTime = Date.now();
     
@@ -232,11 +207,11 @@ module.exports.run = async function(argsObj) {
       
       let fullData;
       if (nearestStops && nearestStops.length > 0) {
-        console.log(`   Fetching from ${nearestStops.length} stops:`, 
-                    nearestStops.map(s => s.stopCode).join(', '));
+        const stopsList = nearestStops.map(s => s.stopCode).join(', ');
+        console.log(`   Fetching from ${nearestStops.length} stops: ${stopsList}`);
         fullData = await dataService.fetchRealtimeForRoutesFromStops(routesStatic, nearestStops);
       } else {
-        console.log(`   Using old method (routeCode)`);
+        console.log(`   No stops available, using old method (routeCode)`);
         fullData = await dataService.fetchRealtimeForRoutes(routesStatic);
       }
       
@@ -259,40 +234,49 @@ module.exports.run = async function(argsObj) {
 
   async function refreshLoop() {
     console.log(`🔁 Refresh loop started (interval: ${config.REFRESH_INTERVAL_MS}ms)`);
+    console.log(`   Monitoring ${nearestStops.length} stops`);
     
     let iteration = 0;
     while (keepRefreshing) {
       iteration++;
-      console.log(`\n--- Loop iteration #${iteration} ---`);
       
       await pushRealtimeUpdate();
       
       if (!keepRefreshing) {
-        console.log("🛑 Stopping (keepRefreshing = false)");
+        console.log("🛑 Loop stopping (keepRefreshing = false)");
         break;
       }
       
-      console.log(`⏳ Sleeping for ${config.REFRESH_INTERVAL_MS}ms...`);
+      console.log(`⏳ Waiting ${config.REFRESH_INTERVAL_MS}ms until next refresh...`);
       await utils.sleep(config.REFRESH_INTERVAL_MS);
-      console.log(`⏰ Sleep ended, starting next refresh`);
     }
     
     console.log("🏁 Refresh loop ended");
   }
 
-  // 🔥 תיקון: רענון ראשוני רק אחרי הצגת ה-WebView!
+  // ===================================================================
+  // 🎯 הסדר הנכון: הפעלת רענונים לפני present()
+  // ===================================================================
+  
+  // התחל את הרענון הראשוני (אסינכרונית - לא ממתין!)
+  pushRealtimeUpdate().catch(e => console.error("Initial refresh error:", e));
+  
+  // התחל את לולאת הרענון (ברקע)
+  const loopPromise = refreshLoop();
+
+  // עכשיו הצג את החלון (זה חוסם עד סגירה)
   if (FROM_NOTIFICATION) await wv.present();
   else await wv.present(true);
 
-  // עכשיו מתחילים את הרענונים
-  await pushRealtimeUpdate();  // רענון ראשוני
-  const loopPromise = refreshLoop();  // לולאה
-
-  // המתן לסגירת החלון (זה חוסם עד שהמשתמש סוגר)
-  // כשהמשתמש סוגר, המשתנה keepRefreshing נשאר true!
-  
-  // סיום
+  // כשמגיעים לכאן, המשתמש סגר את החלון
   keepRefreshing = false;
-  console.log("👋 App window closed, stopping refresh loop");
-  try { await loopPromise; } catch (e) {}
+  console.log("👋 App window closed, stopping refresh loop...");
+  
+  try { 
+    await loopPromise; 
+  } catch (e) {
+    console.error("Loop cleanup error:", e);
+  }
+  
+  console.log("✅ KavNav completed!");
 };
