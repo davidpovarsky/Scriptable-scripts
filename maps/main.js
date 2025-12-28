@@ -257,11 +257,8 @@ module.exports.run = async function(argsObj) {
   // ===================================================================
   
   // התחל את הרענון הראשוני (אסינכרונית - לא ממתין!)
-  pushRealtimeUpdate().catch(e => console.error("Initial refresh error:", e));
-  
-  // התחל את לולאת הרענון (ברקע)
-  const loopPromise = refreshLoop();
-
+  await pushRealtimeUpdate();
+const loopPromise = refreshLoop();
   // עכשיו הצג את החלון (זה חוסם עד סגירה)
   if (FROM_NOTIFICATION) await wv.present();
   else await wv.present(true);
