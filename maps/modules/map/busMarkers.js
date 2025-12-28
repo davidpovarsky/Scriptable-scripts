@@ -1,28 +1,21 @@
 // modules/map/busMarkers.js
 // אחראי על ציור אוטובוסים תלת-מימדיים על המפה - Mapbox Model Source version
-// משתמש ב-Model Source API של Mapbox (כמו בדוגמת המטוס) במקום Custom Layer
+// גרסה מתוקנת עם עדכון מודלים חלק ללא קפיצות
 
 class BusMarkers {
   constructor(mapManager) {
     this.mapManager = mapManager;
     this.map = mapManager.getMap();
-    this.busMarkers = new Map(); // For tracking bus instances
     this.modelLoaded = false;
 
     // GLB Model URL
     this.GLB_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb";
 
     // הגדרות כיוון המודל
-    // bearing הוא הכיוון שהאוטובוס צריך לנסוע אליו (0°=צפון, 90°=מזרח)
-    // אם המודל שלך פונה "לרוחב" במקור, תזדקק ל-offset של 90°
     this.MODEL_YAW_OFFSET_DEG = 90; // התאם לפי הצורך: 0, 90, 180, 270
 
     // הגדרות סיבוב בסיס (roll, pitch, yaw) במעלות
-    // roll (X): הטיה צידית, pitch (Y): הטיה קדימה/אחורה, yaw (Z): כיוון אופקי
     this.MODEL_BASE_ORIENTATION = [0, 0, 0]; // [roll, pitch, yaw]
-
-    // הגדרות סקאלה - המודל יתאים אוטומטית לזום
-    this.MODEL_BASE_SCALE = 1.0; // גודל בסיס
 
     // Animation settings
     this.ANIMATION_DURATION = 2000; // ms
@@ -33,13 +26,16 @@ class BusMarkers {
 
     // Bus animation data
     this.busData = new Map();
+    
+    // Track all active models - זה החשוב!
+    this.allModels = {}; // אובייקט שמכיל את כל המודלים הפעילים
 
     // Debug
     this.DEBUG_LOG = false;
     this.DEBUG_LOG_INTERVAL = 2000;
     this._lastDebugTime = 0;
 
-    console.log("🚌 BusMarkers initialized (Mapbox Model Source)");
+    console.log("🚌 BusMarkers initialized (Mapbox Model Source - Fixed)");
 
     // Initialize model source when map is ready
     this._initializeModelSource();
@@ -83,7 +79,7 @@ class BusMarkers {
                 ['literal', [1.0, 1.0, 1.0]]
               ],
               'model-type': 'location-indicator',
-              'model-rotation': [0, 0, 0], // יעודכן דינמית
+              'model-rotation': [0, 0, 0],
               'model-opacity': 1.0
             }
           });
@@ -164,6 +160,8 @@ class BusMarkers {
 
       // קבל או צור נתוני אוטובוס
       let data = this.busData.get(vehicleId);
+      const isNewBus = !data;
+      
       if (!data) {
         data = {
           currentLon: lon,
@@ -230,9 +228,8 @@ class BusMarkers {
         data.smoothedBearing = targetBearing;
       }
 
-      // עדכון המודל ב-source
-      const modelSpec = {};
-      modelSpec[vehicleId] = {
+      // עדכון המודל באובייקט allModels
+      this.allModels[vehicleId] = {
         uri: this.GLB_URL,
         position: [currentLon, currentLat],
         orientation: [
@@ -242,12 +239,11 @@ class BusMarkers {
         ]
       };
 
-      // עדכון ה-models ב-source
-      modelSource.setModels(modelSpec);
+      // עדכון ה-models ב-source - כעת עם כל המודלים!
+      modelSource.setModels(this.allModels);
 
-      // בדיקה האם זה המודל הראשון - אם כן, הוסף אותו למפה
-      if (!this.busMarkers.has(vehicleId)) {
-        this.busMarkers.set(vehicleId, true);
+      // לוג רק לאוטובוסים חדשים
+      if (isNewBus) {
         console.log(`✅ Bus model ${vehicleId} added to map`);
       }
 
@@ -293,7 +289,7 @@ class BusMarkers {
       badge = new mapboxgl.Marker({
         element: badgeEl,
         anchor: 'bottom',
-        offset: [0, -15] // מעל המודל
+        offset: [0, -15]
       })
         .setLngLat([lon, lat])
         .addTo(this.map);
@@ -325,28 +321,20 @@ class BusMarkers {
       const modelSource = this.map.getSource('buses-model-source');
       if (!modelSource) return;
 
-      // מחק מודלים שאינם פעילים
-      const modelsToKeep = {};
-      this.busMarkers.forEach((_, id) => {
-        if (activeVehicleIds.has(id)) {
-          const data = this.busData.get(id);
-          if (data) {
-            modelsToKeep[id] = {
-              uri: this.GLB_URL,
-              position: [data.currentLon, data.currentLat],
-              orientation: [
-                this.MODEL_BASE_ORIENTATION[0],
-                this.MODEL_BASE_ORIENTATION[1],
-                data.smoothedBearing
-              ]
-            };
-          }
-        } else {
-          this.busMarkers.delete(id);
+      // מחק מודלים שאינם פעילים מ-allModels
+      let removedCount = 0;
+      Object.keys(this.allModels).forEach(id => {
+        if (!activeVehicleIds.has(id)) {
+          delete this.allModels[id];
+          removedCount++;
         }
       });
 
-      modelSource.setModels(modelsToKeep);
+      // עדכן את כל המודלים ב-source
+      if (removedCount > 0) {
+        modelSource.setModels(this.allModels);
+        console.log(`🗑️ Removed ${removedCount} inactive bus models`);
+      }
 
       // מחק badges
       this.routeBadges.forEach((badge, id) => {
@@ -376,10 +364,9 @@ class BusMarkers {
     try {
       const modelSource = this.map.getSource('buses-model-source');
       if (modelSource) {
+        this.allModels = {};
         modelSource.setModels({});
       }
-
-      this.busMarkers.clear();
 
       this.routeBadges.forEach(badge => {
         try { if (badge && badge.remove) badge.remove(); } catch (e) {}
@@ -393,6 +380,67 @@ class BusMarkers {
     }
   }
 
+  // Animation loop - חשוב! צריך לקרוא לזה
+  animate() {
+    if (!this.map || !this.modelLoaded) {
+      requestAnimationFrame(() => this.animate());
+      return;
+    }
+
+    try {
+      const modelSource = this.map.getSource('buses-model-source');
+      if (!modelSource) {
+        requestAnimationFrame(() => this.animate());
+        return;
+      }
+
+      let updated = false;
+      const now = performance.now();
+
+      // עדכן את כל האוטובוסים שבאנימציה
+      this.busData.forEach((data, vehicleId) => {
+        if (data.animationStartTime) {
+          const elapsed = now - data.animationStartTime;
+          const progress = Math.min(elapsed / this.ANIMATION_DURATION, 1);
+          
+          if (progress < 1) {
+            const eased = progress * (2 - progress);
+
+            const currentLon = data.startLon + (data.targetLon - data.startLon) * eased;
+            const currentLat = data.startLat + (data.targetLat - data.startLat) * eased;
+
+            data.currentLon = currentLon;
+            data.currentLat = currentLat;
+
+            // עדכן את המודל
+            if (this.allModels[vehicleId]) {
+              this.allModels[vehicleId].position = [currentLon, currentLat];
+              updated = true;
+            }
+
+            // עדכן את ה-badge
+            const badge = this.routeBadges.get(vehicleId);
+            if (badge) {
+              badge.setLngLat([currentLon, currentLat]);
+            }
+          } else {
+            data.animationStartTime = null;
+          }
+        }
+      });
+
+      // עדכן את ה-source רק אם משהו השתנה
+      if (updated) {
+        modelSource.setModels(this.allModels);
+      }
+
+    } catch (e) {
+      console.error("❌ Animation error:", e);
+    }
+
+    requestAnimationFrame(() => this.animate());
+  }
+
   // Debug helpers
   enableDebugLogging() {
     this.DEBUG_LOG = true;
@@ -404,7 +452,6 @@ class BusMarkers {
     console.log("🔇 Debug logging disabled");
   }
 
-  // Adjust model orientation interactively
   setModelOrientation(roll, pitch, yaw) {
     this.MODEL_BASE_ORIENTATION = [roll, pitch, yaw];
     console.log(`🔧 Model orientation set to [${roll}, ${pitch}, ${yaw}]`);
@@ -413,5 +460,15 @@ class BusMarkers {
   setModelYawOffset(offset) {
     this.MODEL_YAW_OFFSET_DEG = offset;
     console.log(`🔧 Model yaw offset set to ${offset}°`);
+  }
+
+  // Get stats for debugging
+  getStats() {
+    return {
+      totalModels: Object.keys(this.allModels).length,
+      totalBadges: this.routeBadges.size,
+      totalData: this.busData.size,
+      animating: Array.from(this.busData.values()).filter(d => d.animationStartTime).length
+    };
   }
 }
