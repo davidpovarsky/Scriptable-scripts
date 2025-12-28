@@ -217,17 +217,11 @@ function processRealtimeData(updates) {
       try {
         // איסוף ה-IDs של הרכבים בקו הזה
         u.vehicles.forEach(v => {
-  const hasRealPos = (v && v.lat && v.lon);
-  const hasLinePos = (v && typeof v.positionOnLine === "number");
-
-  if (hasRealPos || hasLinePos) {
-    const vId = (busMarkers && typeof busMarkers.getVehicleId === "function")
-      ? busMarkers.getVehicleId(v)
-      : (v.vehicleId ?? v.tripId ?? `${v.routeNumber}-${v.tripId || ''}`);
-
-    if (vId != null) activeVehicleIds.add(String(vId));
-  }
-});
+           if(v.lat && v.lon) {
+              const vId = v.vehicleId || `${v.routeNumber}-${v.tripId || ''}`;
+              activeVehicleIds.add(vId);
+           }
+        });
         
         // ציור/עדכון (מבלי למחוק אחרים)
         busMarkers.drawBuses(u.vehicles, color, staticData.shapeCoords);
