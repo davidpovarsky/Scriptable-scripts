@@ -239,27 +239,24 @@ module.exports.run = async function(argsObj) {
   console.log(`   Monitoring ${nearestStops.length} stops`);
 
   while (keepRefreshing) {
-    console.log(`⏳ Waiting ${intervalMs}ms until next refresh...`);
-    await utils.sleep(intervalMs);
-
+    await pushRealtimeUpdate();
+    
     if (!keepRefreshing) {
       console.log("🛑 Loop stopping (keepRefreshing = false)");
       break;
     }
-
-    await pushRealtimeUpdate();
+    
+    console.log(`⏳ Waiting ${intervalMs}ms until next refresh...`);
+    await utils.sleep(intervalMs);
   }
 
   console.log("🏁 Refresh loop ended");
 }
   // ===================================================================
-  // 🎯 הסדר המתוקן: רענון ראשוני → present() → לולאה ברקע
+  // 🎯 הסדר הנכון: הלולאה מטפלת בכל הרענונים
   // ===================================================================
   
-  // 1. רענון ראשוני לפני הצגת החלון
-  await pushRealtimeUpdate();
-  
-  // 2. הצג את החלון (לא חוסם!)
+  // 1. הצג את החלון (לא חוסם!)
   let presentPromise;
   if (FROM_NOTIFICATION) {
     presentPromise = wv.present();
@@ -267,10 +264,10 @@ module.exports.run = async function(argsObj) {
     presentPromise = wv.present(true);
   }
   
-  // 3. התחל לולאת רענון ברקע (עם המתנה של 10 שניות לפני הרענון הבא)
+  // 2. התחל לולאת רענון ברקע (תעשה גם את הרענון הראשוני)
   const loopPromise = refreshLoop();
   
-  // 4. חכה לסגירת החלון
+  // 3. חכה לסגירת החלון
   await presentPromise;
   
   // כשמגיעים לכאן, המשתמש סגר את החלון
