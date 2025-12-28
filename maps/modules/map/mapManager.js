@@ -1,5 +1,6 @@
 // modules/map/mapManager.js
 // אחראי על אתחול וניהול המפה - Mapbox GL JS
+// תוקן: בועת מיקום עם z-index גבוה
 
 class MapManager {
   constructor() {
@@ -165,12 +166,21 @@ class MapManager {
         <div class="pulse-dot"></div>
       `;
       
+      // ✅ תוקן! הוספת z-index גבוה
+      el.style.zIndex = '9999';
+      
       this.userLocationMarker = new mapboxgl.Marker({
         element: el,
         anchor: 'center'
       })
         .setLngLat([lon, lat])
         .addTo(this.map);
+
+      // ✅ תוקן! וידוא שה-marker מעל הכל
+      const markerElement = this.userLocationMarker.getElement();
+      if (markerElement) {
+        markerElement.style.zIndex = '9999';
+      }
 
       console.log('👤 User location set:', lat, lon);
     } catch (e) {
@@ -344,7 +354,7 @@ class MapManager {
       duration: 1000
     });
     
-    console.log(`🏗️ 3D mode: ${this.is3DEnabled ? 'ON' : 'OFF'}`);
+    console.log(`🗺️ 3D mode: ${this.is3DEnabled ? 'ON' : 'OFF'}`);
   }
 
   getBearing(start, end) {
