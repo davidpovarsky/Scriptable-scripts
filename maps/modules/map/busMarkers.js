@@ -1,326 +1,386 @@
 // modules/map/busMarkers.js
-// Buses: Prefer Mapbox "model" source + setModels() (like the airplane demo),
-// but ALWAYS fallback to CSS markers if not supported.
-// Also: stable vehicle IDs (NO Math.random) so pruneMarkers won't delete everything.
+// אחראי על ציור אוטובוסים תלת-מימדיים על המפה - Mapbox Model Source
+// גרסה משופרת: משתמשת ב-Mapbox Model Source במקום Three.js Custom Layer
 
 class BusMarkers {
   constructor(mapManager) {
     this.mapManager = mapManager;
     this.map = mapManager.getMap();
+    this.busMarkers = new Map();
+    this.modelLoaded = false;
 
-    // --- runtime state ---
-    this.busState = new Map();   // id -> {cur:{lon,lat,bearing}, tgt:{lon,lat,bearing}, routeNumber, lastTs}
-    this._rafRunning = false;
-    this._lastFrameTs = 0;
+    // GLB Model URL
+    this.GLB_URL = "https://raw.githubusercontent.com/davidpovarsky/Scriptable-scripts/3D/maps/Bus4glb.glb";
 
-    // --- renderers ---
-    this.modelMode = false;      // true if model source + setModels available
-    this.busMarkers = new Map(); // fallback CSS markers
-    this.routeBadges = new Map();// optional badge markers
+    // הגדרות כיוונון מודל
+    this.MODEL_YAW_OFFSET_DEG = -51.75;  // הכיוונון הישן שלך
+    this.MODEL_YAW_ALIGN_DEG = 90;       // יישור "קדימה" של המודל (0/90/180/270)
+    
+    // Scale והגדרות מיקום
+    this.MODEL_SCALE = [1, 1, 1];        // [x, y, z] scale
+    this.MODEL_ALT_METERS = 0;           // גובה מעל פני הקרקע
 
-    // --- model source/layer ---
-    this.MODEL_SOURCE_ID = 'buses-model-source';
-    this.MODEL_LAYER_ID  = 'buses-model-layer';
+    // DEBUG logging
+    this.DEBUG_PATH_LOG = true;
+    this.DEBUG_ROT_LOG = true;
+    this.DEBUG_LOG_EVERY_MS = 2000;
+    this._debugLastPathTs = 0;
+    this._debugLastRotTs = 0;
+    this._debugLastPath = null;
 
-    // --- tuning (can be overridden from view.js via window.*) ---
-    this.BUS_GLB_URL = window.BUS_GLB_URL || 'https://docs.mapbox.com/mapbox-gl-js/assets/airplane.glb';
-    this.MODEL_ROLL_DEG  = (typeof window.BUS_MODEL_ROLL_DEG  === 'number') ? window.BUS_MODEL_ROLL_DEG  : 0;
-    this.MODEL_PITCH_DEG = (typeof window.BUS_MODEL_PITCH_DEG === 'number') ? window.BUS_MODEL_PITCH_DEG : 0;
+    // Bus data for smooth animation
+    this.busData = new Map();
 
-    // Like the airplane demo: orientation uses bearing (+90 often needed for forward axis)  [oai_citation:1‡Mapbox](https://docs.mapbox.com/mapbox-gl-js/example/add-3d-model-and-animate-along-route/)
-    this.MODEL_MAP_BEARING_OFFSET_DEG =
-      (typeof window.BUS_MODEL_MAP_BEARING_OFFSET_DEG === 'number') ? window.BUS_MODEL_MAP_BEARING_OFFSET_DEG : 90;
+    // Route number badges
+    this.routeBadges = new Map();
 
-    this.MODEL_YAW_OFFSET_DEG =
-      (typeof window.BUS_MODEL_YAW_OFFSET_DEG === 'number') ? window.BUS_MODEL_YAW_OFFSET_DEG : 0;
+    console.log("🚌 BusMarkers initialized (Mapbox Model Source)");
 
-    this.MODEL_ALT_M =
-      (typeof window.BUS_MODEL_ALT_M === 'number') ? window.BUS_MODEL_ALT_M : 0.0;
-
-    // Zoom scale (tune to your GLB size)
-    this.SCALE_Z12 = (typeof window.BUS_MODEL_SCALE_Z12 === 'number') ? window.BUS_MODEL_SCALE_Z12 : 0.6;
-    this.SCALE_Z16 = (typeof window.BUS_MODEL_SCALE_Z16 === 'number') ? window.BUS_MODEL_SCALE_Z16 : 1.0;
-    this.SCALE_Z20 = (typeof window.BUS_MODEL_SCALE_Z20 === 'number') ? window.BUS_MODEL_SCALE_Z20 : 1.4;
-
-    // smoothing
-    this.POS_HALF_LIFE_MS  = (typeof window.BUS_ANIM_POS_HALF_LIFE_MS  === 'number') ? window.BUS_ANIM_POS_HALF_LIFE_MS  : 350;
-    this.BEAR_HALF_LIFE_MS = (typeof window.BUS_ANIM_BEAR_HALF_LIFE_MS === 'number') ? window.BUS_ANIM_BEAR_HALF_LIFE_MS : 250;
-
-    console.log("🚌 BusMarkers initialized (Model Source + Fallback)");
-
-    this._ensureModelSourceAndLayer();
+    // Initialize when map is ready
+    this.initModelSource();
   }
 
-  // ==========================================================
-  // IMPORTANT: One ID function used everywhere (app.js + draw + prune)
-  // ==========================================================
-  getVehicleId(v) {
-    if (!v || typeof v !== 'object') return null;
-
-    const id =
-      v.vehicleId ??
-      v.vid ??
-      v.id ??
-      v.tripId ??
-      null;
-
-    if (id != null && id !== '') return String(id);
-
-    // fallback stable-ish (NO random)
-    const rn  = (v.routeNumber != null) ? String(v.routeNumber) : 'R';
-    const dir = (v.direction  != null) ? String(v.direction)  : '';
-    const trip= (v.tripId     != null) ? String(v.tripId)     : '';
-    return `${rn}-${dir}-${trip}`.replace(/\s+/g, '');
-  }
-
-  // ==========================================================
-  // Public API
-  // ==========================================================
-  drawBuses(vehicles, color, shapeCoords) {
-    if (!this.map || !Array.isArray(vehicles)) return;
-
-    const shapeLatLngs = Array.isArray(shapeCoords) ? shapeCoords.map(c => [c[0], c[1]]) : [];
+  _debugMaybeLogPath(pathLabel) {
+    if (!this.DEBUG_PATH_LOG) return;
     const now = performance.now();
-
-    for (const v of vehicles) {
-      try {
-        const id = this.getVehicleId(v);
-        if (!id) continue;
-
-        // location
-        let lon = v.lon;
-        let lat = v.lat;
-
-        // fallback: positionOnLine -> point on shape
-        if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
-          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
-          const pt = shapeLatLngs[idx];
-          if (pt) { lon = pt[0]; lat = pt[1]; }
-        }
-
-        if (!lat || !lon) continue;
-
-        // bearing
-        let bearing = (typeof v.bearing === 'number') ? v.bearing : null;
-        if (bearing == null && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
-          bearing = this._bearingFromShape(shapeLatLngs, v.positionOnLine);
-        }
-        if (bearing == null) bearing = 0;
-
-        const prev = this.busState.get(id);
-        if (!prev) {
-          this.busState.set(id, {
-            cur: { lon, lat, bearing },
-            tgt: { lon, lat, bearing },
-            routeNumber: v.routeNumber || '',
-            lastTs: now
-          });
-        } else {
-          prev.tgt.lon = lon;
-          prev.tgt.lat = lat;
-          prev.tgt.bearing = bearing;
-          prev.routeNumber = v.routeNumber || prev.routeNumber || '';
-          prev.lastTs = now;
-        }
-
-      } catch (e) {
-        console.error("❌ drawBuses vehicle error:", (e && e.stack) ? e.stack : String(e));
-      }
-    }
-
-    this._startRAFIfNeeded();
-  }
-
-  pruneMarkers(activeVehicleIds) {
-    if (!(activeVehicleIds instanceof Set)) return;
-
-    // state
-    for (const id of Array.from(this.busState.keys())) {
-      if (!activeVehicleIds.has(id)) this.busState.delete(id);
-    }
-
-    // fallback markers
-    for (const [id, m] of this.busMarkers.entries()) {
-      if (!activeVehicleIds.has(id)) {
-        try { m.remove(); } catch (e) {}
-        this.busMarkers.delete(id);
-      }
-    }
-
-    // badges
-    for (const [id, b] of this.routeBadges.entries()) {
-      if (!activeVehicleIds.has(id)) {
-        try { b.remove(); } catch (e) {}
-        this.routeBadges.delete(id);
-      }
-    }
-
-    // remove missing models
-    if (this.modelMode) this._pushModelsToMap();
-  }
-
-  clearAll() {
-    for (const m of this.busMarkers.values()) { try { m.remove(); } catch (e) {} }
-    for (const b of this.routeBadges.values()) { try { b.remove(); } catch (e) {} }
-    this.busMarkers.clear();
-    this.routeBadges.clear();
-    this.busState.clear();
-
-    if (this.modelMode) {
-      const src = this.map.getSource(this.MODEL_SOURCE_ID);
-      if (src && src.setModels) src.setModels({});
+    if (this._debugLastPath !== pathLabel || (now - this._debugLastPathTs) > this.DEBUG_LOG_EVERY_MS) {
+      this._debugLastPath = pathLabel;
+      this._debugLastPathTs = now;
+      console.log(pathLabel);
     }
   }
 
-  // ==========================================================
-  // Model Source (like airplane)
-  // ==========================================================
-  _ensureModelSourceAndLayer() {
-    if (!this.map) return;
+  _debugMaybeLogRotation(vehicleId, bearing, targetYawDeg, smoothedYawDeg) {
+    if (!this.DEBUG_ROT_LOG) return;
+    const now = performance.now();
+    if ((now - this._debugLastRotTs) > this.DEBUG_LOG_EVERY_MS) {
+      this._debugLastRotTs = now;
+      console.log(
+        `🧭 ROT id=${vehicleId} bearing=${Number(bearing).toFixed(1)}° ` +
+        `targetYaw=${Number(targetYawDeg).toFixed(1)}° smooth=${Number(smoothedYawDeg).toFixed(1)}° ` +
+        `(offset=${this.MODEL_YAW_OFFSET_DEG}° align=${this.MODEL_YAW_ALIGN_DEG}°)`
+      );
+    }
+  }
 
-    // wait until style is ready
-    if (typeof this.map.isStyleLoaded === 'function' && !this.map.isStyleLoaded()) {
-      this.map.once('load', () => this._ensureModelSourceAndLayer());
+  initModelSource() {
+    if (!this.map) {
+      console.warn("⚠️ Map not ready for model source");
       return;
     }
 
-    try {
-      if (!this.map.getSource(this.MODEL_SOURCE_ID)) {
-        this.map.addSource(this.MODEL_SOURCE_ID, { type: 'model', models: {} });
+    // Wait for map to be fully loaded
+    const initSource = () => {
+      try {
+        // Add model source if it doesn't exist
+        if (!this.map.getSource('buses-3d-source')) {
+          this.map.addSource('buses-3d-source', {
+            type: 'model',
+            models: {} // Start with empty models, will add buses dynamically
+          });
+          console.log("✅ Model source 'buses-3d-source' added");
+        }
+
+        // Add model layer if it doesn't exist
+        if (!this.map.getLayer('buses-3d-layer')) {
+          this.map.addLayer({
+            id: 'buses-3d-layer',
+            type: 'model',
+            source: 'buses-3d-source',
+            paint: {
+              'model-scale': [
+                'interpolate',
+                ['exponential', 0.5],
+                ['zoom'],
+                10, ['literal', [50.0, 50.0, 50.0]],
+                15, ['literal', [5.0, 5.0, 5.0]],
+                18, ['literal', [1.0, 1.0, 1.0]]
+              ],
+              'model-rotation': [0, 0, 0], // Will be updated per bus
+              'model-opacity': 1.0
+            }
+          });
+          console.log("✅ Model layer 'buses-3d-layer' added");
+        }
+
+        this.modelLoaded = true;
+        console.log("✅ Model source initialized successfully");
+      } catch (e) {
+        console.error("❌ Error initializing model source:", e);
       }
+    };
 
-      if (!this.map.getLayer(this.MODEL_LAYER_ID)) {
-        this.map.addLayer({
-          id: this.MODEL_LAYER_ID,
-          type: 'model',
-          source: this.MODEL_SOURCE_ID,
-          paint: {
-            'model-translation': [0, 0, this.MODEL_ALT_M],
-            'model-scale': [
-              'interpolate', ['exponential', 0.5], ['zoom'],
-              12, [this.SCALE_Z12, this.SCALE_Z12, this.SCALE_Z12],
-              16, [this.SCALE_Z16, this.SCALE_Z16, this.SCALE_Z16],
-              20, [this.SCALE_Z20, this.SCALE_Z20, this.SCALE_Z20]
-            ]
-          }
-        });
-      }
-
-      const src = this.map.getSource(this.MODEL_SOURCE_ID);
-      this.modelMode = !!(src && typeof src.setModels === 'function');
-
-      console.log(this.modelMode
-        ? "✅ Model-source enabled for buses (setModels available)"
-        : "⚠️ Model-source exists but setModels() not available → fallback to CSS markers"
-      );
-    } catch (e) {
-      this.modelMode = false;
-      console.warn("⚠️ Model-source failed → fallback to CSS markers:", (e && e.message) ? e.message : String(e));
-    }
-  }
-
-  _pushModelsToMap() {
-    if (!this.modelMode) return;
-
-    const src = this.map.getSource(this.MODEL_SOURCE_ID);
-    if (!src || typeof src.setModels !== 'function') return;
-
-    const modelsSpec = {};
-
-    for (const [id, st] of this.busState.entries()) {
-      const yaw = (st.cur.bearing || 0) + this.MODEL_MAP_BEARING_OFFSET_DEG + this.MODEL_YAW_OFFSET_DEG;
-
-      // airplane demo: { uri, position, orientation }  [oai_citation:2‡Mapbox](https://docs.mapbox.com/mapbox-gl-js/example/add-3d-model-and-animate-along-route/)
-      modelsSpec[id] = {
-        uri: this.BUS_GLB_URL,
-        position: [st.cur.lon, st.cur.lat],
-        orientation: [this.MODEL_ROLL_DEG, this.MODEL_PITCH_DEG, yaw]
-      };
-    }
-
-    try {
-      src.setModels(modelsSpec);
-    } catch (e) {
-      console.error("❌ setModels failed → fallback to CSS markers:", (e && e.stack) ? e.stack : String(e));
-      this.modelMode = false;
-    }
-  }
-
-  // ==========================================================
-  // RAF animation
-  // ==========================================================
-  _startRAFIfNeeded() {
-    if (this._rafRunning) return;
-    this._rafRunning = true;
-    this._lastFrameTs = performance.now();
-    requestAnimationFrame((ts) => this._frame(ts));
-  }
-
-  _frame(ts) {
-    if (!this._rafRunning) return;
-
-    const dt = Math.max(0, ts - this._lastFrameTs);
-    this._lastFrameTs = ts;
-
-    const posA  = this._halfLifeAlpha(dt, this.POS_HALF_LIFE_MS);
-    const bearA = this._halfLifeAlpha(dt, this.BEAR_HALF_LIFE_MS);
-
-    for (const st of this.busState.values()) {
-      st.cur.lon = this._lerp(st.cur.lon, st.tgt.lon, posA);
-      st.cur.lat = this._lerp(st.cur.lat, st.tgt.lat, posA);
-
-      const tgtUnwrapped = this._unwrapToNearest(st.cur.bearing, st.tgt.bearing);
-      st.cur.bearing = this._lerp(st.cur.bearing, tgtUnwrapped, bearA);
-      st.cur.bearing = (st.cur.bearing % 360 + 360) % 360;
-    }
-
-    if (this.modelMode) {
-      this._pushModelsToMap();
-      this._updateBadgesFromState();
+    // Check if map is already loaded
+    if (this.map.isStyleLoaded()) {
+      initSource();
     } else {
-      this._updateFallbackMarkers();
-      this._updateBadgesFromState();
+      // Wait for style to load
+      this.map.once('load', initSource);
+    }
+  }
+
+  drawBuses(vehicles, color, shapeCoords) {
+    if (!this.map) return;
+    if (!Array.isArray(vehicles)) return;
+    if (!this.modelLoaded) {
+      this._debugMaybeLogPath("⏳ Model source not ready yet, using fallback");
+      vehicles.forEach(v => {
+        if (v.lat && v.lon) {
+          const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId || ''}`;
+          this.draw2DBusFallback(vehicleId, v.lon, v.lat, v.bearing || 0, color, v.routeNumber);
+        }
+      });
+      return;
     }
 
-    requestAnimationFrame((t) => this._frame(t));
-  }
+    this._debugMaybeLogPath("✅ Using Mapbox Model Source (3D GLB)");
 
-  _halfLifeAlpha(dtMs, halfLifeMs) {
-    if (!halfLifeMs || halfLifeMs <= 0) return 1;
-    return 1 - Math.pow(0.5, dtMs / halfLifeMs);
-  }
+    const shapeLatLngs = shapeCoords ? shapeCoords.map(c => [c[0], c[1]]) : [];
 
-  // ==========================================================
-  // Fallback CSS markers (uses your existing CSS classes)
-  // ==========================================================
-  _updateFallbackMarkers() {
-    for (const [id, st] of this.busState.entries()) {
-      const lon = st.cur.lon;
-      const lat = st.cur.lat;
-      const bearing = st.cur.bearing;
-      const color = "#1976d2";
+    vehicles.forEach(v => {
+      try {
+        let lon = v.lon;
+        let lat = v.lat;
 
-      let marker = this.busMarkers.get(id);
-      if (!marker) {
-        const el = this._create3DBusElement(bearing, color, st.routeNumber);
-        marker = new mapboxgl.Marker({
-          element: el,
-          anchor: 'center',
-          rotationAlignment: 'map',
-          pitchAlignment: 'map'
-        }).setLngLat([lon, lat]).addTo(this.map);
+        // Fallback to position on line if no coordinates
+        if ((!lat || !lon) && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
+          const idx = Math.floor(v.positionOnLine * (shapeLatLngs.length - 1));
+          const point = shapeLatLngs[idx];
+          if (point) {
+            lon = point[0];
+            lat = point[1];
+          }
+        }
 
-        this.busMarkers.set(id, marker);
-      } else {
-        marker.setLngLat([lon, lat]);
-        const el = marker.getElement();
-        const model = el && el.querySelector('.bus-3d-container');
-        if (model) model.style.transform = `rotateZ(${bearing}deg)`;
+        if (lat && lon) {
+          let bearing = v.bearing;
+          
+          // Calculate bearing from shape if not provided
+          if (bearing == null && typeof v.positionOnLine === "number" && shapeLatLngs.length > 1) {
+            bearing = this.calculateBearing(shapeLatLngs, v.positionOnLine);
+          }
+          
+          if (bearing == null) bearing = 0;
+
+          const vehicleId = v.vehicleId || `${v.routeNumber}-${v.tripId || ''}`;
+          this.draw3DBusModel(vehicleId, lon, lat, bearing, color, v.routeNumber);
+        }
+      } catch (e) {
+        console.error("❌ Error drawing bus:", e);
       }
+    });
+  }
+
+  draw3DBusModel(vehicleId, lon, lat, bearing, color, routeNumber) {
+    try {
+      const modelSource = this.map.getSource('buses-3d-source');
+      if (!modelSource) {
+        console.warn("⚠️ Model source not available");
+        return;
+      }
+
+      // Get or create bus data
+      let data = this.busData.get(vehicleId);
+      if (!data) {
+        data = {
+          currentLon: lon,
+          currentLat: lat,
+          targetLon: lon,
+          targetLat: lat,
+          startLon: lon,
+          startLat: lat,
+          yawDegSmoothed: null,
+          animationStartTime: null,
+          animationDuration: 2000
+        };
+        this.busData.set(vehicleId, data);
+      }
+
+      // Calculate target yaw (bearing + offsets)
+      // bearing is already 0=North, 90=East
+      let targetYawDeg = bearing + this.MODEL_YAW_OFFSET_DEG + this.MODEL_YAW_ALIGN_DEG;
+
+      // Smooth yaw rotation
+      if (data.yawDegSmoothed == null) {
+        data.yawDegSmoothed = targetYawDeg;
+      } else {
+        data.yawDegSmoothed = this.unwrapToNearest(data.yawDegSmoothed, targetYawDeg);
+      }
+
+      // Check if we need to animate position
+      const oldLon = data.currentLon;
+      const oldLat = data.currentLat;
+      const distance = Math.sqrt(
+        Math.pow(lon - oldLon, 2) + Math.pow(lat - oldLat, 2)
+      );
+
+      if (distance > 0.00001) {
+        data.startLon = oldLon;
+        data.startLat = oldLat;
+        data.targetLon = lon;
+        data.targetLat = lat;
+        data.animationStartTime = performance.now();
+      }
+
+      // Get current models from source
+      const currentModels = modelSource._data?.models || {};
+      
+      // Update or add this bus model
+      const updatedModels = {
+        ...currentModels,
+        [vehicleId]: {
+          uri: this.GLB_URL,
+          position: [data.currentLon, data.currentLat],
+          orientation: [0, 0, data.yawDegSmoothed] // [roll, pitch, yaw]
+        }
+      };
+
+      // Update the model source
+      modelSource.setModels(updatedModels);
+
+      this._debugMaybeLogRotation(vehicleId, bearing, targetYawDeg, data.yawDegSmoothed);
+
+      // Create or update route badge
+      if (routeNumber) {
+        let badge = this.routeBadges.get(vehicleId);
+
+        if (!badge) {
+          const badgeEl = document.createElement('div');
+          badgeEl.className = 'route-badge-3d-model';
+          badgeEl.style.cssText = `
+            background: white;
+            color: ${color};
+            border: 2px solid ${color};
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 11px;
+            white-space: nowrap;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            pointer-events: none;
+          `;
+          badgeEl.textContent = routeNumber;
+
+          badge = new mapboxgl.Marker({
+            element: badgeEl,
+            anchor: 'bottom',
+            offset: [0, -15]
+          })
+            .setLngLat([lon, lat])
+            .addTo(this.map);
+
+          this.routeBadges.set(vehicleId, badge);
+        } else {
+          // Update badge position (will be animated in render loop)
+          badge.setLngLat([data.currentLon, data.currentLat]);
+        }
+      }
+
+      // Start animation loop if not already running
+      if (!this._animationFrameId) {
+        this.startAnimationLoop();
+      }
+
+    } catch (e) {
+      console.error("❌ Error drawing 3D bus model:", e);
     }
   }
 
-  _create3DBusElement(bearing, color, routeNumber) {
+  startAnimationLoop() {
+    const animate = () => {
+      const now = performance.now();
+      const modelSource = this.map.getSource('buses-3d-source');
+      
+      if (!modelSource) {
+        this._animationFrameId = null;
+        return;
+      }
+
+      const currentModels = modelSource._data?.models || {};
+      const updatedModels = {};
+      let hasActiveAnimations = false;
+
+      this.busData.forEach((data, vehicleId) => {
+        if (data.animationStartTime && data.startLon && data.startLat && data.targetLon && data.targetLat) {
+          const elapsed = now - data.animationStartTime;
+          const progress = Math.min(elapsed / data.animationDuration, 1);
+          const eased = progress * (2 - progress); // ease-out
+
+          data.currentLon = data.startLon + (data.targetLon - data.startLon) * eased;
+          data.currentLat = data.startLat + (data.targetLat - data.startLat) * eased;
+
+          // Update badge position
+          const badge = this.routeBadges.get(vehicleId);
+          if (badge) {
+            badge.setLngLat([data.currentLon, data.currentLat]);
+          }
+
+          if (progress >= 1) {
+            data.animationStartTime = null;
+          } else {
+            hasActiveAnimations = true;
+          }
+        }
+
+        // Update model position
+        if (currentModels[vehicleId]) {
+          updatedModels[vehicleId] = {
+            ...currentModels[vehicleId],
+            position: [data.currentLon, data.currentLat],
+            orientation: [0, 0, data.yawDegSmoothed]
+          };
+        }
+      });
+
+      // Update all models at once
+      if (Object.keys(updatedModels).length > 0) {
+        modelSource.setModels(updatedModels);
+      }
+
+      // Continue loop if there are active animations or buses
+      if (hasActiveAnimations || this.busData.size > 0) {
+        this._animationFrameId = requestAnimationFrame(animate);
+      } else {
+        this._animationFrameId = null;
+      }
+    };
+
+    this._animationFrameId = requestAnimationFrame(animate);
+  }
+
+  draw2DBusFallback(vehicleId, lon, lat, bearing, color, routeNumber) {
+    this._debugMaybeLogPath("⚠️ FALLBACK path (2D markers)");
+
+    let marker = this.busMarkers.get(vehicleId);
+
+    if (marker) {
+      // Animate to new position
+      this.animateBusTo(vehicleId, lon, lat, 2000);
+
+      const el = marker.getElement();
+      if (el) {
+        const model = el.querySelector('.bus-3d-container');
+        if (model) {
+          model.style.transform = `rotateZ(${bearing}deg)`;
+        }
+      }
+    } else {
+      const el = this._create2DBusElement(bearing, color, routeNumber);
+
+      marker = new mapboxgl.Marker({
+        element: el,
+        anchor: 'center',
+        rotationAlignment: 'map',
+        pitchAlignment: 'map'
+      })
+        .setLngLat([lon, lat])
+        .addTo(this.map);
+
+      this.busMarkers.set(vehicleId, marker);
+    }
+  }
+
+  _create2DBusElement(bearing, color, routeNumber) {
     const el = document.createElement('div');
     el.className = 'bus-marker-3d';
 
@@ -330,8 +390,6 @@ class BusMarkers {
           <div class="bus-3d-body">
             <div class="bus-3d-front"></div>
             <div class="bus-3d-top"></div>
-            <div class="bus-3d-side-left"></div>
-            <div class="bus-3d-side-right"></div>
           </div>
           <div class="bus-3d-wheels">
             <div class="wheel wheel-fl"></div>
@@ -348,49 +406,11 @@ class BusMarkers {
       </div>
       <div class="bus-3d-shadow"></div>
     `;
+
     return el;
   }
 
-  _updateBadgesFromState() {
-    for (const [id, st] of this.busState.entries()) {
-      const routeNumber = st.routeNumber || '';
-      if (!routeNumber) continue;
-
-      let badge = this.routeBadges.get(id);
-      if (!badge) {
-        const el = document.createElement('div');
-        el.className = 'route-badge-3d';
-        el.textContent = routeNumber;
-
-        badge = new mapboxgl.Marker({ element: el, anchor: 'center' })
-          .setLngLat([st.cur.lon, st.cur.lat])
-          .addTo(this.map);
-
-        this.routeBadges.set(id, badge);
-      } else {
-        badge.setLngLat([st.cur.lon, st.cur.lat]);
-      }
-    }
-  }
-
-  // ==========================================================
-  // math helpers
-  // ==========================================================
-  _lerp(a, b, t) {
-    t = Math.max(0, Math.min(1, t));
-    return a + (b - a) * t;
-  }
-
-  _wrap180(deg) {
-    return ((deg + 180) % 360 + 360) % 360 - 180;
-  }
-
-  _unwrapToNearest(prevDeg, targetDeg) {
-    const delta = this._wrap180(targetDeg - prevDeg);
-    return prevDeg + delta;
-  }
-
-  _bearingFromShape(shapeLatLngs, positionOnLine) {
+  calculateBearing(shapeLatLngs, positionOnLine) {
     const idx = Math.floor(positionOnLine * (shapeLatLngs.length - 1));
     if (idx < shapeLatLngs.length - 1) {
       const start = shapeLatLngs[idx];
@@ -398,5 +418,124 @@ class BusMarkers {
       return this.mapManager.getBearing(start, end);
     }
     return 0;
+  }
+
+  wrap180(deg) {
+    return ((deg + 180) % 360 + 360) % 360 - 180;
+  }
+
+  unwrapToNearest(prevDeg, targetDeg) {
+    const delta = this.wrap180(targetDeg - prevDeg);
+    return prevDeg + delta;
+  }
+
+  pruneMarkers(activeVehicleIds) {
+    if (!activeVehicleIds || !(activeVehicleIds instanceof Set)) return;
+
+    // Remove 2D fallback markers
+    this.busMarkers.forEach((marker, id) => {
+      if (!activeVehicleIds.has(id)) {
+        try {
+          if (marker.remove) marker.remove();
+          this.busMarkers.delete(id);
+        } catch (e) {
+          console.error("❌ Error removing marker:", e);
+        }
+      }
+    });
+
+    // Remove 3D models from model source
+    const modelSource = this.map.getSource('buses-3d-source');
+    if (modelSource) {
+      const currentModels = modelSource._data?.models || {};
+      const updatedModels = {};
+      
+      Object.keys(currentModels).forEach(id => {
+        if (activeVehicleIds.has(id)) {
+          updatedModels[id] = currentModels[id];
+        }
+      });
+      
+      modelSource.setModels(updatedModels);
+    }
+
+    // Remove badges
+    this.routeBadges.forEach((badge, id) => {
+      if (!activeVehicleIds.has(id)) {
+        try {
+          if (badge.remove) badge.remove();
+          this.routeBadges.delete(id);
+        } catch (e) {
+          console.error("❌ Error removing badge:", e);
+        }
+      }
+    });
+
+    // Clean bus data
+    this.busData.forEach((data, id) => {
+      if (!activeVehicleIds.has(id)) this.busData.delete(id);
+    });
+  }
+
+  clearAll() {
+    // Clear 2D markers
+    this.busMarkers.forEach(marker => {
+      try { if (marker && marker.remove) marker.remove(); } catch (e) {}
+    });
+    this.busMarkers.clear();
+
+    // Clear 3D models
+    const modelSource = this.map.getSource('buses-3d-source');
+    if (modelSource) {
+      modelSource.setModels({});
+    }
+
+    // Clear badges
+    this.routeBadges.forEach(badge => {
+      try { if (badge && badge.remove) badge.remove(); } catch (e) {}
+    });
+    this.routeBadges.clear();
+
+    // Clear data
+    this.busData.clear();
+    
+    // Stop animation loop
+    if (this._animationFrameId) {
+      cancelAnimationFrame(this._animationFrameId);
+      this._animationFrameId = null;
+    }
+    
+    console.log("🗑️ All buses cleared");
+  }
+
+  animateBusTo(vehicleId, newLon, newLat, duration = 2000) {
+    const marker = this.busMarkers.get(vehicleId);
+    if (!marker) return;
+
+    try {
+      const start = marker.getLngLat();
+      const end = [newLon, newLat];
+
+      if (Math.abs(start.lng - end[0]) < 0.00001 && Math.abs(start.lat - end[1]) < 0.00001) return;
+
+      let startTime = null;
+
+      const animate = (timestamp) => {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        const eased = progress * (2 - progress);
+
+        const currentLng = start.lng + (end[0] - start.lng) * eased;
+        const currentLat = start.lat + (end[1] - start.lat) * eased;
+
+        marker.setLngLat([currentLng, currentLat]);
+
+        if (progress < 1) requestAnimationFrame(animate);
+      };
+
+      requestAnimationFrame(animate);
+    } catch (e) {
+      console.error("❌ Error animating bus:", e);
+    }
   }
 }
