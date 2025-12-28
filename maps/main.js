@@ -247,19 +247,12 @@ module.exports.run = async function(argsObj) {
         break;
       }
       
-      const elapsed = Date.now() - loopStartTime;
-    const remainingSleep = Math.max(0, config.REFRESH_INTERVAL_MS - elapsed);
-    
-    if (remainingSleep > 0) {
-      console.log(`⏳ Waiting ${remainingSleep}ms until next refresh (fetch took ${elapsed}ms)...`);
-      await utils.sleep(remainingSleep);
-    } else {
-      console.log(`⚡ No sleep needed - fetch took ${elapsed}ms (target: ${config.REFRESH_INTERVAL_MS}ms)`);
+      console.log(`⏳ Waiting ${config.REFRESH_INTERVAL_MS}ms until next refresh...`);
+      await utils.sleep(config.REFRESH_INTERVAL_MS);
     }
+    
+    console.log("🏁 Refresh loop ended");
   }
-  
-  console.log("🏁 Refresh loop ended");
-}
 
   // ===================================================================
   // 🎯 הסדר הנכון: הפעלת רענונים לפני present()
