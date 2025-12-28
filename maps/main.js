@@ -233,27 +233,25 @@ module.exports.run = async function(argsObj) {
   }
 
   async function refreshLoop() {
-    console.log(`🔁 Refresh loop started (interval: ${config.REFRESH_INTERVAL_MS}ms)`);
-    console.log(`   Monitoring ${nearestStops.length} stops`);
-    
-    let iteration = 0;
-    while (keepRefreshing) {
-      iteration++;
-      
-      await pushRealtimeUpdate();
-      
-      if (!keepRefreshing) {
-        console.log("🛑 Loop stopping (keepRefreshing = false)");
-        break;
-      }
-      
-      console.log(`⏳ Waiting ${config.REFRESH_INTERVAL_MS}ms until next refresh...`);
-      await utils.sleep(config.REFRESH_INTERVAL_MS);
+  const intervalMs = Number(config.REFRESH_INTERVAL_MS) || 10000;
+
+  console.log(`🔁 Refresh loop started (interval: ${intervalMs}ms)`);
+  console.log(`   Monitoring ${nearestStops.length} stops`);
+
+  while (keepRefreshing) {
+    console.log(`⏳ Waiting ${intervalMs}ms until next refresh...`);
+    await utils.sleep(intervalMs);
+
+    if (!keepRefreshing) {
+      console.log("🛑 Loop stopping (keepRefreshing = false)");
+      break;
     }
-    
-    console.log("🏁 Refresh loop ended");
+
+    await pushRealtimeUpdate();
   }
 
+  console.log("🏁 Refresh loop ended");
+}
   // ===================================================================
   // 🎯 הסדר הנכון: הפעלת רענונים לפני present()
   // ===================================================================
