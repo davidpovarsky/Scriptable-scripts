@@ -1,4 +1,5 @@
-/* styles/map.css - Minimal 3D version */
+/* styles/map.css - FIXED VERSION */
+/* תוקן: כפתורים למעלה, בועת מיקום עם z-index גבוה */
 
 /* ============================================
    Map Container
@@ -14,12 +15,13 @@
 }
 
 /* ============================================
-   User Location
+   User Location - FIXED!
    ============================================ */
 .user-location-marker {
   position: relative;
   width: 30px;
   height: 30px;
+  z-index: 9999 !important; /* ✅ תוקן! */
 }
 
 .pulse-dot {
@@ -141,7 +143,8 @@
 }
 
 /* Route badge */
-.route-badge-3d {
+.route-badge-3d,
+.route-badge-3d-model {
   position: absolute;
   top: -20px;
   left: 50%;
@@ -155,6 +158,7 @@
   white-space: nowrap;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   z-index: 10;
+  pointer-events: none;
 }
 
 /* Shadow */
@@ -172,12 +176,13 @@
 }
 
 /* ============================================
-   Buttons
+   Buttons - FIXED! למעלה במקום למטה!
    ============================================ */
 #locateMeBtn,
-#toggle3DBtn {
+#toggle3DBtn,
+#toggleFlipBtn {
   position: absolute;
-  right: 20px;
+  left: 20px; /* ✅ תוקן! שמאל בגלל RTL */
   width: 44px;
   height: 44px;
   background: white;
@@ -185,31 +190,51 @@
   border-radius: 50%;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   cursor: pointer;
-  font-size: 24px;
+  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 1500; /* ✅ תוקן! גבוה יותר */
   transition: all 0.2s;
+  color: #333;
 }
 
 #locateMeBtn {
-  bottom: 100px;
+  top: 70px; /* ✅ תוקן! למעלה במקום למטה */
 }
 
 #toggle3DBtn {
-  bottom: 160px;
+  top: 130px; /* ✅ תוקן! למעלה במקום למטה */
+}
+
+#toggleFlipBtn {
+  top: 190px; /* ✅ תוקן! למעלה במקום למטה */
 }
 
 #locateMeBtn:hover,
-#toggle3DBtn:hover {
+#toggle3DBtn:hover,
+#toggleFlipBtn:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   transform: scale(1.05);
+}
+
+#locateMeBtn:active,
+#toggle3DBtn:active,
+#toggleFlipBtn:active {
+  transform: scale(0.95);
 }
 
 #toggle3DBtn.active {
   background: #2196f3;
   color: white;
+}
+
+/* במצב dual - הזז ימינה כדי שלא יכסה את הפאנל */
+body.mode-dual #locateMeBtn,
+body.mode-dual #toggle3DBtn,
+body.mode-dual #toggleFlipBtn {
+  left: auto;
+  right: 20px;
 }
 
 /* ============================================
@@ -224,4 +249,27 @@
 .mapboxgl-ctrl-group button {
   width: 36px;
   height: 36px;
+}
+
+/* הסתר לוגו של Mapbox במסכים קטנים */
+@media (max-width: 600px) {
+  .mapboxgl-ctrl-logo {
+    display: none !important;
+  }
+  
+  .mapboxgl-ctrl-attrib {
+    font-size: 8px !important;
+  }
+}
+
+/* ============================================
+   Mapbox Marker Override
+   ============================================ */
+.mapboxgl-marker {
+  z-index: 1000 !important;
+}
+
+/* בועת מיקום צריכה להיות גבוהה יותר */
+.mapboxgl-marker.user-location-marker {
+  z-index: 9999 !important;
 }
