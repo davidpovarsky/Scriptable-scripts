@@ -1,5 +1,5 @@
-/* styles/stops.css */
-/* עיצוב פאנל התחנות הקרובות */
+/* styles/stops.css - FIXED */
+/* תוקן: z-index מעל Mapbox, min-height לגלילה תקינה */
 
 .pane-nearby {
   width: 0;
@@ -10,6 +10,8 @@
   display: flex;
   flex-direction: column;
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+  position: relative; /* ✅ הוספתי כדי שה-z-index יעבוד */
+  z-index: 1500; /* ✅ תוקן! הוספתי z-index גם למסך רגיל, לא רק מובייל */
 }
 
 /* מצב כפול פעיל */
@@ -43,6 +45,7 @@ body.mode-dual .pane-nearby {
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   z-index: 10;
+  flex-shrink: 0; /* ✅ הוספתי - מונע כיווץ של הכותרת */
 }
 
 .nearby-list {
@@ -52,6 +55,8 @@ body.mode-dual .pane-nearby {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0; /* ✅ תוקן! חובה לפלקסבוקס כדי לאפשר גלילה */
+  height: 100%; /* ✅ הוספתי */
 }
 
 /* כרטיס תחנה (הבועה) */
@@ -63,6 +68,7 @@ body.mode-dual .pane-nearby {
   border: 1px solid transparent;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   transition: all 0.2s;
+  flex-shrink: 0; /* ✅ הוספתי - מונע כיווץ של הבועות */
 }
 
 .stop-bubble:active {
