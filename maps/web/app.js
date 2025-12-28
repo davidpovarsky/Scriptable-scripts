@@ -315,8 +315,11 @@ window.initNearbyStops = function(stops) {
 
 window.setUserLocation = function(lat, lon) {
   console.log("👤 Setting user location:", lat, lon);
+  console.log("🔍 mapManager exists?", !!mapManager);
+  console.log("🔍 mapIsFullyLoaded?", mapIsFullyLoaded);
   
   if (mapManager && mapIsFullyLoaded) {
+    console.log("✅ Calling mapManager.setUserLocation");
     mapManager.setUserLocation(lat, lon);
   } else {
     console.log("⏳ Map not ready, will set location when loaded");
