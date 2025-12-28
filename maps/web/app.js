@@ -1,5 +1,5 @@
 // web/app.js
-// נקודת הכניסה הראשית - גרסת Mapbox המתוקנת
+// נקודת הכניסה הראשית - גרסת Mapbox המתוקנת עם animation loop
 
 // ============================================
 // משתנים גלובליים
@@ -52,6 +52,10 @@ const initApp = async function() {
       // Now initialize map-dependent components
       busMarkers = new BusMarkers(mapManager);
       userLocationManager = new UserLocationManager(mapManager);
+      
+      // 🔥 חשוב! התחל את ה-animation loop
+      busMarkers.animate();
+      console.log("🎬 Bus animation loop started");
       
       // Update modeToggle with mapManager
       if (modeToggle) {
@@ -353,6 +357,16 @@ window.updateRealtimeData = function(updates) {
     console.log("⏳ Map or static data not ready, queueing realtime data");
     pendingRealtimeData.push(updates);
   }
+};
+
+// Debug helper - קריאה מהקונסול
+window.getBusStats = function() {
+  if (busMarkers) {
+    const stats = busMarkers.getStats();
+    console.log("📊 Bus Statistics:", stats);
+    return stats;
+  }
+  return null;
 };
 
 console.log("📱 KavNav Mapbox Client Script Loaded");
