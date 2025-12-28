@@ -20,9 +20,9 @@ class BusMarkers {
     this.MODEL_SCALE = [1, 1, 1];        // [x, y, z] scale
     this.MODEL_ALT_METERS = 0;           // גובה מעל פני הקרקע
 
-    // DEBUG logging
-    this.DEBUG_PATH_LOG = true;
-    this.DEBUG_ROT_LOG = true;
+    // DEBUG logging (DISABLED for production)
+    this.DEBUG_PATH_LOG = false;  // כבוי כדי למנוע קפיצות
+    this.DEBUG_ROT_LOG = false;   // כבוי כדי למנוע קפיצות
     this.DEBUG_LOG_EVERY_MS = 2000;
     this._debugLastPathTs = 0;
     this._debugLastRotTs = 0;
@@ -222,22 +222,6 @@ class BusMarkers {
         data.animationStartTime = performance.now();
       }
 
-      // Get current models from source
-      const currentModels = modelSource._data?.models || {};
-      
-      // Update or add this bus model
-      const updatedModels = {
-        ...currentModels,
-        [vehicleId]: {
-          uri: this.GLB_URL,
-          position: [data.currentLon, data.currentLat],
-          orientation: [0, 0, data.yawDegSmoothed] // [roll, pitch, yaw]
-        }
-      };
-
-      // Update the model source
-      modelSource.setModels(updatedModels);
-
       this._debugMaybeLogRotation(vehicleId, bearing, targetYawDeg, data.yawDegSmoothed);
 
       // Create or update route badge
@@ -266,13 +250,10 @@ class BusMarkers {
             anchor: 'bottom',
             offset: [0, -15]
           })
-            .setLngLat([lon, lat])
+            .setLngLat([data.currentLon, data.currentLat])
             .addTo(this.map);
 
           this.routeBadges.set(vehicleId, badge);
-        } else {
-          // Update badge position (will be animated in render loop)
-          badge.setLngLat([data.currentLon, data.currentLat]);
         }
       }
 
@@ -301,6 +282,7 @@ class BusMarkers {
       let hasActiveAnimations = false;
 
       this.busData.forEach((data, vehicleId) => {
+        // Animate position if needed
         if (data.animationStartTime && data.startLon && data.startLat && data.targetLon && data.targetLat) {
           const elapsed = now - data.animationStartTime;
           const progress = Math.min(elapsed / data.animationDuration, 1);
@@ -322,14 +304,12 @@ class BusMarkers {
           }
         }
 
-        // Update model position
-        if (currentModels[vehicleId]) {
-          updatedModels[vehicleId] = {
-            ...currentModels[vehicleId],
-            position: [data.currentLon, data.currentLat],
-            orientation: [0, 0, data.yawDegSmoothed]
-          };
-        }
+        // Always update model position (even when not animating)
+        updatedModels[vehicleId] = {
+          uri: this.GLB_URL,
+          position: [data.currentLon, data.currentLat],
+          orientation: [0, 0, data.yawDegSmoothed || 0]
+        };
       });
 
       // Update all models at once
@@ -337,8 +317,8 @@ class BusMarkers {
         modelSource.setModels(updatedModels);
       }
 
-      // Continue loop if there are active animations or buses
-      if (hasActiveAnimations || this.busData.size > 0) {
+      // Continue loop if there are buses (always run when buses exist)
+      if (this.busData.size > 0) {
         this._animationFrameId = requestAnimationFrame(animate);
       } else {
         this._animationFrameId = null;
