@@ -247,7 +247,7 @@ module.exports.run = async function(argsObj) {
     }
     
     console.log(`⏳ Waiting ${intervalMs}ms until next refresh...`);
-    await utils.sleep(intervalMs);
+    await new Promise(resolve => Timer.schedule(intervalMs, false, resolve));
   }
 
   console.log("🏁 Refresh loop ended");
