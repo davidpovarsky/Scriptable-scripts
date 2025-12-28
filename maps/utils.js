@@ -28,7 +28,9 @@ module.exports.fetchJson = async function(url) {
 };
 
 module.exports.sleep = function(ms) {
-  return new Promise((resolve) => Timer.schedule(ms / 1000, false, resolve));
+  return new Promise((resolve) => {
+    Timer.schedule(ms, false, resolve);
+  });
 };
 
 module.exports.loadFallbackLocation = async function () {
